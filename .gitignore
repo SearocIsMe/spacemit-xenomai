@@ -1,0 +1,107 @@
+# ============================================================
+# spacemit-xenomai .gitignore
+# Only our scripts, docs, and configs belong in this repo.
+# Do NOT commit: kernel sources, build outputs, toolchains,
+# SD-card images, or any third-party code we don't own.
+# ============================================================
+
+# ----- Kernel source trees (cloned externally) --------------
+linux-*/
+linux/
+kernel/
+evl-src/
+xenomai-*/
+
+# ----- Build output & intermediate artefacts ----------------
+build/
+out/
+output/
+*.o
+*.ko
+*.a
+*.so
+*.so.*
+*.d
+*.cmd
+*.mod
+*.mod.c
+*.symvers
+modules.order
+Module.symvers
+.tmp_versions/
+*.patch.applied
+
+# ----- Compiled images & binaries ---------------------------
+*.img
+*.bin
+*.dtb
+*.dtbo
+*.elf
+*.axf
+u-boot*
+Image
+Image.gz
+zImage
+vmlinux
+vmlinuz*
+initrd*
+rootfs*
+*.tar
+*.tar.gz
+*.tar.xz
+*.tar.bz2
+*.zip
+*.7z
+
+# ----- Toolchains -------------------------------------------
+toolchain/
+cross-compile/
+riscv*/
+gcc-*/
+llvm-*/
+
+# ----- Python cache -----------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+.eggs/
+
+# ----- Editor & IDE -----------------------------------------
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+# ----- OS artefacts -----------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----- Logs & temp ------------------------------------------
+*.log
+*.tmp
+*.bak
+tmp/
+temp/
+logs/
+
+# ----- Secrets / credentials --------------------------------
+*.pem
+*.key
+*.crt
+secrets/
+.env
+.env.*
+
+# ----- SD card / flash staging ------------------------------
+sdcard/
+flash/
+mnt/

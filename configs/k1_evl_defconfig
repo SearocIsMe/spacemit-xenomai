@@ -1,0 +1,117 @@
+# =============================================================================
+# k1_evl_defconfig
+# Kernel config fragment for enabling Xenomai 4 / EVL on SpacemiT K1.
+#
+# This fragment is MERGED on top of spacemit_k1_v2_defconfig by
+# scripts/build/02-configure.sh using merge_config.sh.
+#
+# Do NOT use this as a standalone defconfig — it only sets EVL-specific
+# options and overrides that differ from the SpacemiT base config.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core EVL / Dovetail requirements
+# -----------------------------------------------------------------------------
+
+# Dovetail interrupt pipeline (prerequisite for EVL)
+CONFIG_DOVETAIL=y
+CONFIG_IRQ_PIPELINE=y
+
+# EVL core
+CONFIG_EVL_CORE=y
+
+# EVL scheduler policies
+CONFIG_EVL_SCHED_QUOTA=y
+CONFIG_EVL_SCHED_TP=y
+
+# EVL heap allocator
+CONFIG_EVL_HEAP=y
+
+# EVL proxy driver (for bridging in-band and OOB I/O)
+CONFIG_EVL_PROXY=y
+
+# EVL poll support
+CONFIG_EVL_POLL=y
+
+# EVL observable (event notification)
+CONFIG_EVL_OBSERVABLE=y
+
+# EVL cross-buffer (zero-copy data transfer)
+CONFIG_EVL_XBUF=y
+
+# EVL latency monitor
+CONFIG_EVL_LATMON=y
+
+# -----------------------------------------------------------------------------
+# Timer / clock requirements
+# -----------------------------------------------------------------------------
+
+# High-resolution timers (mandatory for EVL)
+CONFIG_HIGH_RES_TIMERS=y
+
+# 1000 Hz tick rate for better latency
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+
+# Disable dynamic tick (NO_HZ) in OOB context — use full tick for RT
+# Note: NOHZ_FULL can interfere with EVL timer delivery
+CONFIG_NO_HZ_IDLE=y
+# CONFIG_NO_HZ_FULL is not set
+
+# -----------------------------------------------------------------------------
+# Preemption model
+# -----------------------------------------------------------------------------
+
+# Full preemption required for EVL
+CONFIG_PREEMPT=y
+# CONFIG_PREEMPT_NONE is not set
+# CONFIG_PREEMPT_VOLUNTARY is not set
+
+# -----------------------------------------------------------------------------
+# RISC-V specific
+# -----------------------------------------------------------------------------
+
+# FPU support (required for OOB thread FPU context)
+CONFIG_FPU=y
+
+# Disable Vector extension in OOB context (not yet supported by EVL)
+# CONFIG_RISCV_ISA_V is not set  # Uncomment if V-ext causes issues
+
+# -----------------------------------------------------------------------------
+# Debugging (enable during initial bring-up, disable for production)
+# -----------------------------------------------------------------------------
+
+# EVL latency tracing
+CONFIG_EVL_LATENCY_USER=y
+
+# Kernel latency tracer (ftrace-based)
+CONFIG_FTRACE=y
+CONFIG_FUNCTION_TRACER=y
+CONFIG_IRQSOFF_TRACER=y
+CONFIG_PREEMPT_TRACER=y
+CONFIG_HWLAT_TRACER=y
+
+# Lock debugging (disable for production — adds overhead)
+# CONFIG_LOCKDEP is not set
+# CONFIG_DEBUG_MUTEXES is not set
+
+# EVL sanity checks (disable for production)
+CONFIG_EVL_DEBUG_CORE=y
+# CONFIG_EVL_DEBUG_MEMORY is not set  # Very slow — only for memory debugging
+
+# -----------------------------------------------------------------------------
+# Networking (optional — for EVL-based fieldbus over Ethernet)
+# -----------------------------------------------------------------------------
+
+# Raw socket support (needed for EtherCAT-style protocols)
+CONFIG_PACKET=y
+
+# -----------------------------------------------------------------------------
+# Disable options that conflict with EVL
+# -----------------------------------------------------------------------------
+
+# PREEMPT_RT is mutually exclusive with EVL/Dovetail
+# CONFIG_PREEMPT_RT is not set
+
+# Disable CPU frequency scaling during RT testing (can cause latency spikes)
+# CONFIG_CPU_FREQ is not set  # Uncomment if latency spikes observed

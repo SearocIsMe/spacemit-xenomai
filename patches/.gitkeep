@@ -1,0 +1,9 @@
+# This directory holds EVL Dovetail patch files (*.patch).
+# Patches are generated via scripts/patch/gen-patch.sh or downloaded
+# from the EVL mailing list. See docs/porting-notes.md for details.
+#
+# Naming convention:
+#   0001-evl-riscv-dovetail-base.patch
+#   0002-evl-riscv-fpu-context.patch
+#   0003-evl-k1-clocksource.patch
+#   ...
