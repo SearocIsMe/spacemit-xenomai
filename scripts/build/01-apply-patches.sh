@@ -80,14 +80,24 @@ PATCH_FILES=($(find "${PATCHES_DIR}" -name "*.patch" | sort))
 
 if [[ ${#PATCH_FILES[@]} -eq 0 ]]; then
   warn "No .patch files found in ${PATCHES_DIR}."
-  warn "This is expected if you haven't generated/downloaded patches yet."
-  warn "See docs/porting-notes.md for how to obtain Dovetail RISC-V patches."
   warn ""
-  warn "Manual steps to get patches from EVL dev tree:"
-  warn "  1. cd \${EVL_KERNEL_DIR}"
-  warn "  2. git log --oneline | grep -i 'riscv.*dovetail\\|dovetail.*riscv'"
-  warn "  3. git format-patch <base-commit>..<evl-commit> -o ${PATCHES_DIR}/"
-  warn "  4. Re-run this script."
+  warn "STATUS: As of 2026-03, RISC-V Dovetail arch hooks are NOT yet present"
+  warn "        in any stable EVL branch. The EVL tree at ~/work/linux-evl"
+  warn "        (tag: v6.6.63-evl2-rebase) contains kernel/dovetail/, kernel/evl/,"
+  warn "        include/linux/dovetail.h and irq_pipeline.h — but NO arch/riscv/"
+  warn "        Dovetail hooks. These must be sourced from the EVL mailing list"
+  warn "        or written manually."
+  warn ""
+  warn "NEXT STEPS:"
+  warn "  Option A — Get patches from EVL mailing list:"
+  warn "    https://xenomai.org/pipermail/xenomai/"
+  warn "    Search: 'riscv dovetail' — save .patch files to ${PATCHES_DIR}/"
+  warn ""
+  warn "  Option B — Generate from EVL tree (once RISC-V support lands upstream):"
+  warn "    bash scripts/patch/gen-patch.sh"
+  warn "    (auto-unshallows ~/work/linux-evl and extracts RISC-V Dovetail commits)"
+  warn ""
+  warn "  See docs/porting-notes.md section 2 for full details."
   exit 0
 fi
 

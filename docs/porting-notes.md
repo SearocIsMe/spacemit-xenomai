@@ -60,42 +60,52 @@ Provides the userspace API for EVL threads, timers, mutexes, etc. Must be cross-
 
 ## 2. Obtaining Dovetail RISC-V Patches
 
-As of early 2026, RISC-V Dovetail patches are not in the upstream EVL tree's stable branch. Here is how to find and extract them:
+> **Status (2026-03-30):** RISC-V Dovetail arch hooks are **not yet present** in any
+> stable EVL branch on `source.denx.de`. The `v6.6.63-evl2-rebase` tag contains
+> `kernel/dovetail/`, `kernel/evl/`, `include/linux/dovetail.h`, and
+> `include/linux/irq_pipeline.h` — but **no** `arch/riscv/` Dovetail hooks and
+> **no** `include/asm-generic/dovetail.h`. RISC-V Dovetail support must be obtained
+> from the EVL mailing list or written from scratch.
 
-### Method A: From EVL Mailing List
+### Method A: From EVL Mailing List (Recommended)
 
 The EVL mailing list archives are at: https://xenomai.org/pipermail/xenomai/
 
-Search for subjects containing "riscv" and "dovetail". Download the patch series and save to `patches/`.
+Search for subjects containing "riscv" and "dovetail". Download the patch series
+and save to `patches/`. As of early 2026 this is the only source for RISC-V
+Dovetail arch hooks.
 
-### Method B: From EVL Development Branch
+### Method B: From EVL Development Branch (if RISC-V support lands upstream)
+
+Once RISC-V Dovetail is merged into an EVL stable branch, use `gen-patch.sh`:
 
 ```bash
+# First unshallow the EVL tree (needed for format-patch)
 cd ~/work/linux-evl
+git fetch --unshallow
 
 # List RISC-V related commits
-git log --oneline v6.6..HEAD -- arch/riscv/ | grep -i "dovetail\|pipeline\|evl\|oob"
-
-# Generate patches for RISC-V Dovetail changes
-git format-patch v6.6..HEAD \
-  --output-directory ~/work/spacemit-xenomai/patches/ \
-  -- \
-  arch/riscv/ \
-  include/asm-generic/dovetail.h \
-  include/linux/dovetail.h \
-  include/linux/irq_pipeline.h \
-  kernel/dovetail/ \
-  kernel/evl/
+git log --oneline v6.6.63..HEAD -- arch/riscv/ | grep -i "dovetail\|pipeline\|evl\|oob"
 ```
 
 ### Method C: Using gen-patch.sh
 
 ```bash
+# Automatically handles unshallow, defaults base to v6.6.63
 bash scripts/patch/gen-patch.sh \
   --tree ~/work/linux-evl \
-  --from v6.6 \
+  --from v6.6.63
+
+# Or filter to only RISC-V Dovetail commits
+bash scripts/patch/gen-patch.sh \
+  --tree ~/work/linux-evl \
+  --from v6.6.63 \
   --grep "riscv.*dovetail\|dovetail.*riscv"
 ```
+
+> **Note:** `gen-patch.sh` will automatically unshallow the repo if needed.
+> The `--unshallow` fetch downloads the full kernel history (~1 GB) and takes
+> several minutes.
 
 ---
 
@@ -290,7 +300,10 @@ RISC-V FPU state (F/D registers) must be saved/restored when switching between O
 | Date | Action | Result |
 |------|--------|--------|
 | 2026-03-30 | Project initialized, research documented | ✅ Done |
-| TBD | Obtain RISC-V Dovetail patches | ⏳ Pending |
+| 2026-03-30 | `00-setup-env.sh`: fixed EVL clone — use `source.denx.de` mirror, tag `v6.6.63-evl2-rebase` | ✅ Done |
+| 2026-03-30 | Confirmed: `v6.6.63-evl2-rebase` has `kernel/evl/` + `kernel/dovetail/` but **no** `arch/riscv/` Dovetail hooks | ✅ Investigated |
+| 2026-03-30 | RISC-V Dovetail arch hooks not yet in any stable EVL branch — must source from mailing list | ⚠️ Blocked |
+| TBD | Obtain RISC-V Dovetail arch patches (mailing list or write from scratch) | ⏳ Pending |
 | TBD | Apply patches to SpacemiT v6.6.63 | ⏳ Pending |
 | TBD | First kernel build attempt | ⏳ Pending |
 | TBD | Boot test on Jupiter | ⏳ Pending |

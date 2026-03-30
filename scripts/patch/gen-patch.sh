@@ -8,11 +8,12 @@
 #   bash scripts/patch/gen-patch.sh [options]
 #
 # Options:
-#   --from <commit>   Base commit (exclusive) — default: merge-base with upstream
+#   --from <commit>   Base commit (exclusive) — default: v6.6.63 tag
 #   --to   <commit>   End commit (inclusive)  — default: HEAD
 #   --tree <dir>      Git tree to extract from — default: $EVL_KERNEL_DIR
 #   --out  <dir>      Output directory         — default: patches/
 #   --grep <pattern>  Only include commits matching pattern in subject
+#   --yes             Non-interactive: skip confirmation prompt
 # =============================================================================
 set -euo pipefail
 
@@ -43,6 +44,7 @@ OUTPUT_DIR="${REPO_ROOT}/patches"
 FROM_COMMIT=""
 TO_COMMIT="HEAD"
 GREP_PATTERN=""
+YES=0
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --tree)  GIT_TREE="$2";    shift 2 ;;
     --out)   OUTPUT_DIR="$2";  shift 2 ;;
     --grep)  GREP_PATTERN="$2"; shift 2 ;;
+    --yes|-y) YES=1; shift ;;
     -h|--help)
       sed -n '2,20p' "$0" | sed 's/^# \?//'
       exit 0
@@ -71,22 +74,35 @@ mkdir -p "${OUTPUT_DIR}"
 cd "${GIT_TREE}"
 
 # ---------------------------------------------------------------------------
+# Handle shallow clone — unshallow if needed
+# ---------------------------------------------------------------------------
+if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
+  warn "Repository is a shallow clone. Fetching full history (this may take a while) ..."
+  git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating)" || true
+  ok "Unshallow complete."
+fi
+
+# ---------------------------------------------------------------------------
 # Determine base commit if not specified
 # ---------------------------------------------------------------------------
 if [[ -z "${FROM_COMMIT}" ]]; then
-  # Try to find merge-base with v6.6 tag
-  if git rev-parse "v6.6" &>/dev/null; then
-    FROM_COMMIT=$(git merge-base "v6.6" "${TO_COMMIT}")
-    info "Auto-detected base commit (merge-base with v6.6): ${FROM_COMMIT:0:12}"
-  else
-    die "Cannot auto-detect base commit. Use --from <commit>."
+  # Default: use v6.6.63 tag (matches SpacemiT kernel base)
+  for _base_tag in "v6.6.63" "v6.6" "v6.6.0"; do
+    if git rev-parse "${_base_tag}" &>/dev/null; then
+      FROM_COMMIT="${_base_tag}"
+      info "Auto-detected base commit: ${_base_tag}"
+      break
+    fi
+  done
+  if [[ -z "${FROM_COMMIT}" ]]; then
+    die "Cannot auto-detect base commit. Use --from <commit> (e.g. --from v6.6.63)."
   fi
 fi
 
 # ---------------------------------------------------------------------------
 # List commits to extract
 # ---------------------------------------------------------------------------
-info "Listing commits from ${FROM_COMMIT:0:12}..${TO_COMMIT} in ${GIT_TREE} ..."
+info "Listing commits from ${FROM_COMMIT}..${TO_COMMIT} in ${GIT_TREE} ..."
 
 GREP_ARGS=()
 if [[ -n "${GREP_PATTERN}" ]]; then
@@ -113,7 +129,7 @@ if [[ -z "${COMMITS}" ]]; then
   warn ""
   warn "To list all EVL-related commits manually:"
   warn "  cd ${GIT_TREE}"
-  warn "  git log --oneline v6.6..HEAD -- arch/riscv/ kernel/evl/"
+  warn "  git log --oneline ${FROM_COMMIT}..HEAD -- arch/riscv/ kernel/evl/"
   exit 0
 fi
 
@@ -127,8 +143,12 @@ done
 # Generate patches
 # ---------------------------------------------------------------------------
 echo ""
-read -rp "Generate ${COMMIT_COUNT} patch file(s) to ${OUTPUT_DIR}/? [y/N]: " CONFIRM
-[[ "${CONFIRM}" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
+if [[ ${YES} -eq 0 ]]; then
+  read -rp "Generate ${COMMIT_COUNT} patch file(s) to ${OUTPUT_DIR}/? [y/N]: " CONFIRM
+  [[ "${CONFIRM}" =~ ^[Yy]$ ]] || { info "Aborted."; exit 0; }
+else
+  info "Non-interactive mode (--yes): generating ${COMMIT_COUNT} patch file(s) ..."
+fi
 
 info "Generating patches ..."
 git format-patch \
