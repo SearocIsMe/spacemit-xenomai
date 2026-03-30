@@ -147,6 +147,63 @@ card is inserted:
 
 ---
 
+## Debugging Boot Issues
+
+### Symptom: Bianbu icon appears then black screen / static cursor
+
+This means U-Boot ran and loaded the kernel. The kernel is panicking or
+hanging before it can bring up a graphical console. **Check serial UART first.**
+
+#### Serial Console (UART) — most reliable debug method
+
+Connect a USB-UART adapter (3.3 V logic level) to the Milk-V Jupiter debug header:
+
+| Jupiter pin | Signal | UART adapter |
+|-------------|--------|--------------|
+| Pin 8  (GPIO14) | TX | RX |
+| Pin 10 (GPIO15) | RX | TX |
+| Pin 6  | GND | GND |
+
+On host (Linux):
+```bash
+sudo screen /dev/ttyUSB0 115200
+# or
+sudo minicom -D /dev/ttyUSB0 -b 115200
+```
+
+On Windows: use **PuTTY** → Serial → COM port → 115200 baud.
+
+Power on the board and watch for the boot log. The last line before hang/panic
+tells you exactly what failed.
+
+#### Common boot failure causes and fixes
+
+| Symptom in serial log | Cause | Fix |
+|-----------------------|-------|-----|
+| `VFS: Cannot open root device` | Wrong `root=` in extlinux.conf | Re-run `make-full-sdcard-img.sh` — it now auto-detects `root=` from base image |
+| `Kernel panic — not syncing: VFS` | Same as above, or missing initrd | Check initrd line in extlinux.conf |
+| `EVL: …` then panic | EVL/Dovetail init crash | See `docs/porting-notes.md`; try booting without EVL first |
+| Nothing after `Starting kernel ...` | earlycon not working | Try adding `earlycon=uart8250,mmio32,0xd4017000` |
+| Hangs at `Run /init as init process` | initramfs pivot_root failure | Ensure correct `root=` and that partition 2 is ext4 |
+
+#### Quick fix: verify extlinux.conf on the SD card
+
+Mount the SD card boot partition on Linux and check:
+```bash
+sudo mount /dev/sdb1 /mnt
+cat /mnt/extlinux/extlinux.conf
+```
+
+The `append` line must have:
+- `console=tty1` — enables HDMI kernel console
+- `console=ttyS0,115200` — enables serial console
+- `root=<correct device or UUID>` — matching your base image's rootfs partition
+
+If using Bianbu (Ubuntu-based), the `root=` is typically `root=UUID=<uuid>`, **not**
+`root=/dev/mmcblk0p2`. Re-run `make-full-sdcard-img.sh` to auto-detect and fix this.
+
+---
+
 ## After Flashing
 
 Insert the SD card into the Milk-V Jupiter and power on.

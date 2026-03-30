@@ -126,25 +126,62 @@ info "Attaching image as loop device ..."
 LOOP=$(sudo losetup -Pf --show "${IMG}")
 ok "Loop device: ${LOOP}"
 
-# Ensure loop partitions are visible
-# losetup -P scans them, but give udev a moment on some systems
+# Give the kernel a moment to create partition device nodes
 sleep 1
 
-BOOT_PART="${LOOP}p1"
-if [[ ! -b "${BOOT_PART}" ]]; then
-  # Fallback: try kpartx
-  if command -v kpartx &>/dev/null; then
-    warn "${BOOT_PART} not found — trying kpartx ..."
-    sudo kpartx -av "${LOOP}" >/dev/null
-    BOOT_PART="/dev/mapper/$(basename "${LOOP}")p1"
-    sleep 1
+# ---------------------------------------------------------------------------
+# Step 2b: Print partition table for visibility
+# ---------------------------------------------------------------------------
+info "Partition layout of base image:"
+sudo fdisk -l "${LOOP}" 2>/dev/null | grep -E "^Device|^/dev"
+echo ""
+info "Partition filesystem types (blkid):"
+sudo blkid "${LOOP}"p* 2>/dev/null || true
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 2c: Auto-detect the FAT32 boot partition (PARTLABEL=bootfs or vfat)
+#          SpacemiT/Bianbu images have the layout:
+#            p1 fsbl  (raw)    p2 env (raw)  p3 opensbi (raw)  p4 uboot (raw)
+#            p5 bootfs (FAT32) p6 rootfs (ext4)
+#          buildroot images have:
+#            p1 boot (FAT32)   p2 rootfs (ext4)
+#          We auto-detect by scanning for the vfat partition.
+# ---------------------------------------------------------------------------
+BOOT_PART=""
+ROOTFS_PART=""
+
+for part in "${LOOP}"p*; do
+  [[ -b "${part}" ]] || continue
+  FSTYPE=$(sudo blkid -o value -s TYPE "${part}" 2>/dev/null || true)
+  PARTLABEL=$(sudo blkid -o value -s PARTLABEL "${part}" 2>/dev/null || true)
+  LABEL=$(sudo blkid -o value -s LABEL "${part}" 2>/dev/null || true)
+
+  if [[ "${FSTYPE}" == "vfat" ]]; then
+    # Prefer partition explicitly labelled "bootfs" if there are multiple vfat
+    if [[ -z "${BOOT_PART}" || "${PARTLABEL,,}" == "bootfs" || "${LABEL,,}" == "bootfs" ]]; then
+      BOOT_PART="${part}"
+      info "  Detected FAT32 boot partition : ${part} (PARTLABEL=${PARTLABEL} LABEL=${LABEL})"
+    fi
+  elif [[ "${FSTYPE}" == "ext4" ]]; then
+    if [[ -z "${ROOTFS_PART}" || "${PARTLABEL,,}" == "rootfs" || "${LABEL,,}" == "rootfs" ]]; then
+      ROOTFS_PART="${part}"
+      ROOTFS_UUID=$(sudo blkid -o value -s UUID "${part}" 2>/dev/null || true)
+      info "  Detected ext4 rootfs partition: ${part} (UUID=${ROOTFS_UUID} PARTLABEL=${PARTLABEL})"
+    fi
   fi
-fi
-[[ -b "${BOOT_PART}" ]] || {
+done
+
+if [[ -z "${BOOT_PART}" ]]; then
   sudo losetup -d "${LOOP}" 2>/dev/null || true
-  die "Boot partition device not found: ${BOOT_PART}
-       Ensure the base image has a valid GPT/MBR partition table."
-}
+  die "No FAT32 (vfat) boot partition found in ${IMG}.
+       Run: sudo blkid \$(sudo losetup -Pf --show ${IMG})p*
+       to inspect the partition layout manually."
+fi
+
+ok "Boot partition : ${BOOT_PART}"
+[[ -n "${ROOTFS_PART}" ]] && ok "Rootfs partition: ${ROOTFS_PART} (UUID=${ROOTFS_UUID:-unknown})"
+echo ""
 
 # ---------------------------------------------------------------------------
 # Step 3: Mount the boot partition
@@ -168,10 +205,53 @@ sudo mount "${BOOT_PART}" "${MOUNT_POINT}"
 ok "Boot partition mounted."
 
 # ---------------------------------------------------------------------------
-# Step 4: Show existing boot partition contents
+# Step 4: Read and display original extlinux.conf from base image
+#         Extract root= device and initrd path so we can preserve them.
 # ---------------------------------------------------------------------------
+ORIG_EXTLINUX=""
+for try_path in \
+    "${MOUNT_POINT}/extlinux/extlinux.conf" \
+    "${MOUNT_POINT}/boot/extlinux/extlinux.conf"; do
+  if [[ -f "${try_path}" ]]; then
+    ORIG_EXTLINUX="${try_path}"
+    break
+  fi
+done
+
+ORIG_ROOT=""
+ORIG_INITRD=""
+ORIG_FDT=""
+
+if [[ -n "${ORIG_EXTLINUX}" ]]; then
+  info "─────────────────────────────────────────────────────"
+  info "Original extlinux.conf from base image:"
+  cat "${ORIG_EXTLINUX}"
+  info "─────────────────────────────────────────────────────"
+  echo ""
+
+  # Extract root= value (take the first append line's root=...)
+  ORIG_ROOT=$(grep -m1 'root=' "${ORIG_EXTLINUX}" | \
+              grep -oE 'root=[^ ]+' | head -1 | sed 's/root=//' || true)
+
+  # Extract initrd path (first initrd line)
+  ORIG_INITRD=$(grep -m1 -iE '^\s*initrd' "${ORIG_EXTLINUX}" | \
+                awk '{print $2}' || true)
+
+  # Extract fdt/dtb path (first fdt line)
+  ORIG_FDT=$(grep -m1 -iE '^\s*fdt\b' "${ORIG_EXTLINUX}" | \
+             awk '{print $2}' || true)
+
+  [[ -n "${ORIG_ROOT}" ]]   && info "Detected root device : ${ORIG_ROOT}"
+  [[ -n "${ORIG_INITRD}" ]] && info "Detected initrd      : ${ORIG_INITRD}"
+  [[ -n "${ORIG_FDT}" ]]    && info "Detected fdt         : ${ORIG_FDT}"
+else
+  warn "No extlinux.conf found in base image boot partition."
+  warn "Will use configs/extlinux.conf from repo unchanged."
+fi
+echo ""
+
 info "Existing boot partition contents:"
-ls -lh "${MOUNT_POINT}/" 2>/dev/null | head -20 || true
+ls -lh "${MOUNT_POINT}/" 2>/dev/null | head -30 || true
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -183,6 +263,7 @@ ok "Kernel injected."
 
 # ---------------------------------------------------------------------------
 # Step 6: Inject DTBs
+#         Try to place them where the base image's extlinux.conf expects them.
 # ---------------------------------------------------------------------------
 info "Copying DTBs ..."
 sudo mkdir -p "${MOUNT_POINT}/dtbs/spacemit"
@@ -199,11 +280,82 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7: Inject extlinux.conf
+# Step 7: Build and inject extlinux.conf
+#
+# Priority of values used in the generated extlinux.conf:
+#   root=    → from base image's original extlinux.conf (if detected),
+#              otherwise fall back to repo configs/extlinux.conf value
+#   initrd   → from base image's original extlinux.conf (if detected),
+#              otherwise omitted
+#   fdt      → always /dtbs/spacemit/k1-x_milkv-jupiter.dtb (EVL DTB)
+#   console  → always "console=tty1 console=ttyS0,115200" (HDMI + serial)
 # ---------------------------------------------------------------------------
-info "Injecting extlinux.conf ..."
+info "Building extlinux.conf ..."
+
+# Determine root= value.  Priority (highest to lowest):
+#   1. root= from base image's original extlinux.conf  (most accurate)
+#   2. UUID= from blkid of the detected ext4 rootfs partition
+#   3. Fallback to value in repo configs/extlinux.conf
+if [[ -n "${ORIG_ROOT}" ]]; then
+  BOOT_ROOT="${ORIG_ROOT}"
+  info "  Using root= from base image extlinux.conf: ${BOOT_ROOT}"
+elif [[ -n "${ROOTFS_UUID:-}" ]]; then
+  BOOT_ROOT="UUID=${ROOTFS_UUID}"
+  info "  Using root= from blkid of rootfs partition: ${BOOT_ROOT}"
+else
+  BOOT_ROOT=$(grep -m1 'root=' "${EXTLINUX_CONF}" | \
+              grep -oE 'root=[^ ]+' | head -1 | sed 's/root=//' || echo "/dev/mmcblk0p2")
+  warn "  Could not detect root from base image — using fallback: ${BOOT_ROOT}"
+fi
+
+# Determine initrd line (optional)
+INITRD_LINE=""
+if [[ -n "${ORIG_INITRD}" ]]; then
+  INITRD_LINE="    initrd ${ORIG_INITRD}"
+  info "  Using initrd from base image: ${ORIG_INITRD}"
+fi
+
+# Detect additional kernel args from base image (e.g. rd.debug, loglevel, etc.)
+ORIG_EXTRA_ARGS=""
+if [[ -n "${ORIG_EXTLINUX}" ]]; then
+  # Extract everything after 'append' except root=, console=, earlycon=, rootwait, rw
+  ORIG_EXTRA_ARGS=$(grep -m1 'append' "${ORIG_EXTLINUX}" | \
+    sed 's/.*append//' | \
+    sed -E 's/root=[^ ]+//g' | \
+    sed -E 's/console=[^ ]+//g' | \
+    sed -E 's/earlycon=[^ ]+//g' | \
+    sed -E 's/\brootwait\b//g' | \
+    sed -E 's/\brw\b//g' | \
+    tr -s ' ' | sed 's/^ //' | sed 's/ $//' || true)
+  [[ -n "${ORIG_EXTRA_ARGS}" ]] && info "  Extra args from base image: ${ORIG_EXTRA_ARGS}"
+fi
+
+# Write the merged extlinux.conf
+DEST_EXTLINUX="${MOUNT_POINT}/extlinux/extlinux.conf"
 sudo mkdir -p "${MOUNT_POINT}/extlinux"
-sudo cp "${EXTLINUX_CONF}" "${MOUNT_POINT}/extlinux/extlinux.conf"
+
+sudo tee "${DEST_EXTLINUX}" > /dev/null <<EXTLINUX_EOF
+# Generated by make-full-sdcard-img.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Base image : $(basename "${BASE_IMAGE}")
+# EVL kernel : $(basename "${KERNEL_IMAGE}") — built $(date +%Y-%m-%d)
+#
+# console=tty1 enables HDMI output.  console=ttyS0,115200 enables serial UART.
+# Both are listed so output goes to both simultaneously.
+
+default EVL
+timeout 30
+prompt 1
+
+label EVL
+    menu label SpacemiT K1 + EVL Xenomai4 kernel
+    linux /Image
+${INITRD_LINE:+${INITRD_LINE}
+}    fdt /dtbs/spacemit/k1-x_milkv-jupiter.dtb
+    append earlycon=sbi console=tty1 console=ttyS0,115200 root=${BOOT_ROOT} rootwait rw${ORIG_EXTRA_ARGS:+ ${ORIG_EXTRA_ARGS}}
+EXTLINUX_EOF
+
+info "Generated extlinux.conf:"
+cat "${DEST_EXTLINUX}"
 ok "extlinux.conf injected."
 
 # ---------------------------------------------------------------------------
