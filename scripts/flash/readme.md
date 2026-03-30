@@ -9,52 +9,94 @@ Flash the EVL-patched SpacemiT K1 kernel onto an SD card for Milk-V Jupiter boot
   - If not, flash the full OS first: https://milkv.io/docs/jupiter/getting-started/boot
   - Then re-run this script to replace only the kernel
 
-## WSL2: Attach SD Card via usbipd-win
+---
 
-WSL2 does not see USB block devices by default. Use `usbipd-win` to pass the SD card through.
+## Option A: Flash from a Native Linux Machine (Recommended)
 
-### Step 1 — Install usbipd-win (Windows PowerShell, Admin)
-
-```powershell
-winget install --interactive --exact dorssel.usbipd-win
-```
-
-Restart PowerShell as Administrator after installation.
-
-### Step 2 — Identify and attach the SD card (Windows PowerShell, Admin)
-
-```powershell
-# List all USB devices — note the BUSID of your SD card reader
-usbipd list
-
-# One-time bind (replace 4-4 with your actual BUSID)
-usbipd bind --busid 4-4
-
-# Attach to WSL2
-usbipd attach --wsl --busid 4-4
-```
-
-### Step 3 — Verify in WSL2
+If you have access to a native Linux machine (or a Linux live USB), this is the simplest path.
 
 ```bash
-lsblk -o NAME,SIZE,TYPE,MOUNTPOINT,LABEL,MODEL
-# A new disk should appear, e.g. /dev/sdd with two partitions:
-#   sdd1  FAT32  boot
-#   sdd2  ext4   rootfs
+# Insert SD card, find device (e.g. /dev/sdb)
+lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT,LABEL,MODEL
+
+# Clone this repo and run the flash script
+git clone https://github.com/YOUR_REPO/spacemit-xenomai.git
+bash spacemit-xenomai/scripts/flash/flash-sdcard.sh /dev/sdb ~/work/build-k1
 ```
 
-## Flash the Kernel
+---
+
+## Option B: Flash from Windows (No WSL2 Required)
+
+The WSL2 default kernel (`5.15.167.4-microsoft-standard-WSL2`) does **not** include
+`CONFIG_USB_STORAGE`, so USB SD card readers are not visible as block devices in WSL2.
+
+Instead, copy the files directly from Windows using one of these methods:
+
+### Method B1: Windows Explorer (Manual)
+
+1. Insert the SD card — Windows will mount the FAT32 boot partition (e.g. `D:\`)
+2. Copy files from WSL2 to Windows:
+   ```powershell
+   # In PowerShell — WSL2 files are accessible at \\wsl$\Ubuntu\...
+   $build = "\\wsl$\Ubuntu\home\lindows\work\build-k1"
+   $repo  = "\\wsl$\Ubuntu\home\lindows\projects\spacemit-xenomai"
+   $boot  = "D:\"   # adjust to your SD card drive letter
+
+   # Copy kernel image
+   Copy-Item "$build\arch\riscv\boot\Image" "$boot\Image" -Force
+
+   # Copy DTBs
+   New-Item -ItemType Directory -Force "$boot\dtbs\spacemit"
+   Copy-Item "$build\arch\riscv\boot\dts\spacemit\*.dtb" "$boot\dtbs\spacemit\" -Force
+
+   # Copy extlinux.conf
+   New-Item -ItemType Directory -Force "$boot\extlinux"
+   Copy-Item "$repo\configs\extlinux.conf" "$boot\extlinux\extlinux.conf" -Force
+   ```
+
+### Method B2: Automated PowerShell Script
+
+Save and run [`scripts/flash/flash-windows.ps1`](flash-windows.ps1) in PowerShell:
+
+```powershell
+# Run from PowerShell (no Admin required)
+.\scripts\flash\flash-windows.ps1 -BootDrive D:
+```
+
+---
+
+## Option C: WSL2 with Custom Kernel (Advanced)
+
+Build a custom WSL2 kernel with `CONFIG_USB_STORAGE=y` to enable SD card access from WSL2.
 
 ```bash
-bash scripts/flash/flash-sdcard.sh /dev/sdd ~/work/build-k1
+# Clone WSL2 kernel source
+git clone --depth=1 --branch linux-msft-wsl-5.15.167.4 \
+  https://github.com/microsoft/WSL2-Linux-Kernel.git ~/work/wsl2-kernel
+
+# Enable USB storage
+cd ~/work/wsl2-kernel
+cp Microsoft/config-wsl .config
+scripts/config --enable CONFIG_USB_STORAGE --enable CONFIG_USB \
+               --enable CONFIG_SCSI --enable CONFIG_BLK_DEV_SD
+make olddefconfig
+make -j$(nproc) LOCALVERSION="-usb"
+
+# Install custom kernel
+mkdir -p /mnt/c/wsl2-kernels
+cp arch/x86/boot/bzImage /mnt/c/wsl2-kernels/bzImage-usb
 ```
 
-The script will:
-1. Mount the FAT32 boot partition (`/dev/sdd1`)
-2. Copy `Image` (kernel) to `/boot/Image`
-3. Copy 26 DTBs to `/boot/dtbs/spacemit/`
-4. Copy `configs/extlinux.conf` to `/boot/extlinux/extlinux.conf`
-5. Optionally install kernel modules to the rootfs partition
+Then add to `C:\Users\<you>\.wslconfig`:
+```ini
+[wsl2]
+kernel=C:\\wsl2-kernels\\bzImage-usb
+```
+
+Restart WSL2 (`wsl --shutdown` in PowerShell), then re-attach the SD card via usbipd and run `flash-sdcard.sh`.
+
+---
 
 ## Boot Configuration
 
