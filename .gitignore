@@ -13,7 +13,8 @@ evl-src/
 xenomai-*/
 
 # ----- Build output & intermediate artefacts ----------------
-build/
+# Note: 'build/' would also match scripts/build/ — use more specific paths instead
+/build/
 out/
 output/
 *.o
@@ -93,6 +94,9 @@ tmp/
 temp/
 logs/
 
+# ----- Auto-generated environment file (machine-specific) ---
+scripts/build/env.sh
+
 # ----- Secrets / credentials --------------------------------
 *.pem
 *.key
@@ -101,7 +105,7 @@ secrets/
 .env
 .env.*
 
-# ----- SD card / flash staging ------------------------------
-sdcard/
-flash/
-mnt/
+# ----- SD card / flash staging (top-level only) -------------
+/sdcard/
+/flash/
+/mnt/
