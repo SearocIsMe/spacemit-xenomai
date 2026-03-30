@@ -143,28 +143,35 @@ if [[ -z "${FROM_COMMIT}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# List commits to extract
+# List commits to extract (skip if still shallow — go straight to fs diff)
 # ---------------------------------------------------------------------------
-info "Listing commits from ${FROM_COMMIT}..${TO_COMMIT} in ${GIT_TREE} ..."
+_STILL_SHALLOW=0
+git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true" && _STILL_SHALLOW=1
 
 GREP_ARGS=()
 if [[ -n "${GREP_PATTERN}" ]]; then
   GREP_ARGS=(--grep="${GREP_PATTERN}")
 fi
 
-COMMITS=$(git log \
-  --oneline \
-  --reverse \
-  "${GREP_ARGS[@]}" \
-  "${FROM_COMMIT}..${TO_COMMIT}" \
-  -- \
-  arch/riscv/ \
-  include/asm-generic/dovetail.h \
-  include/linux/dovetail.h \
-  include/linux/irq_pipeline.h \
-  kernel/dovetail/ \
-  kernel/evl/ \
-  2>/dev/null)
+COMMITS=""
+if [[ ${_STILL_SHALLOW} -eq 1 ]]; then
+  warn "Repository is still shallow — skipping git log, using filesystem diff."
+else
+  info "Listing commits from ${FROM_COMMIT}..${TO_COMMIT} in ${GIT_TREE} ..."
+  COMMITS=$(git log \
+    --oneline \
+    --reverse \
+    "${GREP_ARGS[@]}" \
+    "${FROM_COMMIT}..${TO_COMMIT}" \
+    -- \
+    arch/riscv/ \
+    include/asm-generic/dovetail.h \
+    include/linux/dovetail.h \
+    include/linux/irq_pipeline.h \
+    kernel/dovetail/ \
+    kernel/evl/ \
+    2>/dev/null)
+fi
 
 if [[ -z "${COMMITS}" ]]; then
   warn "No commits found via git log (repo may still be shallow or RISC-V"
