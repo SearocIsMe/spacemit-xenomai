@@ -28,7 +28,11 @@ BUILD_DIR="${WORK_DIR}/build-k1"
 TOOLCHAIN_DIR="${WORK_DIR}/toolchain"
 
 KERNEL_REPO="https://gitee.com/spacemit-buildroot/linux-6.6-v2.1.y.git"
-KERNEL_BRANCH="v6.6.63"
+# k1-bl-v2.1.y is the SpacemiT development branch with all K1-specific
+# configs, drivers, and defconfigs (spacemit_k1_v2_defconfig etc.).
+# The v6.6.63 tag only points to the vanilla Linux merge base — it has
+# no SpacemiT-specific content.
+KERNEL_BRANCH="k1-bl-v2.1.y"
 
 # source.denx.de mirror (primary — git.evlproject.org is often unreachable)
 # Use the tag that matches our SpacemiT kernel base (v6.6.63)

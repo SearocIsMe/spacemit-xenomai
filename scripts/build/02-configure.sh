@@ -53,12 +53,15 @@ cd "${KERNEL_DIR}"
 # ---------------------------------------------------------------------------
 # Step 1: Apply base SpacemiT defconfig
 # ---------------------------------------------------------------------------
-info "Applying base defconfig: spacemit_k1_v2_defconfig ..."
+# SpacemiT K1 defconfig — the actual name in the k1-bl-v2.1.y branch is
+# k1_defconfig (not spacemit_k1_v2_defconfig which was a placeholder name).
+BASE_DEFCONFIG="${BASE_DEFCONFIG:-k1_defconfig}"
+info "Applying base defconfig: ${BASE_DEFCONFIG} ..."
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
   O="${BUILD_DIR}" \
-  spacemit_k1_v2_defconfig
+  "${BASE_DEFCONFIG}"
 ok "Base defconfig applied."
 
 # ---------------------------------------------------------------------------

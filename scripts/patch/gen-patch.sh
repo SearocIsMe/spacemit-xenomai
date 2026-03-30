@@ -217,6 +217,9 @@ if [[ -z "${COMMITS}" ]]; then
       fi
     }
 
+    # NOTE: bash command substitution $(...) strips trailing newlines.
+    # We must append $'\n' after each _git_diff_file call so that the
+    # "diff --git a/..." header of the next file starts on its own line.
     _diff_output=""
     for _path in "${_DIFF_PATHS[@]}"; do
       _evl_path="${GIT_TREE}/${_path}"
@@ -229,20 +232,20 @@ if [[ -z "${COMMITS}" ]]; then
               _rel="${_f#${GIT_TREE}/}"
               _bf="${BASE_TREE}/${_rel}"
               [[ -f "${_bf}" ]] || _bf="/dev/null"
-              _diff_output+=$(_git_diff_file "${_rel}" "${_bf}" "${_f}" || true)
-            done < <(find "${_evl_path}" -type f -print0)
+              _diff_output+=$(_git_diff_file "${_rel}" "${_bf}" "${_f}" || true)$'\n'
+            done < <(find "${_evl_path}" -type f -print0 | sort -z)
           else
-            _diff_output+=$(_git_diff_file "${_path}" "${_base_path}" "${_evl_path}" || true)
+            _diff_output+=$(_git_diff_file "${_path}" "${_base_path}" "${_evl_path}" || true)$'\n'
           fi
         else
           # New file/dir in EVL — diff against /dev/null
           if [[ -d "${_evl_path}" ]]; then
             while IFS= read -r -d '' _f; do
               _rel="${_f#${GIT_TREE}/}"
-              _diff_output+=$(_git_diff_file "${_rel}" "/dev/null" "${_f}" || true)
-            done < <(find "${_evl_path}" -type f -print0)
+              _diff_output+=$(_git_diff_file "${_rel}" "/dev/null" "${_f}" || true)$'\n'
+            done < <(find "${_evl_path}" -type f -print0 | sort -z)
           else
-            _diff_output+=$(_git_diff_file "${_path}" "/dev/null" "${_evl_path}" || true)
+            _diff_output+=$(_git_diff_file "${_path}" "/dev/null" "${_evl_path}" || true)$'\n'
           fi
         fi
       fi
