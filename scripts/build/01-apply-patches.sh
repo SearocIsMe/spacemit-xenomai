@@ -79,26 +79,52 @@ fi
 PATCH_FILES=($(find "${PATCHES_DIR}" -name "*.patch" | sort))
 
 if [[ ${#PATCH_FILES[@]} -eq 0 ]]; then
-  warn "No .patch files found in ${PATCHES_DIR}."
-  warn ""
-  warn "STATUS: As of 2026-03, RISC-V Dovetail arch hooks are NOT yet present"
-  warn "        in any stable EVL branch. The EVL tree at ~/work/linux-evl"
-  warn "        (tag: v6.6.63-evl2-rebase) contains kernel/dovetail/, kernel/evl/,"
-  warn "        include/linux/dovetail.h and irq_pipeline.h — but NO arch/riscv/"
-  warn "        Dovetail hooks. These must be sourced from the EVL mailing list"
-  warn "        or written manually."
-  warn ""
-  warn "NEXT STEPS:"
-  warn "  Option A — Get patches from EVL mailing list:"
-  warn "    https://xenomai.org/pipermail/xenomai/"
-  warn "    Search: 'riscv dovetail' — save .patch files to ${PATCHES_DIR}/"
-  warn ""
-  warn "  Option B — Generate from EVL tree (once RISC-V support lands upstream):"
-  warn "    bash scripts/patch/gen-patch.sh"
-  warn "    (auto-unshallows ~/work/linux-evl and extracts RISC-V Dovetail commits)"
-  warn ""
-  warn "  See docs/porting-notes.md section 2 for full details."
-  exit 0
+  info "No .patch files found in ${PATCHES_DIR}."
+  info "Attempting to generate patches from EVL tree via gen-patch.sh ..."
+  echo ""
+
+  GEN_PATCH_SCRIPT="${REPO_ROOT}/scripts/patch/gen-patch.sh"
+  if [[ ! -f "${GEN_PATCH_SCRIPT}" ]]; then
+    die "gen-patch.sh not found at ${GEN_PATCH_SCRIPT}"
+  fi
+
+  if [[ ! -d "${EVL_KERNEL_DIR}/.git" ]]; then
+    warn "EVL kernel tree not found at ${EVL_KERNEL_DIR}."
+    warn "Run 00-setup-env.sh first to clone it."
+    warn ""
+    warn "If RISC-V Dovetail patches are not yet in the EVL tree, obtain them"
+    warn "from the EVL mailing list: https://xenomai.org/pipermail/xenomai/"
+    warn "Search: 'riscv dovetail' — save .patch files to ${PATCHES_DIR}/"
+    warn "See docs/porting-notes.md section 2 for full details."
+    exit 0
+  fi
+
+  # Run gen-patch.sh non-interactively; it will auto-unshallow if needed
+  bash "${GEN_PATCH_SCRIPT}" --yes
+
+  # Re-scan for patches after generation
+  PATCH_FILES=($(find "${PATCHES_DIR}" -name "*.patch" | sort))
+
+  if [[ ${#PATCH_FILES[@]} -eq 0 ]]; then
+    warn ""
+    warn "gen-patch.sh found no RISC-V Dovetail commits in the EVL tree."
+    warn ""
+    warn "STATUS: As of 2026-03, RISC-V Dovetail arch hooks (arch/riscv/ hooks,"
+    warn "        include/asm-generic/dovetail.h) are NOT yet in any stable EVL"
+    warn "        branch. The EVL tree contains kernel/evl/ and kernel/dovetail/"
+    warn "        but no arch/riscv/ Dovetail integration."
+    warn ""
+    warn "NEXT STEPS — obtain patches manually:"
+    warn "  1. Check EVL mailing list: https://xenomai.org/pipermail/xenomai/"
+    warn "     Search: 'riscv dovetail' — save .patch files to ${PATCHES_DIR}/"
+    warn "  2. Re-run: bash scripts/build/01-apply-patches.sh"
+    warn ""
+    warn "  See docs/porting-notes.md section 2 for full details."
+    exit 0
+  fi
+
+  info "Generated ${#PATCH_FILES[@]} patch(es). Proceeding to apply ..."
+  echo ""
 fi
 
 info "Applying ${#PATCH_FILES[@]} patch(es) ..."
