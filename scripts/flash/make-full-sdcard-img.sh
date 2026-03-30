@@ -311,21 +311,30 @@ if [[ -f "${ENV_FILE}" ]]; then
   cat "${ENV_FILE}"
   echo ""
 
-  # Check if console=tty1 is already present
-  if sudo grep -q 'console=tty1' "${ENV_FILE}" 2>/dev/null; then
-    ok "env_k1-x.txt already has console=tty1 — no change needed."
-  else
-    # Replace "console=ttyS0,..." with "console=tty1 console=ttyS0,..."
-    # This preserves the exact ttyS0 baud rate from the original file.
+  # 1. Add console=tty1 before console=ttyS0 so HDMI shows kernel output.
+  #    Without this, all output goes to UART only and HDMI shows blank cursor.
+  if ! sudo grep -q 'console=tty1' "${ENV_FILE}" 2>/dev/null; then
     sudo sed -i 's|console=ttyS0|console=tty1 console=ttyS0|g' "${ENV_FILE}"
     ok "Added console=tty1 to env_k1-x.txt"
+  fi
+
+  # 2. Force systemd to boot into multi-user (text) target instead of graphical.
+  #    Bianbu's graphical target (lightdm/weston) may fail on the EVL kernel due
+  #    to compositor or GPU driver differences, leaving a blank cursor on HDMI.
+  #    multi-user.target gives a standard text login prompt instead.
+  #    To re-enable graphical later: remove "systemd.unit=multi-user.target"
+  #    from env_k1-x.txt, or run: systemctl set-default graphical.target
+  if ! sudo grep -q 'systemd.unit' "${ENV_FILE}" 2>/dev/null; then
+    # Append to the console= line (which is the first line with console=)
+    sudo sed -i 's|\(console=ttyS0[^ ]*\)|\1 systemd.unit=multi-user.target|g' "${ENV_FILE}"
+    ok "Added systemd.unit=multi-user.target to env_k1-x.txt (skip graphical target)"
   fi
 
   info "Updated env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
   echo ""
 else
-  warn "env_k1-x.txt not found in bootfs — cannot add console=tty1."
+  warn "env_k1-x.txt not found in bootfs — cannot add console=tty1 or systemd.unit."
   warn "HDMI output may not be visible; use serial UART to debug."
 fi
 
