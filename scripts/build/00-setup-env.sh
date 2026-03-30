@@ -46,10 +46,15 @@ EVL_KERNEL_BRANCH_FALLBACK="evl/master"
 LIBEVL_REPO="https://source.denx.de/Xenomai/xenomai4/libevl.git"
 LIBEVL_REPO_FALLBACK="https://git.evlproject.org/libevl.git"
 
-# RISC-V cross-compiler prefix
+# RISC-V cross-compiler prefix (riscv-collab pre-built toolchain)
 CROSS_COMPILE="${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-"
-# Fallback to system toolchain if custom not downloaded
+# System toolchain fallback prefix
 SYSTEM_CROSS="riscv64-linux-gnu-"
+# Minimum GCC version required (SpacemiT K1 uses zicond, needs GCC 13+)
+GCC_MIN_VERSION=13
+# riscv-collab pre-built toolchain download (Ubuntu 22.04, GCC 14, glibc)
+TOOLCHAIN_URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2026.03.28/riscv64-glibc-ubuntu-22.04-gcc.tar.xz"
+TOOLCHAIN_ARCHIVE="${WORK_DIR}/riscv64-glibc-gcc.tar.xz"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -142,13 +147,71 @@ fi
 # ---------------------------------------------------------------------------
 info "Checking RISC-V cross-compiler ..."
 
-if command -v riscv64-linux-gnu-gcc &>/dev/null; then
-  ok "System RISC-V toolchain found: $(riscv64-linux-gnu-gcc --version | head -1)"
-  CROSS_COMPILE="${SYSTEM_CROSS}"
-else
-  warn "System RISC-V toolchain not found."
+# Helper: extract GCC major version number
+_gcc_major() { "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1; }
+
+_use_custom_toolchain=0
+
+# Check if custom toolchain already installed
+if [[ -x "${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-gcc" ]]; then
+  _ver=$(_gcc_major "${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-gcc")
+  if [[ "${_ver:-0}" -ge "${GCC_MIN_VERSION}" ]]; then
+    ok "Custom toolchain found (GCC ${_ver}): ${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-gcc"
+    CROSS_COMPILE="${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-"
+    _use_custom_toolchain=1
+  else
+    warn "Custom toolchain GCC ${_ver} is too old (need >= ${GCC_MIN_VERSION}) — will re-download."
+  fi
+fi
+
+# Check system toolchain version
+if [[ ${_use_custom_toolchain} -eq 0 ]] && command -v "${SYSTEM_CROSS}gcc" &>/dev/null; then
+  _ver=$(_gcc_major "${SYSTEM_CROSS}gcc")
+  if [[ "${_ver:-0}" -ge "${GCC_MIN_VERSION}" ]]; then
+    ok "System RISC-V toolchain GCC ${_ver} is sufficient: $(${SYSTEM_CROSS}gcc --version | head -1)"
+    CROSS_COMPILE="${SYSTEM_CROSS}"
+    _use_custom_toolchain=0
+  else
+    warn "System RISC-V toolchain GCC ${_ver} is too old (need >= ${GCC_MIN_VERSION})."
+    warn "SpacemiT K1 kernel uses zicond ISA extension which requires GCC 13+."
+    warn "Downloading riscv-collab pre-built toolchain (GCC 14) ..."
+    # Download and extract
+    if [[ ! -f "${TOOLCHAIN_ARCHIVE}" ]]; then
+      info "Downloading: ${TOOLCHAIN_URL}"
+      info "This is ~200MB — may take a few minutes ..."
+      curl -L --progress-bar -o "${TOOLCHAIN_ARCHIVE}" "${TOOLCHAIN_URL}" \
+        || { warn "Download failed. Set CROSS_COMPILE manually."; CROSS_COMPILE="${SYSTEM_CROSS}"; }
+    fi
+    if [[ -f "${TOOLCHAIN_ARCHIVE}" ]]; then
+      info "Extracting toolchain to ${TOOLCHAIN_DIR} ..."
+      tar -xf "${TOOLCHAIN_ARCHIVE}" -C "${WORK_DIR}" 2>/dev/null
+      # The archive extracts to a subdirectory — find the bin/ dir
+      _tc_bin=$(find "${WORK_DIR}" -maxdepth 3 -name "riscv64-unknown-linux-gnu-gcc" 2>/dev/null | head -1)
+      if [[ -n "${_tc_bin}" ]]; then
+        _tc_dir=$(dirname "${_tc_bin}")
+        # Symlink or move to expected location
+        if [[ "${_tc_dir}" != "${TOOLCHAIN_DIR}/bin" ]]; then
+          _tc_root=$(dirname "${_tc_dir}")
+          rm -rf "${TOOLCHAIN_DIR}"
+          ln -sfn "${_tc_root}" "${TOOLCHAIN_DIR}"
+        fi
+        CROSS_COMPILE="${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-"
+        _ver=$(_gcc_major "${TOOLCHAIN_DIR}/bin/riscv64-unknown-linux-gnu-gcc")
+        ok "Toolchain installed: GCC ${_ver} at ${TOOLCHAIN_DIR}"
+        _use_custom_toolchain=1
+      else
+        warn "Could not find riscv64-unknown-linux-gnu-gcc after extraction."
+        warn "Falling back to system toolchain (build may fail for zicond)."
+        CROSS_COMPILE="${SYSTEM_CROSS}"
+      fi
+    fi
+  fi
+fi
+
+if [[ ${_use_custom_toolchain} -eq 0 ]] && ! command -v "${SYSTEM_CROSS}gcc" &>/dev/null; then
+  warn "No RISC-V cross-compiler found."
   warn "Install with: sudo apt-get install gcc-riscv64-linux-gnu"
-  warn "Or download a pre-built toolchain to ${TOOLCHAIN_DIR}"
+  warn "Or re-run this script to auto-download the riscv-collab toolchain."
   warn "Continuing — you must set CROSS_COMPILE before building."
 fi
 

@@ -113,5 +113,14 @@ CONFIG_PACKET=y
 # PREEMPT_RT is mutually exclusive with EVL/Dovetail
 # CONFIG_PREEMPT_RT is not set
 
-# Disable CPU frequency scaling during RT testing (can cause latency spikes)
-# CONFIG_CPU_FREQ is not set  # Uncomment if latency spikes observed
+# NOTE: Do NOT disable CONFIG_CPU_FREQ here — SpacemiT MMC driver
+# (sdhci-of-k1x) calls cpufreq_generic_get() and requires CPU_FREQ=y.
+# If you observe latency spikes from cpufreq, use the cpufreq governor
+# 'performance' at runtime instead: cpupower frequency-set -g performance
+
+# Disable vendor WiFi drivers that fail to build with GCC 13+:
+#   - bcmdhd: uses #include <typedefs.h> (missing include path with new toolchain)
+#   - rtl8852bs: uses CONFIG_LITTLE_ENDIAN (wrong symbol; RISC-V uses CPU_LITTLE_ENDIAN)
+# These are not needed for real-time EVL work.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set
