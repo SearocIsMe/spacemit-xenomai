@@ -77,10 +77,17 @@ cd "${GIT_TREE}"
 # Handle shallow clone — unshallow if needed
 # ---------------------------------------------------------------------------
 if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
-  warn "Repository is a shallow clone. Fetching full history (this may take a while) ..."
-  git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating)" || true
+  warn "Repository is a shallow clone. Fetching full history ..."
+  warn "This downloads the full kernel history (~1 GB). May take 10-30 min."
+  # Use timeout to avoid blocking indefinitely on slow connections
+  if command -v timeout &>/dev/null; then
+    timeout 1800 git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating|fatal)" || true
+  else
+    git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating|fatal)" || true
+  fi
   if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
-    warn "Unshallow may still be in progress or failed. Continuing with available history."
+    warn "Unshallow incomplete (still shallow). Continuing with available history."
+    warn "You can run 'git fetch --unshallow' in ${GIT_TREE} manually to complete it."
   else
     ok "Unshallow complete."
   fi
