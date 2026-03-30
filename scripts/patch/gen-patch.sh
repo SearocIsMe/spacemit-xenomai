@@ -78,23 +78,15 @@ mkdir -p "${OUTPUT_DIR}"
 cd "${GIT_TREE}"
 
 # ---------------------------------------------------------------------------
-# Handle shallow clone — unshallow if needed
+# Check shallow clone — note it but do NOT attempt unshallow automatically.
+# Unshallowing a kernel repo downloads ~1 GB and is unreliable on slow links.
+# The filesystem diff fallback works fine with a shallow clone.
+# To unshallow manually: cd ~/work/linux-evl && git fetch --unshallow
 # ---------------------------------------------------------------------------
+_STILL_SHALLOW=0
 if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
-  warn "Repository is a shallow clone. Fetching full history ..."
-  warn "This downloads the full kernel history (~1 GB). May take 10-30 min."
-  # Use timeout to avoid blocking indefinitely on slow connections
-  if command -v timeout &>/dev/null; then
-    timeout 1800 git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating|fatal)" || true
-  else
-    git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating|fatal)" || true
-  fi
-  if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
-    warn "Unshallow incomplete (still shallow). Continuing with available history."
-    warn "You can run 'git fetch --unshallow' in ${GIT_TREE} manually to complete it."
-  else
-    ok "Unshallow complete."
-  fi
+  _STILL_SHALLOW=1
+  info "EVL repo is a shallow clone — will use filesystem diff (no unshallow needed)."
 fi
 
 # ---------------------------------------------------------------------------
