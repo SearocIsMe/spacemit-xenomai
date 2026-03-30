@@ -46,6 +46,13 @@ NPROC=$(nproc)
 JOBS="${JOBS:-$((NPROC > 16 ? 16 : NPROC))}"
 MODULES_INSTALL_DIR="${BUILD_DIR}/modules_install"
 
+# LOCALVERSION must be passed on the make command line (not just via config).
+# scripts/setlocalversion independently appends '+' when git tree is dirty,
+# regardless of CONFIG_LOCALVERSION / CONFIG_LOCALVERSION_AUTO settings.
+# Passing LOCALVERSION="" here suppresses that suffix so the kernel version
+# string is exactly "6.6.63" — matching the Bianbu initramfs lib/modules path.
+LOCALVERSION=""
+
 # ---------------------------------------------------------------------------
 # Verify prerequisites
 # ---------------------------------------------------------------------------
@@ -55,6 +62,35 @@ command -v "${CROSS_COMPILE}gcc" &>/dev/null || \
   die "Cross-compiler not found: ${CROSS_COMPILE}gcc"
 
 cd "${KERNEL_DIR}"
+
+# ---------------------------------------------------------------------------
+# Suppress automatic version suffix (+)
+#
+# scripts/setlocalversion appends '+' when the git tree has uncommitted
+# changes, regardless of CONFIG_LOCALVERSION / CONFIG_LOCALVERSION_AUTO.
+# Two measures together guarantee the suffix is stripped:
+#   1. Create ${KERNEL_DIR}/.scmversion (empty file) — setlocalversion stops
+#      at this file and skips all git-describe checks.
+#   2. Delete the cached ${BUILD_DIR}/include/config/kernel.release — without
+#      this, make reuses the old version string from cache even after .scmversion
+#      is created.
+#
+# This is critical: the Bianbu initramfs expects lib/modules/6.6.63 exactly.
+# A kernel reporting 6.6.63+ will not find its modules and hang at boot.
+# ---------------------------------------------------------------------------
+if [[ ! -f "${KERNEL_DIR}/.scmversion" ]]; then
+  info "Creating .scmversion to suppress git '+' suffix in kernel version ..."
+  touch "${KERNEL_DIR}/.scmversion"
+  ok "Created ${KERNEL_DIR}/.scmversion"
+else
+  info ".scmversion already exists — git version suffix suppressed."
+fi
+
+# Always remove cached kernel.release to force version string recalculation
+if [[ -f "${BUILD_DIR}/include/config/kernel.release" ]]; then
+  rm -f "${BUILD_DIR}/include/config/kernel.release"
+  info "Removed cached kernel.release — version string will be recalculated."
+fi
 
 # ---------------------------------------------------------------------------
 # Print build summary
@@ -79,6 +115,7 @@ START_TIME=$(date +%s)
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
+  LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
   -j"${JOBS}" \
   Image
@@ -87,6 +124,18 @@ END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 ok "Kernel built in ${ELAPSED}s → ${BUILD_DIR}/arch/riscv/boot/Image"
 
+# Verify the version string has no trailing + suffix
+ACTUAL_VER=$(strings "${BUILD_DIR}/arch/riscv/boot/Image" 2>/dev/null | \
+             grep "^Linux version" | head -1 | awk '{print $3}')
+if [[ "${ACTUAL_VER}" == *"+"* ]]; then
+  warn "Kernel version has trailing '+': ${ACTUAL_VER}"
+  warn "This means the git tree is dirty AND scripts/setlocalversion appended '+'."
+  warn "The LOCALVERSION=\"\" override should prevent this — if you still see '+',',"
+  warn "run: touch \${KERNEL_DIR}/.scmversion  (creates an empty version marker)"
+else
+  ok "Kernel version: ${ACTUAL_VER} (no + suffix — matches initramfs)"
+fi
+
 # ---------------------------------------------------------------------------
 # Step 2: Build device tree blobs
 # ---------------------------------------------------------------------------
@@ -94,6 +143,7 @@ info "Building device tree blobs ..."
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
+  LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
   -j"${JOBS}" \
   dtbs
@@ -106,6 +156,7 @@ info "Building kernel modules ..."
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
+  LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
   -j"${JOBS}" \
   modules
@@ -119,6 +170,7 @@ mkdir -p "${MODULES_INSTALL_DIR}"
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
+  LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
   INSTALL_MOD_PATH="${MODULES_INSTALL_DIR}" \
   modules_install

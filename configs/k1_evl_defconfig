@@ -10,6 +10,16 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Kernel version string — must match Bianbu initramfs exactly
+# -----------------------------------------------------------------------------
+
+# Do NOT append any local version suffix.  The Bianbu initramfs contains
+# lib/modules/6.6.63 and will fail to find modules if the running kernel
+# reports a different version (e.g. 6.6.63+ due to dirty git tree).
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# -----------------------------------------------------------------------------
 # Core EVL / Dovetail requirements
 # -----------------------------------------------------------------------------
 

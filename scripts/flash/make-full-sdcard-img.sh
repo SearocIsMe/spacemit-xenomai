@@ -263,100 +263,84 @@ ok "Kernel injected."
 
 # ---------------------------------------------------------------------------
 # Step 6: Inject DTBs
-#         Try to place them where the base image's extlinux.conf expects them.
+#
+# Bianbu / SpacemiT U-Boot loads DTBs from the BOOTFS ROOT (flat layout), NOT
+# from a subdirectory.  e.g. U-Boot loads /k1-x_milkv-jupiter.dtb directly.
+# We copy the Jupiter DTB to the root AND also maintain a dtbs/spacemit/
+# subdirectory as a fallback for extlinux-based boot.
 # ---------------------------------------------------------------------------
-info "Copying DTBs ..."
-sudo mkdir -p "${MOUNT_POINT}/dtbs/spacemit"
+JUPITER_DTB="${DTB_DIR}/k1-x_milkv-jupiter.dtb"
 DTB_COUNT=0
+
+if [[ -f "${JUPITER_DTB}" ]]; then
+  info "Copying Jupiter DTB to bootfs root (U-Boot flat layout) ..."
+  sudo cp "${JUPITER_DTB}" "${MOUNT_POINT}/k1-x_milkv-jupiter.dtb"
+  ok "Copied: k1-x_milkv-jupiter.dtb → bootfs root"
+  (( DTB_COUNT++ )) || true
+else
+  warn "Jupiter DTB not found: ${JUPITER_DTB}"
+  warn "Checking for any available SpacemiT DTB ..."
+fi
+
+# Copy all DTBs to dtbs/spacemit/ as well (extlinux fallback / future use)
+sudo mkdir -p "${MOUNT_POINT}/dtbs/spacemit"
 for dtb in "${DTB_DIR}"/*.dtb; do
   [[ -f "${dtb}" ]] || continue
   sudo cp "${dtb}" "${MOUNT_POINT}/dtbs/spacemit/$(basename "${dtb}")"
   (( DTB_COUNT++ )) || true
 done
+
 if [[ "${DTB_COUNT}" -gt 0 ]]; then
-  ok "${DTB_COUNT} DTBs injected."
+  ok "${DTB_COUNT} DTB file(s) processed."
 else
   warn "No DTBs found in ${DTB_DIR} — skipping."
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7: Build and inject extlinux.conf
+# Step 7: Update env_k1-x.txt to add console=tty1
 #
-# Priority of values used in the generated extlinux.conf:
-#   root=    → from base image's original extlinux.conf (if detected),
-#              otherwise fall back to repo configs/extlinux.conf value
-#   initrd   → from base image's original extlinux.conf (if detected),
-#              otherwise omitted
-#   fdt      → always /dtbs/spacemit/k1-x_milkv-jupiter.dtb (EVL DTB)
-#   console  → always "console=tty1 console=ttyS0,115200" (HDMI + serial)
+# Bianbu U-Boot reads env_k1-x.txt to set kernel boot parameters.
+# The file does NOT use extlinux.conf.
+# We must add console=tty1 so the HDMI framebuffer console is active;
+# without it the kernel sends all output to UART only.
+# We preserve all other parameters from the original env file.
 # ---------------------------------------------------------------------------
-info "Building extlinux.conf ..."
+ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
+if [[ -f "${ENV_FILE}" ]]; then
+  info "Original env_k1-x.txt:"
+  cat "${ENV_FILE}"
+  echo ""
 
-# Determine root= value.  Priority (highest to lowest):
-#   1. root= from base image's original extlinux.conf  (most accurate)
-#   2. UUID= from blkid of the detected ext4 rootfs partition
-#   3. Fallback to value in repo configs/extlinux.conf
-if [[ -n "${ORIG_ROOT}" ]]; then
-  BOOT_ROOT="${ORIG_ROOT}"
-  info "  Using root= from base image extlinux.conf: ${BOOT_ROOT}"
-elif [[ -n "${ROOTFS_UUID:-}" ]]; then
-  BOOT_ROOT="UUID=${ROOTFS_UUID}"
-  info "  Using root= from blkid of rootfs partition: ${BOOT_ROOT}"
+  # Check if console=tty1 is already present
+  if sudo grep -q 'console=tty1' "${ENV_FILE}" 2>/dev/null; then
+    ok "env_k1-x.txt already has console=tty1 — no change needed."
+  else
+    # Replace "console=ttyS0,..." with "console=tty1 console=ttyS0,..."
+    # This preserves the exact ttyS0 baud rate from the original file.
+    sudo sed -i 's|console=ttyS0|console=tty1 console=ttyS0|g' "${ENV_FILE}"
+    ok "Added console=tty1 to env_k1-x.txt"
+  fi
+
+  info "Updated env_k1-x.txt:"
+  sudo cat "${ENV_FILE}"
+  echo ""
 else
-  BOOT_ROOT=$(grep -m1 'root=' "${EXTLINUX_CONF}" | \
-              grep -oE 'root=[^ ]+' | head -1 | sed 's/root=//' || echo "/dev/mmcblk0p2")
-  warn "  Could not detect root from base image — using fallback: ${BOOT_ROOT}"
+  warn "env_k1-x.txt not found in bootfs — cannot add console=tty1."
+  warn "HDMI output may not be visible; use serial UART to debug."
 fi
 
-# Determine initrd line (optional)
-INITRD_LINE=""
-if [[ -n "${ORIG_INITRD}" ]]; then
-  INITRD_LINE="    initrd ${ORIG_INITRD}"
-  info "  Using initrd from base image: ${ORIG_INITRD}"
+# ---------------------------------------------------------------------------
+# Step 7b: initramfs — Bianbu uses initramfs-generic.img for rootfs mounting.
+#          We do NOT replace it; the existing one from the base image is kept.
+#          Note: if the EVL kernel has different module versions from the
+#          Bianbu initramfs, rootfs pivot may fail — see docs/porting-notes.md
+# ---------------------------------------------------------------------------
+if [[ -f "${MOUNT_POINT}/initramfs-generic.img" ]]; then
+  INITRD_SIZE=$(du -sh "${MOUNT_POINT}/initramfs-generic.img" | cut -f1)
+  ok "initramfs-generic.img preserved from base image (${INITRD_SIZE}) — NOT replaced."
+else
+  warn "initramfs-generic.img not found in bootfs — Bianbu rootfs mount may fail."
 fi
-
-# Detect additional kernel args from base image (e.g. rd.debug, loglevel, etc.)
-ORIG_EXTRA_ARGS=""
-if [[ -n "${ORIG_EXTLINUX}" ]]; then
-  # Extract everything after 'append' except root=, console=, earlycon=, rootwait, rw
-  ORIG_EXTRA_ARGS=$(grep -m1 'append' "${ORIG_EXTLINUX}" | \
-    sed 's/.*append//' | \
-    sed -E 's/root=[^ ]+//g' | \
-    sed -E 's/console=[^ ]+//g' | \
-    sed -E 's/earlycon=[^ ]+//g' | \
-    sed -E 's/\brootwait\b//g' | \
-    sed -E 's/\brw\b//g' | \
-    tr -s ' ' | sed 's/^ //' | sed 's/ $//' || true)
-  [[ -n "${ORIG_EXTRA_ARGS}" ]] && info "  Extra args from base image: ${ORIG_EXTRA_ARGS}"
-fi
-
-# Write the merged extlinux.conf
-DEST_EXTLINUX="${MOUNT_POINT}/extlinux/extlinux.conf"
-sudo mkdir -p "${MOUNT_POINT}/extlinux"
-
-sudo tee "${DEST_EXTLINUX}" > /dev/null <<EXTLINUX_EOF
-# Generated by make-full-sdcard-img.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Base image : $(basename "${BASE_IMAGE}")
-# EVL kernel : $(basename "${KERNEL_IMAGE}") — built $(date +%Y-%m-%d)
-#
-# console=tty1 enables HDMI output.  console=ttyS0,115200 enables serial UART.
-# Both are listed so output goes to both simultaneously.
-
-default EVL
-timeout 30
-prompt 1
-
-label EVL
-    menu label SpacemiT K1 + EVL Xenomai4 kernel
-    linux /Image
-${INITRD_LINE:+${INITRD_LINE}
-}    fdt /dtbs/spacemit/k1-x_milkv-jupiter.dtb
-    append earlycon=sbi console=tty1 console=ttyS0,115200 root=${BOOT_ROOT} rootwait rw${ORIG_EXTRA_ARGS:+ ${ORIG_EXTRA_ARGS}}
-EXTLINUX_EOF
-
-info "Generated extlinux.conf:"
-cat "${DEST_EXTLINUX}"
-ok "extlinux.conf injected."
 
 # ---------------------------------------------------------------------------
 # Step 8: Show final boot partition contents
@@ -368,10 +352,70 @@ echo ""
 # ---------------------------------------------------------------------------
 # Step 9: Sync and unmount
 # ---------------------------------------------------------------------------
-info "Syncing ..."
+info "Syncing bootfs ..."
 sync
 sudo umount "${MOUNT_POINT}"
 rmdir "${MOUNT_POINT}"
+ok "Bootfs unmounted."
+
+# ---------------------------------------------------------------------------
+# Step 10: Inject EVL kernel modules into rootfs (ext4 partition)
+#
+# The Bianbu initramfs loads modules from lib/modules/<kernel-version>/
+# on the rootfs partition.  Our EVL kernel must have the same version string
+# as the modules directory name, otherwise module loading fails silently and
+# the boot hangs after initramfs pivot_root.
+#
+# IMPORTANT: The EVL kernel MUST be built with CONFIG_LOCALVERSION=""
+# (set in configs/k1_evl_defconfig) so its version is "6.6.63" not "6.6.63+".
+# ---------------------------------------------------------------------------
+MODULES_DIR="${BUILD_DIR}/modules_install"
+
+if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
+  if [[ -d "${MODULES_DIR}" ]]; then
+    ROOTFS_MOUNT=$(mktemp -d /tmp/evl-rootfs-XXXXXX)
+
+    info "Mounting rootfs partition ${ROOTFS_PART} ..."
+    sudo mount "${ROOTFS_PART}" "${ROOTFS_MOUNT}"
+
+    # Detect the kernel version the modules were installed under
+    EVL_MOD_VER=$(ls "${MODULES_DIR}/lib/modules/" 2>/dev/null | head -1)
+    if [[ -n "${EVL_MOD_VER}" ]]; then
+      info "Injecting EVL modules for kernel ${EVL_MOD_VER} into rootfs ..."
+
+      # Remove existing modules directory for this version to free space first.
+      # We do NOT keep a backup inside the image — the rootfs (p6) is only 900MB
+      # and the modules tree is large; backing up would cause "no space left on device".
+      if [[ -d "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}" ]]; then
+        sudo rm -rf "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}"
+        info "  Removed old modules/${EVL_MOD_VER} to free space."
+      fi
+
+      sudo mkdir -p "${ROOTFS_MOUNT}/lib/modules"
+      sudo cp -a "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" \
+                 "${ROOTFS_MOUNT}/lib/modules/"
+      ok "EVL modules (${EVL_MOD_VER}) injected into rootfs."
+    else
+      warn "No modules found in ${MODULES_DIR}/lib/modules/ — skipping rootfs module injection."
+      warn "Run: make modules_install INSTALL_MOD_PATH=\${BUILD_DIR}/modules_install"
+    fi
+
+    sync
+    sudo umount "${ROOTFS_MOUNT}"
+    rmdir "${ROOTFS_MOUNT}"
+    ok "Rootfs unmounted."
+  else
+    warn "Modules directory not found: ${MODULES_DIR}"
+    warn "Run scripts/build/03-build-kernel.sh to build and install modules first."
+    warn "Without correct modules, initramfs may fail to load kernel drivers."
+  fi
+else
+  warn "No ext4 rootfs partition detected — skipping module injection."
+fi
+
+# ---------------------------------------------------------------------------
+# Detach loop device
+# ---------------------------------------------------------------------------
 sudo losetup -d "${LOOP}"
 trap - EXIT
 ok "Image finalised."
@@ -383,6 +427,12 @@ echo ""
 echo "============================================================"
 echo "  Output image : ${IMG}"
 echo "  Size         : $(du -sh "${IMG}" | cut -f1)"
+echo ""
+echo "  IMPORTANT: Before flashing, verify the kernel version:"
+echo "    strings ${BUILD_DIR}/arch/riscv/boot/Image | grep '^Linux version'"
+echo "  It must report '6.6.63' (no + suffix) to match the Bianbu initramfs."
+echo "  If it shows '6.6.63+', rebuild the kernel — CONFIG_LOCALVERSION=\"\""
+echo "  is now set in configs/k1_evl_defconfig."
 echo ""
 echo "  Flash to SD card (Linux):"
 echo "    sudo dd if=\"${IMG}\" of=/dev/sdX bs=4M status=progress conv=fsync"
