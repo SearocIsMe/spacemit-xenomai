@@ -115,7 +115,7 @@ if [[ -z "${FROM_COMMIT}" ]]; then
       # i.e. the vanilla kernel tip this was rebased on
       _base_commit=$(git log --oneline --reverse "${_evl_tag}" \
         | grep -v -E "^[0-9a-f]+ (evl/|dovetail/|irq_pipeline:|Dovetail:)" \
-        | tail -1 | awk '{print $1}')
+        | tail -1 | awk '{print $1}' || true)
       if [[ -n "${_base_commit}" ]]; then
         FROM_COMMIT="${_base_commit}"
         info "Auto-detected vanilla base commit from EVL tag: ${FROM_COMMIT} (${_base_ver})"
@@ -138,7 +138,9 @@ fi
 # List commits to extract (skip if still shallow — go straight to fs diff)
 # ---------------------------------------------------------------------------
 _STILL_SHALLOW=0
-git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true" && _STILL_SHALLOW=1
+if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
+  _STILL_SHALLOW=1
+fi
 
 GREP_ARGS=()
 if [[ -n "${GREP_PATTERN}" ]]; then
