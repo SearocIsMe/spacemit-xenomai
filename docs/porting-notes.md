@@ -25,9 +25,14 @@ Key SpacemiT-specific directories to be aware of:
 ### 1.2 EVL Kernel Reference Tree
 
 ```
-Repo   : https://git.evlproject.org/linux-evl.git
-Branch : evl/master
+Repo (denx.de mirror) : https://source.denx.de/Xenomai/xenomai4/linux-evl.git
+Repo (upstream)       : https://git.evlproject.org/linux-evl.git
+Tag (preferred)       : v6.6.63-evl2-rebase   ← EVL patches rebased on v6.6.63
+Branch (upstream)     : evl/master
 ```
+
+> **Note:** `git.evlproject.org` is frequently unreachable. Use the `source.denx.de` mirror as the primary source.
+> The tag `v6.6.63-evl2-rebase` on `source.denx.de` exactly matches the SpacemiT kernel base (v6.6.63) and is the best reference for cherry-picking Dovetail patches.
 
 This tree contains the full EVL implementation including Dovetail. We use it as a **reference** to cherry-pick RISC-V Dovetail patches onto the SpacemiT base.
 
@@ -42,9 +47,12 @@ Key EVL-specific directories:
 ### 1.3 libevl (Userspace)
 
 ```
-Repo   : https://git.evlproject.org/libevl.git
-Branch : master
+Repo (denx.de mirror) : https://source.denx.de/Xenomai/xenomai4/libevl.git
+Repo (upstream)       : https://git.evlproject.org/libevl.git
+Branch                : master
 ```
+
+> **Note:** `git.evlproject.org` is frequently unreachable. Use the `source.denx.de` mirror as the primary source.
 
 Provides the userspace API for EVL threads, timers, mutexes, etc. Must be cross-compiled for RISC-V and installed on the target rootfs.
 
