@@ -79,14 +79,18 @@ cd "${GIT_TREE}"
 if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
   warn "Repository is a shallow clone. Fetching full history (this may take a while) ..."
   git fetch --unshallow 2>&1 | grep -E "^(remote:|Receiving|Resolving|Updating)" || true
-  ok "Unshallow complete."
+  if git rev-parse --is-shallow-repository 2>/dev/null | grep -q "true"; then
+    warn "Unshallow may still be in progress or failed. Continuing with available history."
+  else
+    ok "Unshallow complete."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
 # Determine base commit if not specified
 # ---------------------------------------------------------------------------
 if [[ -z "${FROM_COMMIT}" ]]; then
-  # Default: use v6.6.63 tag (matches SpacemiT kernel base)
+  # Try plain kernel version tags first (v6.6.63, v6.6, v6.6.0)
   for _base_tag in "v6.6.63" "v6.6" "v6.6.0"; do
     if git rev-parse "${_base_tag}" &>/dev/null; then
       FROM_COMMIT="${_base_tag}"
@@ -94,6 +98,34 @@ if [[ -z "${FROM_COMMIT}" ]]; then
       break
     fi
   done
+
+  # If not found, try to derive base from EVL rebase tag (e.g. v6.6.63-evl2-rebase)
+  # The base is the parent of the oldest EVL commit on top of the vanilla kernel
+  if [[ -z "${FROM_COMMIT}" ]]; then
+    # Look for a tag matching v<x>.<y>.<z>-evl*-rebase and strip the EVL suffix
+    _evl_tag=$(git tag | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+-evl[0-9]*-rebase$" | sort -V | tail -1)
+    if [[ -n "${_evl_tag}" ]]; then
+      # The vanilla base version embedded in the tag name (e.g. v6.6.63-evl2-rebase → v6.6.63)
+      _base_ver=$(echo "${_evl_tag}" | sed 's/-evl[0-9]*-rebase$//')
+      info "EVL rebase tag found: ${_evl_tag} — using embedded base version: ${_base_ver}"
+      # Find the oldest ancestor commit whose subject doesn't start with "evl/" or "dovetail/"
+      # i.e. the vanilla kernel tip this was rebased on
+      _base_commit=$(git log --oneline --reverse "${_evl_tag}" \
+        | grep -v -E "^[0-9a-f]+ (evl/|dovetail/|irq_pipeline:|Dovetail:)" \
+        | tail -1 | awk '{print $1}')
+      if [[ -n "${_base_commit}" ]]; then
+        FROM_COMMIT="${_base_commit}"
+        info "Auto-detected vanilla base commit from EVL tag: ${FROM_COMMIT} (${_base_ver})"
+      else
+        # Fallback: use the parent of the first commit in the log
+        FROM_COMMIT=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)
+        if [[ -n "${FROM_COMMIT}" ]]; then
+          info "Using root commit as base: ${FROM_COMMIT:0:12}"
+        fi
+      fi
+    fi
+  fi
+
   if [[ -z "${FROM_COMMIT}" ]]; then
     die "Cannot auto-detect base commit. Use --from <commit> (e.g. --from v6.6.63)."
   fi
