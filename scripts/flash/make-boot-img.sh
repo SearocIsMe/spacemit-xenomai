@@ -1,26 +1,49 @@
 #!/usr/bin/env bash
 # =============================================================================
 # make-boot-img.sh
-# Create a FAT32 boot partition image containing the EVL kernel, DTBs, and
-# extlinux.conf. Uses mtools (mcopy/mmd) — no sudo or loop mount needed.
+#
+# ⚠️  DEPRECATED / LIMITED USE — READ BEFORE USING  ⚠️
+#
+# This script produces a 64 MiB FAT32 *partition* image containing only the
+# EVL kernel, DTBs, and extlinux.conf.  It does NOT produce a bootable SD card
+# image because:
+#
+#   • It contains NO partition table (GPT/MBR).
+#   • It contains NO U-Boot SPL or bootloader binaries.
+#   • It contains NO rootfs.
+#
+# The SpacemiT K1 ROM / FSBL requires U-Boot SPL at a specific raw sector
+# offset inside a properly partitioned disk image.  Writing this bare FAT32
+# blob to an SD card results in NO BOOT — exactly as observed on Jupiter.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# CORRECT WORKFLOW
+# ─────────────────────────────────────────────────────────────────────────────
+# Use make-full-sdcard-img.sh instead, which:
+#   1. Copies the full SpacemiT buildroot base image (U-Boot + rootfs included).
+#   2. Injects the EVL kernel/DTBs/extlinux.conf into partition 1 of that copy.
+#   3. Produces a complete, bootable disk image ready for dd/Etcher.
+#
+#   bash scripts/flash/make-full-sdcard-img.sh \
+#       ~/Downloads/buildroot-k1_rt-sdcard.img \
+#       ~/work/build-k1 \
+#       ~/Downloads
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHEN IS THIS SCRIPT STILL USEFUL?
+# ─────────────────────────────────────────────────────────────────────────────
+# Only when you already have a working Jupiter SD card and want a standalone
+# FAT32 blob to inspect or manually dd onto the first *partition* (not the
+# whole disk) of an SD card that already has a valid bootloader at sector 0.
 #
 # Usage:
 #   bash scripts/flash/make-boot-img.sh [build_dir] [output_dir]
 #
-# Examples:
-#   bash scripts/flash/make-boot-img.sh
-#   bash scripts/flash/make-boot-img.sh ~/work/build-k1 /mnt/c/Users/haipeng/Downloads
-#
 # Output:
-#   evl-boot-k1-YYYYMMDD.img  (64 MiB FAT32, label EVL_BOOT)
+#   evl-boot-k1-YYYYMMDD.img  (64 MiB FAT32 partition image, label EVL_BOOT)
 #
 # Dependencies:
 #   mtools (mmd, mcopy, mdir) — sudo apt-get install mtools
-#
-# Windows flashing (PowerShell, Admin):
-#   # Write image to SD card first partition using dd via WSL:
-#   wsl dd if=/mnt/c/Users/haipeng/Downloads/evl-boot-k1-*.img of=/dev/sdd1 bs=4M
-#   # Or use Rufus / Win32DiskImager to write to the partition directly.
 # =============================================================================
 set -euo pipefail
 

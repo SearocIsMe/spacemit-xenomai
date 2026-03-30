@@ -1,112 +1,171 @@
-# SD Card Flashing Guide
+# SD Card Flashing Guide — Milk-V Jupiter (SpacemiT K1)
 
-Flash the EVL-patched SpacemiT K1 kernel onto an SD card for Milk-V Jupiter boot testing.
+## Why the old `evl-boot-k1-*.img` did not boot
 
-## Prerequisites
+`make-boot-img.sh` produced a **64 MiB FAT32 *partition* image** — a raw FAT32
+filesystem blob with no partition table, no U-Boot SPL, and no rootfs.
 
-- Kernel already built: `~/work/build-k1/arch/riscv/boot/Image` (33 MB)
-- SD card with a working Jupiter OS image (rootfs on partition 2)
-  - If not, flash the full OS first: https://milkv.io/docs/jupiter/getting-started/boot
-  - Then re-run this script to replace only the kernel
+The SpacemiT K1 ROM / FSBL locates U-Boot SPL at a fixed raw sector offset
+inside a properly partitioned disk.  Writing a bare FAT32 blob to LBA 0 of
+an SD card means the ROM finds no valid bootloader there and the board shows
+no output at all — exactly the symptom observed.
+
+A working Jupiter image (`buildroot-k1_rt-sdcard.img`) is a **full GPT disk
+image** containing:
+
+| Region | Content |
+|--------|---------|
+| Raw sectors (pre-partition) | U-Boot SPL + proper U-Boot |
+| Partition 1 (FAT32) | kernel `Image`, DTBs, `extlinux/extlinux.conf` |
+| Partition 2 (ext4) | Root filesystem |
+
+The EVL build only replaces partition 1 content — the bootloader and rootfs
+must come from the SpacemiT buildroot base image.
 
 ---
 
-## Option A: Flash from a Native Linux Machine (Recommended)
+## Recommended Workflow (first-time or clean flash)
 
-If you have access to a native Linux machine (or a Linux live USB), this is the simplest path.
+### Step 0 — Prerequisites
+
+- **Base image** downloaded from SpacemiT:
+  https://www.spacemit.com/community/document/info?lang=zh&nodepath=software/SDK/buildroot/k1_buildroot/source.md
+  e.g. `buildroot-k1_rt-sdcard.img`
+
+- **EVL kernel built** (see repo root README §5):
+  ```bash
+  bash scripts/build/00-setup-env.sh
+  bash scripts/build/01-apply-patches.sh
+  bash scripts/build/02-configure.sh
+  bash scripts/build/03-build-kernel.sh
+  ```
+  Output: `~/work/build-k1/arch/riscv/boot/Image` + DTBs
+
+---
+
+### Step 1 — Build the complete EVL SD card image (Linux / WSL2)
 
 ```bash
-# Insert SD card, find device (e.g. /dev/sdb)
+bash scripts/flash/make-full-sdcard-img.sh \
+    ~/Downloads/buildroot-k1_rt-sdcard.img \
+    ~/work/build-k1 \
+    /tmp
+```
+
+This:
+1. Copies the full buildroot base image (preserves U-Boot + rootfs verbatim).
+2. Loop-mounts partition 1 of the copy.
+3. Injects the EVL `Image`, DTBs, and `extlinux/extlinux.conf`.
+4. Writes a ready-to-flash `evl-sdcard-k1-YYYYMMDD.img`.
+
+> To put the output somewhere Windows can reach:
+> ```bash
+> bash scripts/flash/make-full-sdcard-img.sh \
+>     ~/Downloads/buildroot-k1_rt-sdcard.img \
+>     ~/work/build-k1 \
+>     /mnt/c/Users/<you>/Downloads
+> ```
+
+---
+
+### Step 2A — Flash from Linux
+
+```bash
+# Find your SD card device
 lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT,LABEL,MODEL
 
-# Clone this repo and run the flash script
-git clone https://github.com/YOUR_REPO/spacemit-xenomai.git
-bash spacemit-xenomai/scripts/flash/flash-sdcard.sh /dev/sdb ~/work/build-k1
+# Flash (replace /dev/sdX with your actual device)
+bash scripts/flash/flash-sdcard.sh --image /tmp/evl-sdcard-k1-*.img /dev/sdX
+```
+
+Or use `dd` directly:
+```bash
+sudo dd if=/tmp/evl-sdcard-k1-*.img of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
 ---
 
-## Option B: Flash from Windows (No WSL2 Required)
+### Step 2B — Flash from Windows
 
-The WSL2 default kernel (`5.15.167.4-microsoft-standard-WSL2`) does **not** include
-`CONFIG_USB_STORAGE`, so USB SD card readers are not visible as block devices in WSL2.
+The WSL2 default kernel does **not** include `CONFIG_USB_STORAGE`, so USB SD
+card readers are not accessible as block devices from WSL2.  Flash from
+Windows instead:
 
-Instead, copy the files directly from Windows using one of these methods:
+1. **Balena Etcher** (recommended, free):
+   - Download: https://etcher.balena.io/
+   - Open `evl-sdcard-k1-*.img` → select the SD card disk → Flash.
 
-### Method B1: Windows Explorer (Manual)
+2. **Rufus**:
+   - Select the SD card device.
+   - Select `evl-sdcard-k1-*.img`.
+   - Mode: **DD Image** (NOT ISO mode).
+   - Click Start.
 
-1. Insert the SD card — Windows will mount the FAT32 boot partition (e.g. `D:\`)
-2. Copy files from WSL2 to Windows:
-   ```powershell
-   # In PowerShell — WSL2 files are accessible at \\wsl$\Ubuntu\...
-   $build = "\\wsl$\Ubuntu\home\lindows\work\build-k1"
-   $repo  = "\\wsl$\Ubuntu\home\lindows\projects\spacemit-xenomai"
-   $boot  = "D:\"   # adjust to your SD card drive letter
+3. **Win32DiskImager**:
+   - Image File: `evl-sdcard-k1-*.img`
+   - Device: SD card disk (e.g. `\\.\PhysicalDrive2`)
+   - Click Write.
 
-   # Copy kernel image
-   Copy-Item "$build\arch\riscv\boot\Image" "$boot\Image" -Force
+> ⚠️ Always write to the **whole disk** (e.g. `Disk 2`), not to a partition
+> (e.g. `D:\`).  The image contains the partition table and bootloader.
 
-   # Copy DTBs
-   New-Item -ItemType Directory -Force "$boot\dtbs\spacemit"
-   Copy-Item "$build\arch\riscv\boot\dts\spacemit\*.dtb" "$boot\dtbs\spacemit\" -Force
+---
 
-   # Copy extlinux.conf
-   New-Item -ItemType Directory -Force "$boot\extlinux"
-   Copy-Item "$repo\configs\extlinux.conf" "$boot\extlinux\extlinux.conf" -Force
-   ```
+## Subsequent Kernel Updates (inject only)
 
-### Method B2: Automated PowerShell Script
+Once the SD card already has a working Jupiter OS, you can update just the
+kernel and DTBs without re-flashing the entire image.
 
-Save and run [`scripts/flash/flash-windows.ps1`](flash-windows.ps1) in PowerShell:
+### From Linux
+
+```bash
+# SD card already inserted and recognised as /dev/sdb
+bash scripts/flash/flash-sdcard.sh /dev/sdb ~/work/build-k1
+```
+
+### From Windows (PowerShell, no Admin required)
+
+Windows will auto-mount the FAT32 boot partition (e.g. as `D:\`) when the SD
+card is inserted:
 
 ```powershell
-# Run from PowerShell (no Admin required)
 .\scripts\flash\flash-windows.ps1 -BootDrive D:
 ```
 
 ---
 
-## Option C: WSL2 with Custom Kernel (Advanced)
-
-Build a custom WSL2 kernel with `CONFIG_USB_STORAGE=y` to enable SD card access from WSL2.
-
-```bash
-# Clone WSL2 kernel source
-git clone --depth=1 --branch linux-msft-wsl-5.15.167.4 \
-  https://github.com/microsoft/WSL2-Linux-Kernel.git ~/work/wsl2-kernel
-
-# Enable USB storage
-cd ~/work/wsl2-kernel
-cp Microsoft/config-wsl .config
-scripts/config --enable CONFIG_USB_STORAGE --enable CONFIG_USB \
-               --enable CONFIG_SCSI --enable CONFIG_BLK_DEV_SD
-make olddefconfig
-make -j$(nproc) LOCALVERSION="-usb"
-
-# Install custom kernel
-mkdir -p /mnt/c/wsl2-kernels
-cp arch/x86/boot/bzImage /mnt/c/wsl2-kernels/bzImage-usb
-```
-
-Then add to `C:\Users\<you>\.wslconfig`:
-```ini
-[wsl2]
-kernel=C:\\wsl2-kernels\\bzImage-usb
-```
-
-Restart WSL2 (`wsl --shutdown` in PowerShell), then re-attach the SD card via usbipd and run `flash-sdcard.sh`.
-
----
-
 ## Boot Configuration
 
-[`configs/extlinux.conf`](../../configs/extlinux.conf) configures U-Boot to boot with:
+[`configs/extlinux.conf`](../../configs/extlinux.conf) tells U-Boot to boot with:
 
-- **DTB**: `k1-x_milkv-jupiter.dtb`
-- **Console**: `ttyS0,115200`
-- **Root**: `/dev/mmcblk0p2` (rootfs partition on SD card)
+| Setting | Value |
+|---------|-------|
+| Kernel | `/Image` (from FAT32 partition 1) |
+| DTB | `dtbs/spacemit/k1-x_milkv-jupiter.dtb` |
+| Console | `ttyS0,115200` |
+| Root device | `/dev/mmcblk0p2` (ext4 partition 2) |
+
+---
 
 ## After Flashing
 
 Insert the SD card into the Milk-V Jupiter and power on.
-See [`docs/testing.md`](../../docs/testing.md) for boot verification steps.
+See [`docs/testing.md`](../../docs/testing.md) for boot verification steps,
+including:
+
+```bash
+dmesg | grep -i evl    # verify EVL loaded
+evl check              # basic EVL health check
+evl test latmus        # latency measurement
+```
+
+---
+
+## Script Reference
+
+| Script | Purpose |
+|--------|---------|
+| [`make-full-sdcard-img.sh`](make-full-sdcard-img.sh) | ✅ **Use this** — builds complete bootable image |
+| [`flash-sdcard.sh`](flash-sdcard.sh) | Flash image (Mode A) or inject kernel (Mode B) |
+| [`flash-windows.ps1`](flash-windows.ps1) | Windows: inject kernel into already-booting SD card |
+| [`make-boot-img.sh`](make-boot-img.sh) | ⚠️ Deprecated — partition-only image, not bootable alone |

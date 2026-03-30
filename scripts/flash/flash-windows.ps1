@@ -1,9 +1,37 @@
 # =============================================================================
 # flash-windows.ps1
-# Copy EVL kernel Image, DTBs, and extlinux.conf to the SD card boot partition
-# from Windows, without needing WSL2 USB storage support.
 #
-# Usage (PowerShell, no Admin required):
+# ⚠️  IMPORTANT — READ BEFORE USING  ⚠️
+#
+# This script copies the EVL kernel Image, DTBs, and extlinux.conf to the
+# FAT32 boot partition of an SD card that is already mounted by Windows.
+#
+# THIS IS MODE B (INJECT ONLY) — it requires that the SD card ALREADY contains
+# a working SpacemiT/buildroot OS with U-Boot SPL at the correct raw sector
+# offset.  If the SD card is blank or was never flashed with a full Jupiter
+# image, this script WILL NOT make it bootable.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOMMENDED WORKFLOW (first-time or clean flash):
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. In WSL2, build the complete EVL SD card image:
+#      bash scripts/flash/make-full-sdcard-img.sh \
+#          ~/Downloads/buildroot-k1_rt-sdcard.img \
+#          ~/work/build-k1 \
+#          /mnt/c/Users/<you>/Downloads
+#
+# 2. In Windows, flash the resulting evl-sdcard-k1-*.img to the SD card using:
+#    • Balena Etcher  — https://etcher.balena.io/  (recommended, free)
+#    • Rufus          — select "DD image" mode, NOT "ISO mode"
+#    • Win32DiskImager
+#    Write to the WHOLE SD card disk (e.g. Disk 2), NOT a partition.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHEN TO USE THIS SCRIPT (subsequent kernel updates only):
+# ─────────────────────────────────────────────────────────────────────────────
+# After the SD card is already running a Jupiter OS, use this script to
+# replace only the kernel/DTBs/extlinux.conf without re-flashing the whole disk:
+#
 #   .\scripts\flash\flash-windows.ps1 -BootDrive D:
 #
 # Parameters:
