@@ -2,8 +2,7 @@
 # =============================================================================
 # make-boot-img.sh
 # Create a FAT32 boot partition image containing the EVL kernel, DTBs, and
-# extlinux.conf. The resulting .img can be written to the SD card's first
-# partition from Windows (Rufus, Win32DiskImager, or PowerShell dd).
+# extlinux.conf. Uses mtools (mcopy/mmd) — no sudo or loop mount needed.
 #
 # Usage:
 #   bash scripts/flash/make-boot-img.sh [build_dir] [output_dir]
@@ -15,9 +14,12 @@
 # Output:
 #   evl-boot-k1-YYYYMMDD.img  (64 MiB FAT32, label EVL_BOOT)
 #
+# Dependencies:
+#   mtools (mmd, mcopy, mdir) — sudo apt-get install mtools
+#
 # Windows flashing (PowerShell, Admin):
-#   # Write image to SD card first partition using dd:
-#   wsl dd if=/mnt/c/Users/haipeng/Downloads/evl-boot-k1-*.img of=\\.\PhysicalDrive1 bs=4M
+#   # Write image to SD card first partition using dd via WSL:
+#   wsl dd if=/mnt/c/Users/haipeng/Downloads/evl-boot-k1-*.img of=/dev/sdd1 bs=4M
 #   # Or use Rufus / Win32DiskImager to write to the partition directly.
 # =============================================================================
 set -euo pipefail
@@ -39,14 +41,21 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 IMG_NAME="evl-boot-k1-$(date +%Y%m%d).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
-MOUNT=$(mktemp -d /tmp/evl-boot-XXXXXX)
 
 KERNEL_IMAGE="${BUILD_DIR}/arch/riscv/boot/Image"
 DTB_DIR="${BUILD_DIR}/arch/riscv/boot/dts/spacemit"
 EXTLINUX_CONF="${REPO_ROOT}/configs/extlinux.conf"
 
 # ---------------------------------------------------------------------------
-# Validate
+# Check dependencies
+# ---------------------------------------------------------------------------
+if ! command -v mcopy &>/dev/null; then
+    info "Installing mtools ..."
+    sudo apt-get install -y mtools -qq
+fi
+
+# ---------------------------------------------------------------------------
+# Validate inputs
 # ---------------------------------------------------------------------------
 [[ -f "${KERNEL_IMAGE}" ]] || die "Kernel image not found: ${KERNEL_IMAGE}"
 [[ -d "${DTB_DIR}" ]]      || die "DTB directory not found: ${DTB_DIR}"
@@ -57,7 +66,7 @@ info "Output     : ${IMG}"
 info "Repo root  : ${REPO_ROOT}"
 
 # ---------------------------------------------------------------------------
-# Create image
+# Create FAT32 image
 # ---------------------------------------------------------------------------
 info "Creating 64 MiB FAT32 image ..."
 dd if=/dev/zero of="${IMG}" bs=1M count=64 status=none
@@ -65,20 +74,25 @@ mkfs.vfat -F 32 -n "EVL_BOOT" "${IMG}" >/dev/null
 ok "FAT32 image created."
 
 # ---------------------------------------------------------------------------
-# Mount and populate
+# Populate using mtools (no sudo/loop mount needed)
 # ---------------------------------------------------------------------------
-trap "sudo umount '${MOUNT}' 2>/dev/null || true; rmdir '${MOUNT}'" EXIT
-sudo mount -o loop "${IMG}" "${MOUNT}"
+info "Creating directory structure ..."
+mmd -i "${IMG}" ::dtbs
+mmd -i "${IMG}" ::dtbs/spacemit
+mmd -i "${IMG}" ::extlinux
 
 info "Copying kernel Image ($(du -sh "${KERNEL_IMAGE}" | cut -f1)) ..."
-sudo cp "${KERNEL_IMAGE}" "${MOUNT}/Image"
+mcopy -i "${IMG}" "${KERNEL_IMAGE}" ::Image
 ok "Kernel copied."
 
 info "Copying DTBs ..."
-sudo mkdir -p "${MOUNT}/dtbs/spacemit"
-DTB_COUNT=$(ls "${DTB_DIR}"/*.dtb 2>/dev/null | wc -l)
+DTB_COUNT=0
+for dtb in "${DTB_DIR}"/*.dtb; do
+    [[ -f "${dtb}" ]] || continue
+    mcopy -i "${IMG}" "${dtb}" "::dtbs/spacemit/$(basename "${dtb}")"
+    (( DTB_COUNT++ )) || true
+done
 if [[ "${DTB_COUNT}" -gt 0 ]]; then
-    sudo cp "${DTB_DIR}"/*.dtb "${MOUNT}/dtbs/spacemit/"
     ok "${DTB_COUNT} DTBs copied."
 else
     warn "No DTBs found in ${DTB_DIR} — skipping."
@@ -86,36 +100,26 @@ fi
 
 if [[ -f "${EXTLINUX_CONF}" ]]; then
     info "Copying extlinux.conf ..."
-    sudo mkdir -p "${MOUNT}/extlinux"
-    sudo cp "${EXTLINUX_CONF}" "${MOUNT}/extlinux/extlinux.conf"
+    mcopy -i "${IMG}" "${EXTLINUX_CONF}" ::extlinux/extlinux.conf
     ok "extlinux.conf copied."
 fi
 
 # ---------------------------------------------------------------------------
-# Show contents
+# Verify and show contents
 # ---------------------------------------------------------------------------
 info "Image contents:"
-find "${MOUNT}" -type f | sort | while read -r f; do
-    printf "  %-50s %s\n" "${f#${MOUNT}/}" "$(du -sh "${f}" | cut -f1)"
-done
-
-# ---------------------------------------------------------------------------
-# Sync and unmount
-# ---------------------------------------------------------------------------
-sync
-sudo umount "${MOUNT}"
-rmdir "${MOUNT}"
-trap - EXIT
+mdir -i "${IMG}" -/ :: 2>/dev/null | grep -v "^$" | head -50
 
 ok "Image ready: ${IMG} ($(du -sh "${IMG}" | cut -f1))"
 
 echo ""
 echo "============================================================"
-echo "  To flash from Windows PowerShell (Admin):"
-echo "  1. Find SD card disk number:"
-echo "     Get-Disk | Where-Object BusType -eq USB"
-echo "  2. Write image to first partition:"
-echo "     wsl dd if=\"\$(wslpath '${IMG}')\" of=/dev/sdd1 bs=4M"
-echo "     (replace sdd1 with your SD card partition)"
-echo "  Or use Rufus / Win32DiskImager to write the .img file."
+echo "  To flash from Windows — write image to SD card partition:"
+echo ""
+echo "  Option 1: PowerShell (Admin) via WSL dd:"
+echo "    wsl dd if=\"\$(wslpath '${IMG}')\" of=/dev/sdd1 bs=4M"
+echo "    (replace sdd1 with your SD card first partition)"
+echo ""
+echo "  Option 2: Use Rufus or Win32DiskImager"
+echo "    Point it at: ${IMG}"
 echo "============================================================"
