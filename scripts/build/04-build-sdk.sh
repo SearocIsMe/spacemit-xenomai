@@ -167,6 +167,26 @@ repo start "${SDK_BRANCH}" --all 2>/dev/null || \
 ok "Branch started."
 
 # ---------------------------------------------------------------------------
+# WSL2 PATH sanitization
+#
+# Buildroot explicitly rejects a PATH that contains spaces, TABs, or newlines.
+# In WSL2, the Windows PATH is appended (e.g. /mnt/c/Program Files/...) which
+# contains spaces.  We strip all PATH entries that contain spaces or that start
+# with /mnt/ (Windows drives) before running any make commands.
+# We also ensure ~/.local/bin is first so cmake/repo installed there are found.
+# ---------------------------------------------------------------------------
+_clean_path=""
+while IFS= read -r -d: _p; do
+  [[ "${_p}" == *" "* ]] && continue   # skip entries with spaces
+  [[ "${_p}" == /mnt/* ]] && continue  # skip Windows /mnt/c/ etc.
+  [[ -z "${_p}" ]] && continue
+  _clean_path="${_clean_path:+${_clean_path}:}${_p}"
+done <<< "${PATH}:"
+# Prepend standard Linux paths + ~/.local/bin (for cmake, repo)
+export PATH="${HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${_clean_path}"
+info "PATH sanitized (removed Windows /mnt/ entries with spaces)."
+
+# ---------------------------------------------------------------------------
 # Step 4: Configure buildroot (non-interactive equivalent of make envconfig)
 #
 # What make envconfig does interactively:
