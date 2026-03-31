@@ -297,44 +297,61 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7: Update env_k1-x.txt to add console=tty1
+# Step 7: Patch env_k1-x.txt for correct plain Image boot
 #
-# Bianbu U-Boot reads env_k1-x.txt to set kernel boot parameters.
-# The file does NOT use extlinux.conf.
-# We must add console=tty1 so the HDMI framebuffer console is active;
-# without it the kernel sends all output to UART only.
-# We preserve all other parameters from the original env file.
+# Fix 1: kernel_addr_r=0x200000 → 0x10000000
+#   The default Bianbu env uses 0x200000 (2MB) which is designed for the
+#   compressed FIT image (Image.itb, ~10MB).  Our plain uncompressed Image
+#   is ~33MB; loading it at 0x200000 overwrites U-Boot memory and crashes.
+#   0x10000000 (256MB) is safe for a 33MB kernel on a 2GB board.
+#
+# Fix 2: console=tty1
+#   Without this, all kernel output goes to UART only; HDMI shows blank cursor.
+#
+# Fix 3: nowatchdog
+#   CONFIG_SPACEMIT_WATCHDOG=y is enabled in the kernel.  Bianbu's watchdog
+#   daemon feeds it during normal operation.  If the daemon fails to start
+#   (e.g. due to EVL kernel differences), the watchdog expires (~60-120s)
+#   and resets the board.  nowatchdog disables the hardware watchdog at boot.
 # ---------------------------------------------------------------------------
 ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
 if [[ -f "${ENV_FILE}" ]]; then
   info "Original env_k1-x.txt:"
-  cat "${ENV_FILE}"
+  sudo cat "${ENV_FILE}"
   echo ""
 
-  # 1. Add console=tty1 before console=ttyS0 so HDMI shows kernel output.
-  #    Without this, all output goes to UART only and HDMI shows blank cursor.
+  # Fix 1: kernel_addr_r — CRITICAL for plain 33MB Image
+  if sudo grep -q 'kernel_addr_r=0x200000' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|kernel_addr_r=0x200000|kernel_addr_r=0x10000000|g' "${ENV_FILE}"
+    ok "Fixed kernel_addr_r: 0x200000 → 0x10000000"
+  elif ! sudo grep -q 'kernel_addr_r' "${ENV_FILE}" 2>/dev/null; then
+    echo "kernel_addr_r=0x10000000" | sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added kernel_addr_r=0x10000000"
+  else
+    ok "kernel_addr_r already correct (not 0x200000) — no change needed"
+  fi
+
+  # Fix 2: console=tty1 for HDMI framebuffer output
   if ! sudo grep -q 'console=tty1' "${ENV_FILE}" 2>/dev/null; then
     sudo sed -i 's|console=ttyS0|console=tty1 console=ttyS0|g' "${ENV_FILE}"
     ok "Added console=tty1 to env_k1-x.txt"
+  else
+    ok "console=tty1 already present — no change needed"
   fi
 
-  # 2. Force systemd to boot into multi-user (text) target instead of graphical.
-  #    Bianbu's graphical target (lightdm/weston) may fail on the EVL kernel due
-  #    to compositor or GPU driver differences, leaving a blank cursor on HDMI.
-  #    multi-user.target gives a standard text login prompt instead.
-  #    To re-enable graphical later: remove "systemd.unit=multi-user.target"
-  #    from env_k1-x.txt, or run: systemctl set-default graphical.target
-  if ! sudo grep -q 'systemd.unit' "${ENV_FILE}" 2>/dev/null; then
-    # Append to the console= line (which is the first line with console=)
-    sudo sed -i 's|\(console=ttyS0[^ ]*\)|\1 systemd.unit=multi-user.target|g' "${ENV_FILE}"
-    ok "Added systemd.unit=multi-user.target to env_k1-x.txt (skip graphical target)"
+  # Fix 3: nowatchdog — prevent hardware watchdog reboot if daemon doesn't start
+  if ! sudo grep -q 'nowatchdog' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|\(console=ttyS0[^ ]*\)|\1 nowatchdog|g' "${ENV_FILE}"
+    ok "Added nowatchdog to env_k1-x.txt"
+  else
+    ok "nowatchdog already present — no change needed"
   fi
 
   info "Updated env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
   echo ""
 else
-  warn "env_k1-x.txt not found in bootfs — cannot add console=tty1 or systemd.unit."
+  warn "env_k1-x.txt not found in bootfs — cannot patch boot parameters."
   warn "HDMI output may not be visible; use serial UART to debug."
 fi
 

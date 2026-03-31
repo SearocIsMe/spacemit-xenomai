@@ -11,6 +11,10 @@
 #   - U-Boot
 #   - Buildroot-based rootfs (Bianbu-compatible, spacemit_k1_v2_defconfig)
 #
+# We use spacemit_k1_v2_defconfig as documented at:
+#   https://milkv.io/docs/jupiter/build-os/buildroot
+# This is the standard defconfig for the Milk-V Jupiter / SpacemiT K1 platform.
+#
 # How the SpacemiT build system works (from scripts/Makefile):
 #   make envconfig
 #     → interactive menu → user picks spacemit_k1_v2_defconfig
@@ -65,8 +69,10 @@ MANIFEST_BRANCH="main"
 MANIFEST_FILE="k1-bl-v2.1.y.xml"
 SDK_BRANCH="k1-bl-v2.1.y"
 
-# The buildroot defconfig to use (spacemit_k1_v2_defconfig = full Bianbu image)
-# Other options: spacemit_k1_minimal_defconfig, spacemit_k1_rt_defconfig
+# The buildroot defconfig to use.
+# spacemit_k1_v2_defconfig = standard Milk-V Jupiter / SpacemiT K1 defconfig
+# as documented at https://milkv.io/docs/jupiter/build-os/buildroot
+# Other options: spacemit_k1_minimal_defconfig, spacemit_k1_rt_defconfig, spacemit_k1_plt_defconfig
 DEFCONFIG="spacemit_k1_v2_defconfig"
 
 # Derived from defconfig name: spacemit_k1_v2_defconfig → k1_v2
@@ -202,6 +208,7 @@ if [[ -f "${SDK_DIR}/env.mk" ]]; then
   warn "To reconfigure: rm ${SDK_DIR}/env.mk && re-run this script."
 else
   info "Running: make -C buildroot O=../output/${OUTPUT_NAME} BR2_EXTERNAL=../buildroot-ext ${DEFCONFIG}"
+  info "(spacemit_k1_plt_defconfig builds FSBL/U-Boot for Milk-V Jupiter hardware)"
   mkdir -p "${OUTPUT_DIR}"
 
   make -C "${SDK_DIR}/buildroot" \
