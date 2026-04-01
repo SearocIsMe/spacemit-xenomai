@@ -86,22 +86,24 @@ JOBS=$(nproc)
 # ---------------------------------------------------------------------------
 step "Step 0: Checking prerequisites"
 
+# Always ensure build dependencies are present.
+# python3-dev is required by kmod (and other packages) even when python3
+# the interpreter is already installed.
+info "Ensuring build dependencies are installed ..."
+sudo apt-get update -qq
+sudo apt-get install -y \
+  git build-essential cpio unzip rsync file bc wget \
+  python3 python-is-python3 python3-dev python3-pip \
+  libncurses5-dev libncursesw5-dev libssl-dev zlib1g-dev \
+  dosfstools mtools u-boot-tools flex bison zip \
+  device-tree-compiler xz-utils pkg-config libelf-dev
+
 _missing=()
 for _tool in git make python3 rsync cpio bc flex bison; do
   command -v "${_tool}" &>/dev/null || _missing+=("${_tool}")
 done
-
 if [[ ${#_missing[@]} -gt 0 ]]; then
-  warn "Missing tools: ${_missing[*]}"
-  info "Installing missing dependencies ..."
-  sudo apt-get update -qq
-  sudo apt-get install -y \
-    git build-essential cpio unzip rsync file bc wget \
-    python3 python-is-python3 libncurses5-dev libssl-dev \
-    dosfstools mtools u-boot-tools flex bison python3-pip zip \
-    device-tree-compiler xz-utils pkg-config \
-    libncursesw5-dev zlib1g-dev
-  pip3 install --quiet pyyaml 2>/dev/null || sudo pip3 install --quiet pyyaml
+  die "Still missing tools after apt install: ${_missing[*]}"
 fi
 
 # pyyaml is required by the SpacemiT build system
@@ -183,14 +185,128 @@ ok "Branch started."
 # ---------------------------------------------------------------------------
 _clean_path=""
 while IFS= read -r -d: _p; do
-  [[ "${_p}" == *" "* ]] && continue   # skip entries with spaces
-  [[ "${_p}" == /mnt/* ]] && continue  # skip Windows /mnt/c/ etc.
+  [[ "${_p}" == *" "* ]] && continue        # skip entries with spaces
+  [[ "${_p}" == /mnt/* ]] && continue       # skip Windows /mnt/c/ etc.
+  [[ "${_p}" == */anaconda3/* ]] && continue  # skip Anaconda subdirs (bin, lib…)
+  [[ "${_p}" == */anaconda3 ]]   && continue  # skip Anaconda root itself
+  [[ "${_p}" == */conda/* ]]     && continue  # skip conda envs
   [[ -z "${_p}" ]] && continue
   _clean_path="${_clean_path:+${_clean_path}:}${_p}"
 done <<< "${PATH}:"
 # Prepend standard Linux paths + ~/.local/bin (for cmake, repo)
 export PATH="${HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${_clean_path}"
-info "PATH sanitized (removed Windows /mnt/ entries with spaces)."
+info "PATH sanitized (removed Windows /mnt/ entries and Anaconda paths)."
+
+# ---------------------------------------------------------------------------
+# Anaconda isolation
+#
+# Buildroot bootstraps cmake 3.22.3 from source.  During that bootstrap,
+# cmake's own test suite calls find_package(Qt5Widgets).  cmake scans
+# filesystem prefix paths (including ~/anaconda3/lib/cmake/) regardless of
+# PATH or env-var settings, so the only reliable way to hide Anaconda's Qt5
+# cmake config files is to temporarily rename them for the duration of the
+# build, then restore them via a trap on EXIT.
+# ---------------------------------------------------------------------------
+unset CMAKE_PREFIX_PATH CMAKE_FRAMEWORK_PATH
+unset Qt5_DIR Qt5Core_DIR Qt5Gui_DIR Qt5Widgets_DIR
+unset PKG_CONFIG_PATH PKG_CONFIG_LIBDIR
+unset PYTHONPATH PYTHONHOME
+if command -v /usr/bin/python3 &>/dev/null; then
+  export PYTHON=/usr/bin/python3
+fi
+info "Anaconda environment variables cleared."
+
+# Collect Anaconda Qt5/Qt cmake config dirs that would poison the bootstrap.
+_ANACONDA_CMAKE_DIR="${HOME}/anaconda3/lib/cmake"
+_HIDDEN_CMAKE_DIRS=()
+
+_hide_anaconda_cmake() {
+  if [[ ! -d "${_ANACONDA_CMAKE_DIR}" ]]; then return; fi
+  info "Temporarily hiding Anaconda Qt cmake dirs to prevent cmake bootstrap conflict ..."
+  while IFS= read -r -d '' _d; do
+    local _hidden="${_d}.buildroot_hidden"
+    if [[ -d "${_d}" && ! -d "${_hidden}" ]]; then
+      mv "${_d}" "${_hidden}"
+      _HIDDEN_CMAKE_DIRS+=("${_d}")
+      info "  hidden: ${_d}"
+    fi
+  done < <(find "${_ANACONDA_CMAKE_DIR}" -maxdepth 1 -type d \( \
+    -iname 'Qt5*' -o -iname 'Qt6*' -o -iname 'Qt*' \
+    \) -print0 2>/dev/null)
+}
+
+_restore_anaconda_cmake() {
+  for _d in "${_HIDDEN_CMAKE_DIRS[@]:-}"; do
+    [[ -z "${_d}" ]] && continue
+    local _hidden="${_d}.buildroot_hidden"
+    if [[ -d "${_hidden}" ]]; then
+      mv "${_hidden}" "${_d}"
+      info "  restored: ${_d}"
+    fi
+  done
+}
+
+# If a previous cmake bootstrap attempt left a poisoned stamp, remove it so
+# buildroot re-runs the configure step with the clean environment above.
+_cmake_stamp="${OUTPUT_DIR}/build/host-cmake-3.22.3/.stamp_configured"
+if [[ -f "${_cmake_stamp}" ]]; then
+  warn "Removing stale cmake bootstrap stamp (previous failed configure): ${_cmake_stamp}"
+  rm -f "${_cmake_stamp}"
+fi
+
+# ---------------------------------------------------------------------------
+# kmod Python workaround
+#
+# When BR2_PACKAGE_PYTHON3=y, kmod.mk unconditionally appends --enable-python
+# to kmod's configure flags.  kmod's AM_PATH_PYTHON autoconf macro then
+# requires python3-embed.pc to be present in the target staging sysroot, but
+# the cross-compiled python3 buildroot package does not install that file,
+# so configure fails with "python support requested but libraries not found".
+#
+# local.mk is not supported by this buildroot version.
+# The fix is to patch kmod.mk directly (sed in-place) to replace
+# --enable-python with --disable-python before the build starts, and restore
+# the original file via the EXIT trap.
+# ---------------------------------------------------------------------------
+_KMOD_MK="${SDK_DIR}/buildroot/package/kmod/kmod.mk"
+_KMOD_MK_BACKUP="${_KMOD_MK}.orig_backup"
+
+_patch_kmod_mk() {
+  if [[ ! -f "${_KMOD_MK}" ]]; then
+    warn "kmod.mk not found at ${_KMOD_MK} — skipping Python workaround."
+    return
+  fi
+  if grep -q -- "--enable-python" "${_KMOD_MK}"; then
+    info "Patching kmod.mk: replacing --enable-python with --disable-python"
+    cp -f "${_KMOD_MK}" "${_KMOD_MK_BACKUP}"
+    sed -i 's/--enable-python/--disable-python/g' "${_KMOD_MK}"
+    ok "kmod.mk patched."
+  else
+    info "kmod.mk already uses --disable-python or has no --enable-python — no patch needed."
+  fi
+}
+
+_restore_kmod_mk() {
+  if [[ -f "${_KMOD_MK_BACKUP}" ]]; then
+    mv -f "${_KMOD_MK_BACKUP}" "${_KMOD_MK}"
+    info "kmod.mk restored from backup."
+  fi
+}
+
+# Register a single EXIT trap covering both restores.
+trap '_restore_anaconda_cmake; _restore_kmod_mk' EXIT
+
+# Now apply both workarounds (after trap is set so restores always run).
+_hide_anaconda_cmake
+_patch_kmod_mk
+
+# Remove a stale kmod configure stamp so buildroot re-runs configure with
+# --disable-python now in kmod.mk.
+_kmod_stamp="${OUTPUT_DIR}/build/kmod-30/.stamp_configured"
+if [[ -f "${_kmod_stamp}" ]]; then
+  warn "Removing stale kmod configure stamp: ${_kmod_stamp}"
+  rm -f "${_kmod_stamp}"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 4: Configure buildroot (non-interactive equivalent of make envconfig)
