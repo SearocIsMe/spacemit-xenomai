@@ -14,10 +14,14 @@
 #
 # Usage:
 #   bash scripts/flash/make-full-sdcard-img.sh <base_image> [build_dir] [output_dir]
+
 #   bash scripts/flash/make-full-sdcard-img.sh \
-#    ~/Downloads/buildroot-k1_rt-sdcard.img \
-#    ~/work/build-k1 \
+#    ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+#    ~/work/build-k1
 #    /tmp
+
+# sudo ./scripts/flash/make-full-sdcard-img.sh ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img ~/work/build-k1 /tmp
+
 
 # Arguments:
 #   base_image   Full SpacemiT buildroot SD card image to use as the base.
@@ -25,6 +29,7 @@
 #                  https://www.spacemit.com/community/document/info?lang=zh
 #                    &nodepath=software/SDK/buildroot/k1_buildroot/source.md
 #                Example: ~/Downloads/buildroot-k1_rt-sdcard.img
+#                also can build it out as based
 #
 #   build_dir    Kernel build output directory (default: ~/work/build-k1)
 #                Must contain:
