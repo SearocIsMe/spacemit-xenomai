@@ -255,58 +255,83 @@ if [[ -f "${_cmake_stamp}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# kmod Python workaround
+# Generic Python-binding workaround for buildroot packages
 #
-# When BR2_PACKAGE_PYTHON3=y, kmod.mk unconditionally appends --enable-python
-# to kmod's configure flags.  kmod's AM_PATH_PYTHON autoconf macro then
-# requires python3-embed.pc to be present in the target staging sysroot, but
-# the cross-compiled python3 buildroot package does not install that file,
-# so configure fails with "python support requested but libraries not found".
+# Several buildroot packages (kmod, util-linux, …) enable Python bindings
+# when BR2_PACKAGE_PYTHON3=y.  Their autoconf checks require
+# python3-embed.pc to be present in the cross-compiled staging sysroot, but
+# the buildroot python3 package does not install that file, so configure
+# fails with "python support requested but libraries not found".
 #
-# local.mk is not supported by this buildroot version.
-# The fix is to patch kmod.mk directly (sed in-place) to replace
-# --enable-python with --disable-python before the build starts, and restore
-# the original file via the EXIT trap.
+# Fix: sed-patch each offending .mk file to replace the --enable-python /
+# --with-python flag with --disable-python / --without-python.  The original
+# files are backed up and restored on EXIT so the source tree is clean.
 # ---------------------------------------------------------------------------
-_KMOD_MK="${SDK_DIR}/buildroot/package/kmod/kmod.mk"
-_KMOD_MK_BACKUP="${_KMOD_MK}.orig_backup"
+_PATCHED_MK_FILES=()   # list of files that were actually patched
 
-_patch_kmod_mk() {
-  if [[ ! -f "${_KMOD_MK}" ]]; then
-    warn "kmod.mk not found at ${_KMOD_MK} — skipping Python workaround."
+_patch_mk_python() {
+  # Usage: _patch_mk_python <path-to-.mk> <sed-expression> [<sed-expression>...]
+  local _mk="$1"; shift
+  if [[ ! -f "${_mk}" ]]; then
+    warn "File not found: ${_mk} — skipping patch."
     return
   fi
-  if grep -q -- "--enable-python" "${_KMOD_MK}"; then
-    info "Patching kmod.mk: replacing --enable-python with --disable-python"
-    cp -f "${_KMOD_MK}" "${_KMOD_MK_BACKUP}"
-    sed -i 's/--enable-python/--disable-python/g' "${_KMOD_MK}"
-    ok "kmod.mk patched."
-  else
-    info "kmod.mk already uses --disable-python or has no --enable-python — no patch needed."
+  local _backup="${_mk}.python_backup"
+  # Only patch once (idempotent)
+  if [[ -f "${_backup}" ]]; then
+    info "Already patched: ${_mk}"
+    return
   fi
+  cp -f "${_mk}" "${_backup}"
+  local _expr
+  for _expr in "$@"; do
+    sed -i "${_expr}" "${_mk}"
+  done
+  _PATCHED_MK_FILES+=("${_mk}")
+  ok "Patched ${_mk} (backup: ${_backup})"
 }
 
-_restore_kmod_mk() {
-  if [[ -f "${_KMOD_MK_BACKUP}" ]]; then
-    mv -f "${_KMOD_MK_BACKUP}" "${_KMOD_MK}"
-    info "kmod.mk restored from backup."
-  fi
+_restore_patched_mk_files() {
+  local _mk
+  for _mk in "${_PATCHED_MK_FILES[@]:-}"; do
+    [[ -z "${_mk}" ]] && continue
+    local _backup="${_mk}.python_backup"
+    if [[ -f "${_backup}" ]]; then
+      mv -f "${_backup}" "${_mk}"
+      info "Restored: ${_mk}"
+    fi
+  done
 }
 
-# Register a single EXIT trap covering both restores.
-trap '_restore_anaconda_cmake; _restore_kmod_mk' EXIT
+# Register a single EXIT trap covering all restores.
+trap '_restore_anaconda_cmake; _restore_patched_mk_files' EXIT
 
-# Now apply both workarounds (after trap is set so restores always run).
+# Now apply workarounds (after trap is set so restores always run).
 _hide_anaconda_cmake
-_patch_kmod_mk
 
-# Remove a stale kmod configure stamp so buildroot re-runs configure with
-# --disable-python now in kmod.mk.
-_kmod_stamp="${OUTPUT_DIR}/build/kmod-30/.stamp_configured"
-if [[ -f "${_kmod_stamp}" ]]; then
-  warn "Removing stale kmod configure stamp: ${_kmod_stamp}"
-  rm -f "${_kmod_stamp}"
-fi
+# kmod: --enable-python → --disable-python
+_patch_mk_python \
+  "${SDK_DIR}/buildroot/package/kmod/kmod.mk" \
+  's/--enable-python/--disable-python/g'
+
+# util-linux: --with-python → --without-python, --enable-pylibmount → --disable-pylibmount
+_patch_mk_python \
+  "${SDK_DIR}/buildroot/package/util-linux/util-linux.mk" \
+  's/--with-python\b/--without-python/g' \
+  's/--enable-pylibmount/--disable-pylibmount/g'
+
+# Remove stale configure stamps for patched packages so buildroot re-runs
+# their configure with the corrected flags.
+for _pkg_build_dir in \
+    "${OUTPUT_DIR}/build/kmod-30" \
+    "${OUTPUT_DIR}/build/util-linux-2.38" \
+    ; do
+  _stamp="${_pkg_build_dir}/.stamp_configured"
+  if [[ -f "${_stamp}" ]]; then
+    warn "Removing stale configure stamp: ${_stamp}"
+    rm -f "${_stamp}"
+  fi
+done
 
 # ---------------------------------------------------------------------------
 # Step 4: Configure buildroot (non-interactive equivalent of make envconfig)
