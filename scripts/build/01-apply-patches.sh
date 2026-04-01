@@ -60,6 +60,40 @@ if [[ -f "${APPLIED_MARKER}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Quick check: if key EVL files already exist in the working tree (committed
+# or untracked), the patches have already been applied manually.
+# Set the marker and skip patching to avoid conflicts.
+# ---------------------------------------------------------------------------
+_evl_already_applied() {
+  # Check for committed EVL files (git ls-files) OR untracked EVL dirs
+  git -C "${KERNEL_DIR}" ls-files --error-unmatch \
+    "arch/riscv/include/asm/dovetail.h" &>/dev/null && return 0
+  # Also check untracked (new files not yet committed)
+  [[ -f "${KERNEL_DIR}/arch/riscv/include/asm/dovetail.h" ]] && \
+  [[ -d "${KERNEL_DIR}/kernel/evl" ]] && return 0
+  # Check for dirty working tree with EVL modifications (0003 patch files)
+  local _dirty
+  _dirty=$(git -C "${KERNEL_DIR}" diff --name-only HEAD 2>/dev/null | \
+           grep -c "kernel/irq/chip.c" || true)
+  [[ "${_dirty}" -gt 0 ]] && return 0
+  return 1
+}
+
+if _evl_already_applied; then
+  info "EVL files already present in kernel tree — patches already applied."
+  touch "${APPLIED_MARKER}"
+  ok "Marker set: ${APPLIED_MARKER}"
+  echo ""
+  echo "============================================================"
+  echo "  Patches already applied."
+  echo ""
+  echo "  Next step:"
+  echo "    bash scripts/build/02-configure.sh"
+  echo "============================================================"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Create a working branch
 # ---------------------------------------------------------------------------
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -68,6 +102,20 @@ EVL_BRANCH="evl-port-$(date +%Y%m%d)"
 if git show-ref --verify --quiet "refs/heads/${EVL_BRANCH}"; then
   warn "Branch ${EVL_BRANCH} already exists — checking it out."
   git checkout "${EVL_BRANCH}"
+  # Re-check after checkout
+  if _evl_already_applied; then
+    info "EVL files present on branch ${EVL_BRANCH} — patches already applied."
+    touch "${APPLIED_MARKER}"
+    ok "Marker set: ${APPLIED_MARKER}"
+    echo ""
+    echo "============================================================"
+    echo "  Patches already applied on branch: ${EVL_BRANCH}"
+    echo ""
+    echo "  Next step:"
+    echo "    bash scripts/build/02-configure.sh"
+    echo "============================================================"
+    exit 0
+  fi
 else
   info "Creating branch ${EVL_BRANCH} from ${CURRENT_BRANCH} ..."
   git checkout -b "${EVL_BRANCH}"
