@@ -173,6 +173,7 @@ make \
   LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
   INSTALL_MOD_PATH="${MODULES_INSTALL_DIR}" \
+  INSTALL_MOD_STRIP=1 \
   modules_install
 ok "Modules installed."
 
