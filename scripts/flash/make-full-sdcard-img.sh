@@ -404,6 +404,64 @@ MODULES_DIR="${BUILD_DIR}/modules_install"
 
 if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
   if [[ -d "${MODULES_DIR}" ]]; then
+
+    # -------------------------------------------------------------------------
+    # Pre-flight: check how much space the new modules need vs what's available
+    # in the rootfs partition.  If there isn't enough room, grow the image file
+    # and resize the ext4 filesystem before mounting.
+    # -------------------------------------------------------------------------
+    EVL_MOD_VER=$(ls "${MODULES_DIR}/lib/modules/" 2>/dev/null | head -1)
+    if [[ -n "${EVL_MOD_VER}" ]]; then
+      NEW_MOD_KB=$(du -sk "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" | cut -f1)
+      # Get current free space on the rootfs partition (without mounting)
+      ROOTFS_FREE_KB=$(sudo tune2fs -l "${ROOTFS_PART}" 2>/dev/null \
+        | awk '/Free blocks/{fb=$3} /Block size/{bs=$3} END{printf "%d", fb*bs/1024}')
+
+      info "New modules size : $((NEW_MOD_KB / 1024)) MB"
+      info "Rootfs free space: $((ROOTFS_FREE_KB / 1024)) MB"
+
+      # We need at least NEW_MOD_KB + 64MB headroom
+      NEEDED_KB=$(( NEW_MOD_KB + 65536 ))
+      if [[ "${ROOTFS_FREE_KB}" -lt "${NEEDED_KB}" ]]; then
+        GROW_MB=$(( (NEEDED_KB - ROOTFS_FREE_KB) / 1024 + 256 ))
+        warn "Rootfs partition too small — growing image by ${GROW_MB} MB ..."
+
+        # 1. Detach loop device so we can resize the image file
+        sudo losetup -d "${LOOP}" 2>/dev/null || true
+        trap - EXIT
+
+        # 2. Extend the image file
+        dd if=/dev/zero bs=1M count="${GROW_MB}" >> "${IMG}" 2>/dev/null
+        ok "Image file extended by ${GROW_MB} MB."
+
+        # 3. Re-attach loop device
+        LOOP=$(sudo losetup -Pf --show "${IMG}")
+        LOOP_REF="${LOOP}"
+        trap cleanup EXIT
+        sleep 1
+
+        # Re-resolve partition device nodes after re-attach
+        ROOTFS_PART="${LOOP}p$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')"
+        info "Re-attached loop device: ${LOOP}, rootfs: ${ROOTFS_PART}"
+
+        # 4. Grow the partition table entry to fill the new space
+        #    parted resizepart <partnum> 100%
+        ROOTFS_PARTNUM=$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')
+        sudo parted -s "${LOOP}" resizepart "${ROOTFS_PARTNUM}" 100% 2>/dev/null \
+          && ok "Partition ${ROOTFS_PARTNUM} extended to fill new space." \
+          || warn "parted resizepart failed — trying without (resize2fs may still work)."
+        sleep 1
+
+        # 5. Check and resize the ext4 filesystem
+        sudo e2fsck -f -y "${ROOTFS_PART}" 2>/dev/null || true
+        sudo resize2fs "${ROOTFS_PART}" 2>/dev/null \
+          && ok "ext4 filesystem resized to fill partition." \
+          || warn "resize2fs failed — proceeding anyway (may still have enough space)."
+      else
+        info "Rootfs has sufficient free space — no resize needed."
+      fi
+    fi
+
     ROOTFS_MOUNT=$(mktemp -d /tmp/evl-rootfs-XXXXXX)
 
     info "Mounting rootfs partition ${ROOTFS_PART} ..."
@@ -415,8 +473,6 @@ if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
       info "Injecting EVL modules for kernel ${EVL_MOD_VER} into rootfs ..."
 
       # Remove existing modules directory for this version to free space first.
-      # We do NOT keep a backup inside the image — the rootfs (p6) is only 900MB
-      # and the modules tree is large; backing up would cause "no space left on device".
       if [[ -d "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}" ]]; then
         sudo rm -rf "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}"
         info "  Removed old modules/${EVL_MOD_VER} to free space."
