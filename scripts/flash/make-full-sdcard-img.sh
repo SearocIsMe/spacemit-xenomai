@@ -20,7 +20,7 @@
 #    ~/work/build-k1
 #    /tmp
 
-# sudo ./scripts/flash/make-full-sdcard-img.sh ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img ~/work/build-k1 /tmp
+# sudo ./scripts/flash/make-full-sdcard-img.sh ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img ~/work/build-k1 ~/work
 
 
 # Arguments:
