@@ -352,6 +352,23 @@ if [[ -f "${ENV_FILE}" ]]; then
     ok "nowatchdog already present — no change needed"
   fi
 
+  # Fix 4: plymouth.enable=0 — disable Plymouth splash so kernel messages appear
+  #         on HDMI framebuffer instead of being hidden behind the splash screen.
+  if ! sudo grep -q 'plymouth.enable=0' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|nowatchdog|nowatchdog plymouth.enable=0|g' "${ENV_FILE}"
+    ok "Added plymouth.enable=0 to env_k1-x.txt"
+  else
+    ok "plymouth.enable=0 already present — no change needed"
+  fi
+
+  # Fix 5: loglevel=7 — show all kernel messages on console (helps diagnose hangs)
+  if ! sudo grep -q 'loglevel=' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|plymouth.enable=0|plymouth.enable=0 loglevel=7|g' "${ENV_FILE}"
+    ok "Added loglevel=7 to env_k1-x.txt"
+  else
+    ok "loglevel already set — no change needed"
+  fi
+
   info "Updated env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
   echo ""
