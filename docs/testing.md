@@ -4,6 +4,112 @@
 
 This document describes the procedure for flashing the EVL-enabled kernel to an SD card, booting the Milk-V Jupiter, and running latency tests to verify real-time performance.
 
+> **⚠️ Current Status (2026-04-01):** The SD card image `evl-sdcard-k1-20260331.img`
+> boots successfully on Jupiter (Bianbu desktop loads, terminal works), but
+> **EVL / Dovetail is NOT present** in this image. The kernel is a plain SpacemiT
+> kernel. See [§0 Pre-flight Check](#0-pre-flight-check) and
+> `docs/porting-notes.md §8` for the root-cause analysis and required next steps
+> before EVL testing is possible.
+
+---
+
+## 0. Pre-flight Check — Is EVL Actually in the Kernel?
+
+Before running any EVL tests, confirm that the running kernel actually has EVL
+compiled in. The current image (`evl-sdcard-k1-20260331.img`) does **not** —
+this check will tell you immediately.
+
+### 0.1 Connect to Jupiter via SSH (LAN)
+
+```bash
+# Find Jupiter's IP address (check your router, or run on Jupiter's terminal)
+# Then SSH in from your host PC:
+ssh root@<jupiter-ip>
+# or, if Bianbu uses a non-root user:
+ssh user@<jupiter-ip>
+```
+
+### 0.2 Check Whether EVL Is Present
+
+Run these four commands on Jupiter:
+
+```bash
+# 1. Any EVL messages at boot?
+dmesg | grep -i evl
+
+# 2. EVL sysfs interface present?
+ls /sys/devices/virtual/evl/
+
+# 3. Kernel config — was DOVETAIL compiled in?
+zcat /proc/config.gz | grep -E "CONFIG_DOVETAIL|CONFIG_EVL|CONFIG_IRQ_PIPELINE"
+
+# 4. Kernel version string
+uname -r
+```
+
+### 0.3 Interpreting Results
+
+#### ✅ EVL IS present (expected after arch patch is applied and kernel rebuilt):
+
+```
+# dmesg | grep -i evl
+[    2.345678] EVL: core started, ABI 19
+[    2.345679] EVL: enabling out-of-band stage
+
+# ls /sys/devices/virtual/evl/
+control  clock  thread  ...
+
+# zcat /proc/config.gz | grep CONFIG_DOVETAIL
+CONFIG_DOVETAIL=y
+```
+
+→ Proceed to §3 Boot Verification and §5 Latency Testing.
+
+#### ❌ EVL is NOT present (current state as of 2026-04-01):
+
+```
+# dmesg | grep -i evl
+(no output)
+
+# ls /sys/devices/virtual/evl/
+ls: /sys/devices/virtual/evl: No such file or directory
+
+# zcat /proc/config.gz | grep CONFIG_DOVETAIL
+# CONFIG_DOVETAIL is not set
+```
+
+→ **Stop here.** The RISC-V Dovetail arch hooks are missing from the kernel.
+See `docs/porting-notes.md §8` (root-cause) and `§9` (how to obtain the
+missing patches). The kernel must be rebuilt before any EVL testing is possible.
+
+---
+
+## 0.4 Quick Diagnostic Script (run on Jupiter via SSH)
+
+```bash
+#!/bin/sh
+# Paste this into the Jupiter terminal or run via SSH
+echo "=== Kernel version ==="
+uname -r
+
+echo ""
+echo "=== EVL in dmesg ==="
+dmesg | grep -i evl || echo "(none)"
+
+echo ""
+echo "=== EVL sysfs ==="
+ls /sys/devices/virtual/evl/ 2>/dev/null || echo "(not present)"
+
+echo ""
+echo "=== Kernel config: Dovetail/EVL ==="
+zcat /proc/config.gz 2>/dev/null | grep -E "CONFIG_DOVETAIL|CONFIG_EVL|CONFIG_IRQ_PIPELINE" \
+  || echo "(config.gz not available)"
+
+echo ""
+echo "=== evl tool ==="
+which evl 2>/dev/null || echo "(evl not installed)"
+```
+
 ---
 
 ## 1. Hardware Setup
@@ -122,21 +228,56 @@ All tests passed.
 
 ## 4. Installing libevl on Target
 
-Cross-compile libevl on the host and copy to the target:
+> **Prerequisite:** EVL must be present in the kernel (§0 pre-flight check must
+> pass) before libevl is useful on the target.
+
+Cross-compile libevl on the host and copy to the target via SSH (preferred,
+since Jupiter is on the LAN):
 
 ```bash
-# On WSL2 host (in ~/work/libevl)
+# On WSL2/Linux host — build libevl for RISC-V
 cd ~/work/libevl
 make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- \
      DESTDIR=~/work/libevl-install \
      prefix=/usr \
      install
 
-# Copy to target (via SSH or SD card rootfs mount)
+# Copy to Jupiter via SSH (get Jupiter IP from your router or 'ip addr' on Jupiter)
 scp -r ~/work/libevl-install/usr root@<jupiter-ip>:/
+
+# Verify on Jupiter
+ssh root@<jupiter-ip> "evl check"
 ```
 
-Or mount the rootfs partition and copy directly:
+### 4.1 SSH Workflow for Iterative Testing
+
+Since Jupiter is on the LAN, all test commands can be run remotely without
+needing HDMI or serial console:
+
+```bash
+JUPITER=root@<jupiter-ip>
+
+# Check EVL status remotely
+ssh $JUPITER "dmesg | grep -i evl"
+
+# Run latmus and capture results locally
+ssh $JUPITER "evl run latmus -T 60 -c 1" | tee latency-$(date +%Y%m%d-%H%M).txt
+
+# Copy a new test binary to Jupiter
+scp ~/work/my-test $JUPITER:/tmp/
+ssh $JUPITER "/tmp/my-test"
+
+# Sync the entire libevl install tree (faster than scp for many files)
+rsync -avz ~/work/libevl-install/usr/ $JUPITER:/usr/
+
+# Collect full diagnostic info
+ssh $JUPITER "uname -r; zcat /proc/config.gz | grep -E 'DOVETAIL|EVL|IRQ_PIPELINE'"
+```
+
+### 4.2 Alternative: Mount rootfs Partition Directly
+
+If SSH is not available (e.g. before first boot), mount the SD card rootfs:
+
 ```bash
 sudo mount /dev/sdX2 /mnt/rootfs
 sudo cp -r ~/work/libevl-install/usr/* /mnt/rootfs/usr/

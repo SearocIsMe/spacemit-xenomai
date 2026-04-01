@@ -126,7 +126,7 @@ check_config() {
   fi
 }
 
-check_config "CONFIG_EVL_CORE"          "y"
+check_config "CONFIG_EVL"          "y"
 check_config "CONFIG_DOVETAIL"          "y"
 check_config "CONFIG_IRQ_PIPELINE"      "y"
 check_config "CONFIG_HIGH_RES_TIMERS"   "y"

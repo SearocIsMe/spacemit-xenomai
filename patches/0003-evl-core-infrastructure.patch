@@ -1,0 +1,5035 @@
+From: EVL infrastructure changes for SpacemiT K1
+Date: Wed, 01 Apr 2026 13:06:16 +0800
+Subject: [PATCH 0003] evl: copy core infrastructure from EVL tree
+
+Copy EVL-modified core kernel headers and source files from the EVL
+reference tree (linux-evl) to the SpacemiT K1 tree. These are the
+modifications EVL makes to vanilla kernel files to support the IRQ
+pipeline (Dovetail) and EVL core.
+
+Files modified:
+  include/linux/: preempt.h, sched.h, irqflags.h, hardirq.h, etc.
+  kernel/irq/: handle.c, manage.c, chip.c, etc.
+  kernel/: fork.c, exit.c, context_tracking.c, etc.
+---
+Only in /home/lindows/work/linux-k1/include/linux/mfd: spacemit
+Only in /home/lindows/work/linux-k1/include/linux/platform_data: k1x_ci_usb.h
+Only in /home/lindows/work/linux-k1/include/linux/platform_data: k1x_sdhci.h
+Only in /home/lindows/work/linux-k1/include/linux/: spacemit
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/include/asm-generic/atomic.h /home/lindows/work/linux-evl/include/asm-generic/atomic.h
+--- /home/lindows/work/linux-k1/include/asm-generic/atomic.h	2026-03-30 12:19:57.307774924 +0800
++++ /home/lindows/work/linux-evl/include/asm-generic/atomic.h	2026-03-30 12:22:17.302996322 +0800
+@@ -59,9 +59,9 @@
+ {									\
+ 	unsigned long flags;						\
+ 									\
+-	raw_local_irq_save(flags);					\
++	flags = hard_local_irq_save();					\
+ 	v->counter = v->counter c_op i;					\
+-	raw_local_irq_restore(flags);					\
++	hard_local_irq_restore(flags);					\
+ }
+ 
+ #define ATOMIC_OP_RETURN(op, c_op)					\
+@@ -70,9 +70,9 @@
+ 	unsigned long flags;						\
+ 	int ret;							\
+ 									\
+-	raw_local_irq_save(flags);					\
++	flags = hard_local_irq_save();					\
+ 	ret = (v->counter = v->counter c_op i);				\
+-	raw_local_irq_restore(flags);					\
++	hard_local_irq_restore(flags);					\
+ 									\
+ 	return ret;							\
+ }
+@@ -83,10 +83,10 @@
+ 	unsigned long flags;						\
+ 	int ret;							\
+ 									\
+-	raw_local_irq_save(flags);					\
++	flags = hard_local_irq_save();					\
+ 	ret = v->counter;						\
+ 	v->counter = v->counter c_op i;					\
+-	raw_local_irq_restore(flags);					\
++	hard_local_irq_restore(flags);					\
+ 									\
+ 	return ret;							\
+ }
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/include/asm-generic/cmpxchg.h /home/lindows/work/linux-evl/include/asm-generic/cmpxchg.h
+--- /home/lindows/work/linux-k1/include/asm-generic/cmpxchg.h	2026-03-30 12:19:57.307774924 +0800
++++ /home/lindows/work/linux-evl/include/asm-generic/cmpxchg.h	2026-03-30 12:22:17.302996322 +0800
+@@ -30,10 +30,10 @@
+ #ifdef __xchg_u8
+ 		return __xchg_u8(x, ptr);
+ #else
+-		local_irq_save(flags);
++		flags = hard_local_irq_save();
+ 		ret = *(volatile u8 *)ptr;
+ 		*(volatile u8 *)ptr = (x & 0xffu);
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 		return ret;
+ #endif /* __xchg_u8 */
+ 
+@@ -41,10 +41,10 @@
+ #ifdef __xchg_u16
+ 		return __xchg_u16(x, ptr);
+ #else
+-		local_irq_save(flags);
++		flags = hard_local_irq_save();
+ 		ret = *(volatile u16 *)ptr;
+ 		*(volatile u16 *)ptr = (x & 0xffffu);
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 		return ret;
+ #endif /* __xchg_u16 */
+ 
+@@ -52,10 +52,10 @@
+ #ifdef __xchg_u32
+ 		return __xchg_u32(x, ptr);
+ #else
+-		local_irq_save(flags);
++		flags = hard_local_irq_save();
+ 		ret = *(volatile u32 *)ptr;
+ 		*(volatile u32 *)ptr = (x & 0xffffffffu);
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 		return ret;
+ #endif /* __xchg_u32 */
+ 
+@@ -64,10 +64,10 @@
+ #ifdef __xchg_u64
+ 		return __xchg_u64(x, ptr);
+ #else
+-		local_irq_save(flags);
++		flags = hard_local_irq_save();
+ 		ret = *(volatile u64 *)ptr;
+ 		*(volatile u64 *)ptr = x;
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 		return ret;
+ #endif /* __xchg_u64 */
+ #endif /* CONFIG_64BIT */
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/include/asm-generic/cmpxchg-local.h /home/lindows/work/linux-evl/include/asm-generic/cmpxchg-local.h
+--- /home/lindows/work/linux-k1/include/asm-generic/cmpxchg-local.h	2026-03-30 12:19:57.307774924 +0800
++++ /home/lindows/work/linux-evl/include/asm-generic/cmpxchg-local.h	2026-03-30 12:22:17.302996322 +0800
+@@ -23,7 +23,7 @@
+ 	if (size == 8 && sizeof(unsigned long) != 8)
+ 		wrong_size_cmpxchg(ptr);
+ 
+-	raw_local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	switch (size) {
+ 	case 1: prev = *(u8 *)ptr;
+ 		if (prev == (old & 0xffu))
+@@ -44,7 +44,7 @@
+ 	default:
+ 		wrong_size_cmpxchg(ptr);
+ 	}
+-	raw_local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 	return prev;
+ }
+ 
+@@ -57,11 +57,11 @@
+ 	u64 prev;
+ 	unsigned long flags;
+ 
+-	raw_local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	prev = *(u64 *)ptr;
+ 	if (prev == old)
+ 		*(u64 *)ptr = new;
+-	raw_local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 	return prev;
+ }
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/include/asm-generic/percpu.h /home/lindows/work/linux-evl/include/asm-generic/percpu.h
+--- /home/lindows/work/linux-k1/include/asm-generic/percpu.h	2026-03-30 12:19:57.307774924 +0800
++++ /home/lindows/work/linux-evl/include/asm-generic/percpu.h	2026-03-30 12:22:17.302996322 +0800
+@@ -133,9 +133,9 @@
+ ({									\
+ 	typeof(pcp) ___ret;						\
+ 	unsigned long ___flags;						\
+-	raw_local_irq_save(___flags);					\
++	___flags = hard_local_irq_save();				\
+ 	___ret = raw_cpu_generic_read(pcp);				\
+-	raw_local_irq_restore(___flags);				\
++	hard_local_irq_restore(___flags);				\
+ 	___ret;								\
+ })
+ 
+@@ -152,9 +152,9 @@
+ #define this_cpu_generic_to_op(pcp, val, op)				\
+ do {									\
+ 	unsigned long __flags;						\
+-	raw_local_irq_save(__flags);					\
++	__flags = hard_local_irq_save();				\
+ 	raw_cpu_generic_to_op(pcp, val, op);				\
+-	raw_local_irq_restore(__flags);					\
++	hard_local_irq_restore(__flags);				\
+ } while (0)
+ 
+ 
+@@ -162,9 +162,9 @@
+ ({									\
+ 	typeof(pcp) __ret;						\
+ 	unsigned long __flags;						\
+-	raw_local_irq_save(__flags);					\
++	__flags = hard_local_irq_save();				\
+ 	__ret = raw_cpu_generic_add_return(pcp, val);			\
+-	raw_local_irq_restore(__flags);					\
++	hard_local_irq_restore(__flags);				\
+ 	__ret;								\
+ })
+ 
+@@ -172,9 +172,9 @@
+ ({									\
+ 	typeof(pcp) __ret;						\
+ 	unsigned long __flags;						\
+-	raw_local_irq_save(__flags);					\
++	__flags = hard_local_irq_save();				\
+ 	__ret = raw_cpu_generic_xchg(pcp, nval);			\
+-	raw_local_irq_restore(__flags);					\
++	hard_local_irq_restore(__flags);				\
+ 	__ret;								\
+ })
+ 
+@@ -192,9 +192,9 @@
+ ({									\
+ 	typeof(pcp) __ret;						\
+ 	unsigned long __flags;						\
+-	raw_local_irq_save(__flags);					\
++	__flags = hard_local_irq_save();				\
+ 	__ret = raw_cpu_generic_cmpxchg(pcp, oval, nval);		\
+-	raw_local_irq_restore(__flags);					\
++	hard_local_irq_restore(__flags);				\
+ 	__ret;								\
+ })
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/bpf/Kconfig /home/lindows/work/linux-evl/kernel/bpf/Kconfig
+--- /home/lindows/work/linux-k1/kernel/bpf/Kconfig	2026-03-30 12:19:57.527179157 +0800
++++ /home/lindows/work/linux-evl/kernel/bpf/Kconfig	2026-03-30 12:22:17.553589179 +0800
+@@ -100,4 +100,7 @@
+ 
+ 	  If you are unsure how to answer this question, answer N.
+ 
++config BPF_OOB
++	bool
++
+ endmenu # "BPF subsystem"
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/context_tracking.c /home/lindows/work/linux-evl/kernel/context_tracking.c
+--- /home/lindows/work/linux-k1/kernel/context_tracking.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/context_tracking.c	2026-03-30 12:22:17.563612895 +0800
+@@ -239,7 +239,7 @@
+ 	ct_kernel_exit_state(RCU_DYNTICKS_IDX);
+ 	// ... but is no longer watching here.
+ 
+-	if (!in_nmi())
++	if (!in_nonmaskable())
+ 		rcu_dynticks_task_enter();
+ }
+ 
+@@ -273,7 +273,7 @@
+ 	 */
+ 	if (rcu_dynticks_curr_cpu_in_eqs()) {
+ 
+-		if (!in_nmi())
++		if (!in_nonmaskable())
+ 			rcu_dynticks_task_exit();
+ 
+ 		// RCU is not watching here ...
+@@ -287,7 +287,7 @@
+ 		instrument_atomic_write(&ct->state, sizeof(ct->state));
+ 
+ 		incby = 1;
+-	} else if (!in_nmi()) {
++	} else if (!in_nonmaskable()) {
+ 		instrumentation_begin();
+ 		rcu_irq_enter_check_tick();
+ 	} else  {
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/debug/debug_core.c /home/lindows/work/linux-evl/kernel/debug/debug_core.c
+--- /home/lindows/work/linux-k1/kernel/debug/debug_core.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/debug/debug_core.c	2026-03-30 12:22:17.563612895 +0800
+@@ -107,8 +107,8 @@
+  */
+ atomic_t			kgdb_active = ATOMIC_INIT(-1);
+ EXPORT_SYMBOL_GPL(kgdb_active);
+-static DEFINE_RAW_SPINLOCK(dbg_master_lock);
+-static DEFINE_RAW_SPINLOCK(dbg_slave_lock);
++static DEFINE_HARD_SPINLOCK(dbg_master_lock);
++static DEFINE_HARD_SPINLOCK(dbg_slave_lock);
+ 
+ /*
+  * We use NR_CPUs not PERCPU, in case kgdb is used to debug early
+@@ -596,7 +596,7 @@
+ 	 * Interrupts will be restored by the 'trap return' code, except when
+ 	 * single stepping.
+ 	 */
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 
+ 	cpu = ks->cpu;
+ 	kgdb_info[cpu].debuggerinfo = regs;
+@@ -650,7 +650,7 @@
+ 			smp_mb__before_atomic();
+ 			atomic_dec(&slaves_in_kgdb);
+ 			dbg_touch_watchdogs();
+-			local_irq_restore(flags);
++			hard_local_irq_restore(flags);
+ 			rcu_read_unlock();
+ 			return 0;
+ 		}
+@@ -669,7 +669,7 @@
+ 		atomic_set(&kgdb_active, -1);
+ 		raw_spin_unlock(&dbg_master_lock);
+ 		dbg_touch_watchdogs();
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 		rcu_read_unlock();
+ 
+ 		goto acquirelock;
+@@ -705,8 +705,11 @@
+ 		atomic_set(ks->send_ready, 1);
+ 
+ 	/* Signal the other CPUs to enter kgdb_wait() */
+-	else if ((!kgdb_single_step) && kgdb_do_roundup)
++	else if ((!kgdb_single_step) && kgdb_do_roundup && running_inband()) {
++		hard_cond_local_irq_enable();
+ 		kgdb_roundup_cpus();
++		hard_cond_local_irq_disable();
++	}
+ #endif
+ 
+ 	/*
+@@ -818,7 +821,7 @@
+ 	atomic_set(&kgdb_active, -1);
+ 	raw_spin_unlock(&dbg_master_lock);
+ 	dbg_touch_watchdogs();
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 	rcu_read_unlock();
+ 
+ 	return kgdb_info[cpu].ret_state;
+@@ -941,7 +944,7 @@
+ 	if (!kgdb_connected || atomic_read(&kgdb_active) != -1 || dbg_kdb_mode)
+ 		return;
+ 
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	gdbstub_msg_write(s, count);
+ 	local_irq_restore(flags);
+ }
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/entry/common.c /home/lindows/work/linux-evl/kernel/entry/common.c
+--- /home/lindows/work/linux-k1/kernel/entry/common.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/entry/common.c	2026-03-30 12:22:17.563612895 +0800
+@@ -6,6 +6,7 @@
+ #include <linux/highmem.h>
+ #include <linux/jump_label.h>
+ #include <linux/kmsan.h>
++#include <linux/irq_pipeline.h>
+ #include <linux/livepatch.h>
+ #include <linux/audit.h>
+ #include <linux/tick.h>
+@@ -95,6 +96,17 @@
+ __syscall_enter_from_user_work(struct pt_regs *regs, long syscall)
+ {
+ 	unsigned long work = READ_ONCE(current_thread_info()->syscall_work);
++	int ret;
++
++	/*
++	 * Pipeline the syscall to the companion core if the current
++	 * task wants this. Compiled out if not dovetailing.
++	 */
++	ret = pipeline_syscall(syscall, regs);
++	if (ret > 0)	/* out-of-band, bail out. */
++		return EXIT_SYSCALL_OOB;
++	if (ret < 0)		/* in-band, tail work only. */
++		return EXIT_SYSCALL_TAIL;
+ 
+ 	if (work & SYSCALL_WORK_ENTER)
+ 		syscall = syscall_trace_enter(regs, syscall, work);
+@@ -114,7 +126,7 @@
+ 	__enter_from_user_mode(regs);
+ 
+ 	instrumentation_begin();
+-	local_irq_enable();
++	syscall_enter_from_user_enable_irqs();
+ 	ret = __syscall_enter_from_user_work(regs, syscall);
+ 	instrumentation_end();
+ 
+@@ -125,7 +137,7 @@
+ {
+ 	__enter_from_user_mode(regs);
+ 	instrumentation_begin();
+-	local_irq_enable();
++	syscall_enter_from_user_enable_irqs();
+ 	instrumentation_end();
+ }
+ 
+@@ -140,6 +152,8 @@
+ 	user_enter_irqoff();
+ 	arch_exit_to_user_mode();
+ 	lockdep_hardirqs_on(CALLER_ADDR0);
++	if (running_inband())
++		unstall_inband();
+ }
+ 
+ void noinstr exit_to_user_mode(void)
+@@ -161,6 +175,12 @@
+ 
+ 		local_irq_enable_exit_to_user(ti_work);
+ 
++		/*
++		 * Check that local_irq_enable_exit_to_user() does the
++		 * right thing when pipelining.
++		 */
++		WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
++
+ 		if (ti_work & _TIF_NEED_RESCHED)
+ 			schedule();
+ 
+@@ -189,6 +209,7 @@
+ 		/* Check if any of the above work has queued a deferred wakeup */
+ 		tick_nohz_user_enter_prepare();
+ 
++		WARN_ON_ONCE(irq_pipeline_debug() && !hard_irqs_disabled());
+ 		ti_work = read_thread_flags();
+ 	}
+ 
+@@ -196,11 +217,28 @@
+ 	return ti_work;
+ }
+ 
++static inline bool do_retuser(unsigned long ti_work)
++{
++	if (dovetailing() && (ti_work & _TIF_RETUSER)) {
++		hard_local_irq_enable();
++		inband_retuser_notify();
++		hard_local_irq_disable();
++		/* RETUSER might have switched oob */
++		return running_inband();
++	}
++
++	return false;
++}
++
+ static void exit_to_user_mode_prepare(struct pt_regs *regs)
+ {
+ 	unsigned long ti_work;
+ 
++	check_hard_irqs_disabled();
++
+ 	lockdep_assert_irqs_disabled();
++again:
++	ti_work = read_thread_flags();
+ 
+ 	/* Flush pending rcuog wakeup before the last need_resched() check */
+ 	tick_nohz_user_enter_prepare();
+@@ -211,6 +249,10 @@
+ 
+ 	arch_exit_to_user_mode_prepare(regs, ti_work);
+ 
++	/* Dovetail: Fire pending RETUSER request. */
++	if (do_retuser(ti_work))
++		goto again;
++
+ 	/* Ensure that kernel state is sane for a return to userspace */
+ 	kmap_assert_nomap();
+ 	lockdep_assert_irqs_disabled();
+@@ -257,6 +299,23 @@
+ 		ptrace_report_syscall_exit(regs, step);
+ }
+ 
++static inline bool syscall_has_exit_work(struct pt_regs *regs,
++					unsigned long work)
++{
++	/*
++	 * Dovetail: if this does not look like an in-band syscall, it
++	 * has to belong to the companion core.  Skip the work for
++	 * those syscalls.
++	 */
++	if (unlikely(work & SYSCALL_WORK_EXIT)) {
++		if (!irqs_pipelined())
++			return true;
++		return !in_oob_syscall(regs);
++	}
++
++	return false;
++}
++
+ /*
+  * Syscall specific exit to user mode preparation. Runs with interrupts
+  * enabled.
+@@ -270,7 +329,7 @@
+ 
+ 	if (IS_ENABLED(CONFIG_PROVE_LOCKING)) {
+ 		if (WARN(irqs_disabled(), "syscall %lu left IRQs disabled", nr))
+-			local_irq_enable();
++			local_irq_enable_full();
+ 	}
+ 
+ 	rseq_syscall(regs);
+@@ -280,7 +339,7 @@
+ 	 * enabled, we want to run them exactly once per syscall exit with
+ 	 * interrupts enabled.
+ 	 */
+-	if (unlikely(work & SYSCALL_WORK_EXIT))
++	if (syscall_has_exit_work(regs, work))
+ 		syscall_exit_work(regs, work);
+ }
+ 
+@@ -306,6 +365,8 @@
+ 
+ noinstr void irqentry_enter_from_user_mode(struct pt_regs *regs)
+ {
++	WARN_ON_ONCE(irq_pipeline_debug() && irqs_disabled());
++	stall_inband_nocheck();
+ 	__enter_from_user_mode(regs);
+ }
+ 
+@@ -321,13 +382,37 @@
+ {
+ 	irqentry_state_t ret = {
+ 		.exit_rcu = false,
++#ifdef CONFIG_IRQ_PIPELINE
++		.stage_info = IRQENTRY_INBAND_STALLED,
++#endif
+ 	};
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++	if (running_oob()) {
++		WARN_ON_ONCE(irq_pipeline_debug() && oob_irqs_disabled());
++		ret.stage_info = IRQENTRY_OOB;
++		return ret;
++	}
++#endif
++
+ 	if (user_mode(regs)) {
++#ifdef CONFIG_IRQ_PIPELINE
++		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
++#endif
+ 		irqentry_enter_from_user_mode(regs);
+ 		return ret;
+ 	}
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++	/*
++	 * IRQ pipeline: If we trapped from kernel space, the virtual
++	 * state may or may not match the hardware state. Since hard
++	 * irqs are off on entry, we have to stall the in-band stage.
++	 */
++	if (!test_and_stall_inband_nocheck())
++		ret.stage_info = IRQENTRY_INBAND_UNSTALLED;
++#endif
++
+ 	/*
+ 	 * If this entry hit the idle task invoke ct_irq_enter() whether
+ 	 * RCU is watching or not.
+@@ -409,14 +494,91 @@
+ #endif
+ #endif
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++
++static inline
++bool irqexit_may_preempt_schedule(irqentry_state_t state,
++				struct pt_regs *regs)
++{
++	return state.stage_info == IRQENTRY_INBAND_UNSTALLED;
++}
++
++#else
++
++static inline
++bool irqexit_may_preempt_schedule(irqentry_state_t state,
++				struct pt_regs *regs)
++{
++	return !regs_irqs_disabled(regs);
++}
++
++#endif
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++static bool irqentry_syncstage(irqentry_state_t state) /* hard irqs off */
++{
++	/*
++	 * If pipelining interrupts, enable in-band IRQs then
++	 * synchronize the interrupt log on exit if:
++	 *
++	 * - irqentry_enter() stalled the stage in order to mirror the
++	 * hardware state.
++	 *
++	 * - we where coming from oob, thus went through a stage migration
++	 * that was caused by taking a CPU exception, e.g., a fault.
++	 *
++	 * We run before preempt_schedule_irq() may be called later on
++	 * by preemptible kernels, so that any rescheduling request
++	 * triggered by in-band IRQ handlers is considered.
++	 */
++	if (state.stage_info == IRQENTRY_INBAND_UNSTALLED ||
++		state.stage_info == IRQENTRY_OOB) {
++		unstall_inband_nocheck();
++		synchronize_pipeline_on_irq();
++		stall_inband_nocheck();
++		return true;
++	}
++
++	return false;
++}
++
++static void irqentry_unstall(void)
++{
++	unstall_inband_nocheck();
++}
++
++#else
++
++static bool irqentry_syncstage(irqentry_state_t state)
++{
++	return false;
++}
++
++static void irqentry_unstall(void)
++{
++}
++
++#endif
++
+ noinstr void irqentry_exit(struct pt_regs *regs, irqentry_state_t state)
+ {
++	bool synchronized = false;
++
++	if (running_oob())
++		return;
++
+ 	lockdep_assert_irqs_disabled();
+ 
+ 	/* Check whether this returns to user mode */
+ 	if (user_mode(regs)) {
+ 		irqentry_exit_to_user_mode(regs);
+-	} else if (!regs_irqs_disabled(regs)) {
++		return;
++	}
++
++	synchronized = irqentry_syncstage(state);
++
++	if (irqexit_may_preempt_schedule(state, regs)) {
+ 		/*
+ 		 * If RCU was not watching on entry this needs to be done
+ 		 * carefully and needs the same ordering of lockdep/tracing
+@@ -430,7 +592,7 @@
+ 			instrumentation_end();
+ 			ct_irq_exit();
+ 			lockdep_hardirqs_on(CALLER_ADDR0);
+-			return;
++			goto out;
+ 		}
+ 
+ 		instrumentation_begin();
+@@ -448,6 +610,12 @@
+ 		if (state.exit_rcu)
+ 			ct_irq_exit();
+ 	}
++
++out:
++	if (synchronized)
++		irqentry_unstall();
++
++	return;
+ }
+ 
+ irqentry_state_t noinstr irqentry_nmi_enter(struct pt_regs *regs)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/exit.c /home/lindows/work/linux-evl/kernel/exit.c
+--- /home/lindows/work/linux-k1/kernel/exit.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/exit.c	2026-03-30 12:22:17.563612895 +0800
+@@ -14,6 +14,7 @@
+ #include <linux/sched/task_stack.h>
+ #include <linux/sched/cputime.h>
+ #include <linux/interrupt.h>
++#include <linux/irq_pipeline.h>
+ #include <linux/module.h>
+ #include <linux/capability.h>
+ #include <linux/completion.h>
+@@ -828,6 +829,7 @@
+ 
+ 	io_uring_files_cancel();
+ 	exit_signals(tsk);  /* sets PF_EXITING */
++	inband_exit_notify();
+ 
+ 	/* sync mm's RSS info before statistics gathering */
+ 	if (tsk->mm)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/fork.c /home/lindows/work/linux-evl/kernel/fork.c
+--- /home/lindows/work/linux-k1/kernel/fork.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/fork.c	2026-03-30 12:22:17.573636609 +0800
+@@ -49,6 +49,7 @@
+ #include <linux/cpu.h>
+ #include <linux/cgroup.h>
+ #include <linux/security.h>
++#include <linux/dovetail.h>
+ #include <linux/hugetlb.h>
+ #include <linux/seccomp.h>
+ #include <linux/swap.h>
+@@ -1140,6 +1141,7 @@
+ #endif
+ 
+ 	setup_thread_stack(tsk, orig);
++	inband_task_init(tsk);
+ 	clear_user_return_notifier(tsk);
+ 	clear_tsk_need_resched(tsk);
+ 	set_task_stack_end_magic(tsk);
+@@ -1287,6 +1289,9 @@
+ #endif
+ 	mm_init_uprobes_state(mm);
+ 	hugetlb_count_init(mm);
++#ifdef CONFIG_DOVETAIL
++	memset(&mm->oob_state, 0, sizeof(mm->oob_state));
++#endif
+ 
+ 	if (current->mm) {
+ 		mm->flags = mmf_init_flags(current->mm->flags);
+@@ -1347,6 +1352,7 @@
+ 	exit_aio(mm);
+ 	ksm_exit(mm);
+ 	khugepaged_exit(mm); /* must run before exit_mmap */
++	inband_cleanup_notify(mm); /* ditto. */
+ 	exit_mmap(mm);
+ 	mm_put_huge_zero_page(mm);
+ 	set_mm_exe_file(mm, NULL);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/chip.c /home/lindows/work/linux-evl/kernel/irq/chip.c
+--- /home/lindows/work/linux-k1/kernel/irq/chip.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/chip.c	2026-03-30 12:22:17.573636609 +0800
+@@ -14,6 +14,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/kernel_stat.h>
+ #include <linux/irqdomain.h>
++#include <linux/irq_pipeline.h>
+ 
+ #include <trace/events/irq.h>
+ 
+@@ -47,6 +48,11 @@
+ 		return -EINVAL;
+ 
+ 	desc->irq_data.chip = (struct irq_chip *)(chip ?: &no_irq_chip);
++
++	WARN_ONCE(irqs_pipelined() && chip &&
++		  (chip->flags & IRQCHIP_PIPELINE_SAFE) == 0,
++		  "irqchip %s is not pipeline-safe!", chip->name);
++
+ 	irq_put_desc_unlock(desc, flags);
+ 	/*
+ 	 * For !CONFIG_SPARSE_IRQ make the irq show up in
+@@ -385,7 +391,8 @@
+  */
+ void irq_disable(struct irq_desc *desc)
+ {
+-	__irq_disable(desc, irq_settings_disable_unlazy(desc));
++	__irq_disable(desc,
++	      irq_settings_disable_unlazy(desc) || irqs_pipelined());
+ }
+ 
+ void irq_percpu_enable(struct irq_desc *desc, unsigned int cpu)
+@@ -499,6 +506,158 @@
+ 	return irq_wait_for_poll(desc);
+ }
+ 
++enum {
++	IRQ_FLOW_START,
++	IRQ_FLOW_PILEUP,
++	IRQ_FLOW_REPLAY,
++	IRQ_FLOW_FORWARD,
++};
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++static inline bool may_start_flow(int flow)
++{
++	return flow != IRQ_FLOW_REPLAY && flow != IRQ_FLOW_FORWARD;
++}
++
++void irq_clear_deferral(struct irq_desc *desc)
++{
++	desc->istate &= ~IRQS_DEFERRED;
++}
++
++void irq_clear_forward(struct irq_desc *desc)
++{
++	desc->istate &= ~IRQS_FORWARDED;
++}
++
++static irqreturn_t forward_irq_event(struct irq_desc *desc)
++{
++	irqreturn_t ret = IRQ_HANDLED;
++
++	if (likely(running_inband())) {
++		raw_spin_unlock(&desc->lock);
++		ret = handle_irq_event_percpu(desc);
++		raw_spin_lock(&desc->lock);
++	}
++
++	return ret;
++}
++
++#else
++
++static inline bool may_start_flow(int flow)
++{
++	return true;
++}
++
++irqreturn_t forward_irq_event(struct irq_desc *desc)
++{
++	return IRQ_NONE;
++}
++
++#endif
++
++/*
++ * get_flow_step - Determine which step of the interrupt flow handling
++ * we are in.
++ *
++ * When interrupt pipelining is enabled, interrupt flow handlers may
++ * be called twice for each event, following either of these patterns:
++ *
++ * - initially from the pipeline entry context in a attempt to handle
++ *   the hardware event from the oob stage, next if the event was
++ *   deferred to the in-band stage in absence of any oob handler. In
++ *   the first case, we have to ack the hardware before feeding the
++ *   pipeline. Otherwise, we should simply run the action associated
++ *   to the event from the in-band stage. In this case, the IRQ action
++ *   handler is called only once from the in-band stage.
++ *
++ * OR,
++ *
++ * - initially from the pipeline entry context for handling the
++ *   hardware event from the oob stage. The action handler may then
++ *   issue a forwarding request of the incoming event to the in-band
++ *   stage once done. In this case, the same IRQ action handler is
++ *   called twice, first from the oob stage then from the in-band
++ *   stage.
++ *
++ * When IRQ forwarding is requested by an oob action handler
++ * (IRQS_FORWARDED is set in the per-descriptor state), acknowledge
++ * was already sent to the hardware, therefore we want to skip this
++ * part when running the in-band call.
++ *
++ * With stacked irqchips, handlers of parent irqs not delivered to the
++ * oob stage would decode and post the cascaded events to the in-band
++ * stage as well. The internal per-descriptor IRQS_DEFERRED flag
++ * disambiguates between the latter context and events being replayed
++ * after deferral to the in-band stage, so that we do ack the hardware
++ * for cascaded events as expected.
++ *
++ * We might also receive a subsequent unmasked edge event on the same
++ * line while a deferred one is still pending replay from the in-band
++ * stage (hard irqs are on for replay). The flow state enumeration
++ * disambiguates all cases as follows:
++ *
++ * - IRQ_FLOW_START: we are running oob on behalf of the low-level irq
++ *   entry code, no deferred event is pending replay for the same
++ *   line, we need to send ack to the hardware.
++ *
++ * - IRQ_FLOW_PILEUP: we are running in-band for synchronizing the irq
++ *   log, one or more deferred events are already pending replay for
++ *   the same line, we need to ack the subsequent event to the
++ *   hardware too.
++ *
++ * - IRQ_FLOW_REPLAY: we are (re)playing a deferred event from the
++ *   in-band stage, as a result of synchronizing the irq log. A
++ *   deferred event was NOT handled from the oob stage by definition.
++ *
++ * - IRQ_FLOW_FORWARD: we are running in-band for passing a forwarded
++ *   event already handled from the oob stage to the action
++ *   handler. This mode allows for two-step subsequent handling of an
++ *   IRQ event over both stages by the same action
++ *   handler. IRQ_FLOW_FORWARD is mutually exclusive with
++ *   IRQ_FLOW_REPLAY since only the oob handler may request
++ *   forwarding.
++ */
++static inline unsigned int get_flow_step(struct irq_desc *desc)
++{
++	if (!irqs_pipelined())
++		return IRQ_FLOW_START;
++
++	if (!(desc->istate & IRQS_DEFERRED))
++		return desc->istate & IRQS_FORWARDED ?
++			IRQ_FLOW_FORWARD : IRQ_FLOW_START;
++
++	return in_pipeline() ? IRQ_FLOW_PILEUP : IRQ_FLOW_REPLAY;
++}
++
++/*
++ * should_feed_pipeline - Determine whether we should be feeding the
++ * interrupt pipeline with the incoming event.
++ *
++ * Depending on the flow state determined by get_flow_step(), the
++ * event is passed to the oob handler or directly replayed from the
++ * current in-band stage.
++ */
++static inline bool should_feed_pipeline(struct irq_desc *desc, int state)
++{
++	if (!irqs_pipelined())
++		return false;
++
++	switch (state) {
++	case IRQ_FLOW_REPLAY:	/* Deferred to in-band. */
++		irq_clear_deferral(desc);
++		break;
++	case IRQ_FLOW_FORWARD:	/* Handled oob, forwarded in-band. */
++		irq_clear_forward(desc);
++		break;
++	default:
++		return true;
++	}
++
++	return false;
++}
++
+ static bool irq_may_run(struct irq_desc *desc)
+ {
+ 	unsigned int mask = IRQD_IRQ_INPROGRESS | IRQD_WAKEUP_ARMED;
+@@ -514,8 +673,22 @@
+ 	 * If the interrupt is an armed wakeup source, mark it pending
+ 	 * and suspended, disable it and notify the pm core about the
+ 	 * event.
++	 *
++	 * When pipelining, the logic is as follows:
++	 *
++	 * - from a pipeline entry context, we might have preempted
++	 * the oob stage, or irqs might be [virtually] off, so we may
++	 * not run the in-band PM code. Just make sure any wakeup
++	 * interrupt is detected later on when the flow handler
++	 * re-runs from the in-band stage.
++	 *
++	 * - from the in-band context, run the PM wakeup check.
+ 	 */
+-	if (irq_pm_check_wakeup(desc))
++	if (irqs_pipelined()) {
++		WARN_ON_ONCE(irq_pipeline_debug() && !in_pipeline());
++		if (irqd_is_wakeup_armed(&desc->irq_data))
++			return true;
++	} else if (irq_pm_check_wakeup(desc))
+ 		return false;
+ 
+ 	/*
+@@ -537,20 +710,32 @@
+  */
+ void handle_simple_irq(struct irq_desc *desc)
+ {
++	int flow;
++
+ 	raw_spin_lock(&desc->lock);
+ 
+-	if (!irq_may_run(desc))
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow) && !irq_may_run(desc))
+ 		goto out_unlock;
+ 
+-	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+-
+-	if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
+-		desc->istate |= IRQS_PENDING;
++	if (should_feed_pipeline(desc, flow)) {
++		handle_oob_irq(desc);
+ 		goto out_unlock;
+ 	}
+ 
+-	kstat_incr_irqs_this_cpu(desc);
+-	handle_irq_event(desc);
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++	} else {
++		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
++
++		if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
++			desc->istate |= IRQS_PENDING;
++			goto out_unlock;
++		}
++
++		kstat_incr_irqs_this_cpu(desc);
++		handle_irq_event(desc);
++	}
+ 
+ out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+@@ -572,11 +757,24 @@
+  */
+ void handle_untracked_irq(struct irq_desc *desc)
+ {
++	int flow;
++
+ 	raw_spin_lock(&desc->lock);
+ 
+-	if (!irq_may_run(desc))
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow) && !irq_may_run(desc))
+ 		goto out_unlock;
+ 
++	if (should_feed_pipeline(desc, flow)) {
++		handle_oob_irq(desc);
++		goto out_unlock;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
++	}
++
+ 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+ 	if (unlikely(!desc->action || irqd_irq_disabled(&desc->irq_data))) {
+@@ -598,6 +796,20 @@
+ }
+ EXPORT_SYMBOL_GPL(handle_untracked_irq);
+ 
++static inline void cond_eoi_irq(struct irq_desc *desc)
++{
++	struct irq_chip *chip = desc->irq_data.chip;
++
++	if (!(chip->flags & IRQCHIP_EOI_THREADED))
++		chip->irq_eoi(&desc->irq_data);
++}
++
++static inline void mask_cond_eoi_irq(struct irq_desc *desc)
++{
++	mask_irq(desc);
++	cond_eoi_irq(desc);
++}
++
+ /*
+  * Called unconditionally from handle_level_irq() and only for oneshot
+  * interrupts from handle_fasteoi_irq()
+@@ -627,11 +839,28 @@
+  */
+ void handle_level_irq(struct irq_desc *desc)
+ {
++	int flow;
++
+ 	raw_spin_lock(&desc->lock);
+-	mask_ack_irq(desc);
+ 
+-	if (!irq_may_run(desc))
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow)) {
++		mask_ack_irq(desc);
++
++		if (!irq_may_run(desc))
++			goto out_unlock;
++	}
++
++	if (should_feed_pipeline(desc, flow)) {
++		if (handle_oob_irq(desc))
++			goto out_unmask;
+ 		goto out_unlock;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
++	}
+ 
+ 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+@@ -646,7 +875,7 @@
+ 
+ 	kstat_incr_irqs_this_cpu(desc);
+ 	handle_irq_event(desc);
+-
++out_unmask:
+ 	cond_unmask_irq(desc);
+ 
+ out_unlock:
+@@ -657,7 +886,10 @@
+ static void cond_unmask_eoi_irq(struct irq_desc *desc, struct irq_chip *chip)
+ {
+ 	if (!(desc->istate & IRQS_ONESHOT)) {
+-		chip->irq_eoi(&desc->irq_data);
++		if (!irqs_pipelined())
++			chip->irq_eoi(&desc->irq_data);
++		else if (!irqd_irq_disabled(&desc->irq_data))
++			unmask_irq(desc);
+ 		return;
+ 	}
+ 	/*
+@@ -668,9 +900,11 @@
+ 	 */
+ 	if (!irqd_irq_disabled(&desc->irq_data) &&
+ 	    irqd_irq_masked(&desc->irq_data) && !desc->threads_oneshot) {
+-		chip->irq_eoi(&desc->irq_data);
++		if (!irqs_pipelined())
++			chip->irq_eoi(&desc->irq_data);
+ 		unmask_irq(desc);
+-	} else if (!(chip->flags & IRQCHIP_EOI_THREADED)) {
++	} else if (!irqs_pipelined() &&
++		   !(chip->flags & IRQCHIP_EOI_THREADED)) {
+ 		chip->irq_eoi(&desc->irq_data);
+ 	}
+ }
+@@ -687,6 +921,7 @@
+ void handle_fasteoi_irq(struct irq_desc *desc)
+ {
+ 	struct irq_chip *chip = desc->irq_data.chip;
++	int flow;
+ 
+ 	raw_spin_lock(&desc->lock);
+ 
+@@ -695,12 +930,26 @@
+ 	 * can arrive on the new CPU before the original CPU has completed
+ 	 * handling the previous one - it may need to be resent.
+ 	 */
+-	if (!irq_may_run(desc)) {
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow) && !irq_may_run(desc)) {
+ 		if (irqd_needs_resend_when_in_progress(&desc->irq_data))
+ 			desc->istate |= IRQS_PENDING;
+ 		goto out;
+ 	}
+ 
++	if (should_feed_pipeline(desc, flow)) {
++		if (handle_oob_irq(desc))
++			chip->irq_eoi(&desc->irq_data);
++		else
++			mask_cond_eoi_irq(desc);
++		goto out_unlock;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
++	}
++
+ 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+ 	/*
+@@ -714,7 +963,7 @@
+ 	}
+ 
+ 	kstat_incr_irqs_this_cpu(desc);
+-	if (desc->istate & IRQS_ONESHOT)
++	if (!irqs_pipelined() && (desc->istate & IRQS_ONESHOT))
+ 		mask_irq(desc);
+ 
+ 	handle_irq_event(desc);
+@@ -727,6 +976,7 @@
+ 	if (unlikely(desc->istate & IRQS_PENDING))
+ 		check_irq_resend(desc, false);
+ 
++out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+ 	return;
+ out:
+@@ -786,35 +1036,54 @@
+  */
+ void handle_edge_irq(struct irq_desc *desc)
+ {
++	struct irq_chip *chip = irq_desc_get_chip(desc);
++	int flow;
++
+ 	raw_spin_lock(&desc->lock);
+ 
+-	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow)) {
++		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+-	if (!irq_may_run(desc)) {
+-		desc->istate |= IRQS_PENDING;
+-		mask_ack_irq(desc);
+-		goto out_unlock;
++		if (!irq_may_run(desc)) {
++			desc->istate |= IRQS_PENDING;
++			mask_ack_irq(desc);
++			goto out;
++		}
++
++		/*
++		 * If its disabled or no action available then mask it
++		 * and get out of here.
++		 */
++		if (irqd_irq_disabled(&desc->irq_data) || !desc->action) {
++			desc->istate |= IRQS_PENDING;
++			mask_ack_irq(desc);
++			goto out;
++		}
+ 	}
+ 
+-	/*
+-	 * If its disabled or no action available then mask it and get
+-	 * out of here.
+-	 */
+-	if (irqd_irq_disabled(&desc->irq_data) || !desc->action) {
+-		desc->istate |= IRQS_PENDING;
+-		mask_ack_irq(desc);
++	if (should_feed_pipeline(desc, flow)) {
++		chip->irq_ack(&desc->irq_data);
++		desc->istate |= IRQS_EDGE;
++		handle_oob_irq(desc);
++		goto out;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
+ 		goto out_unlock;
+ 	}
+ 
+ 	kstat_incr_irqs_this_cpu(desc);
+ 
+ 	/* Start handling the irq */
+-	desc->irq_data.chip->irq_ack(&desc->irq_data);
++	if (!irqs_pipelined())
++		chip->irq_ack(&desc->irq_data);
+ 
+ 	do {
+ 		if (unlikely(!desc->action)) {
+ 			mask_irq(desc);
+-			goto out_unlock;
++			goto out;
+ 		}
+ 
+ 		/*
+@@ -833,6 +1102,9 @@
+ 	} while ((desc->istate & IRQS_PENDING) &&
+ 		 !irqd_irq_disabled(&desc->irq_data));
+ 
++out:
++	if (on_pipeline_entry())
++		desc->istate &= ~IRQS_EDGE;
+ out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+ }
+@@ -849,14 +1121,30 @@
+ void handle_edge_eoi_irq(struct irq_desc *desc)
+ {
+ 	struct irq_chip *chip = irq_desc_get_chip(desc);
++	int flow;
+ 
+ 	raw_spin_lock(&desc->lock);
+ 
+-	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow)) {
++		desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+-	if (!irq_may_run(desc)) {
+-		desc->istate |= IRQS_PENDING;
+-		goto out_eoi;
++		if (!irq_may_run(desc)) {
++			desc->istate |= IRQS_PENDING;
++			goto out_eoi;
++		}
++	}
++
++	if (should_feed_pipeline(desc, flow)) {
++		desc->istate |= IRQS_EDGE;
++		if (handle_oob_irq(desc))
++			goto out_eoi;
++		goto out;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
+ 	}
+ 
+ 	/*
+@@ -881,6 +1169,10 @@
+ 
+ out_eoi:
+ 	chip->irq_eoi(&desc->irq_data);
++out:
++	if (on_pipeline_entry())
++		desc->istate &= ~IRQS_EDGE;
++out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+ }
+ #endif
+@@ -894,20 +1186,49 @@
+ void handle_percpu_irq(struct irq_desc *desc)
+ {
+ 	struct irq_chip *chip = irq_desc_get_chip(desc);
++	unsigned long flags;
++	bool handled;
++	int flow;
+ 
+-	/*
+-	 * PER CPU interrupts are not serialized. Do not touch
+-	 * desc->tot_count.
+-	 */
+-	__kstat_incr_irqs_this_cpu(desc);
+-
+-	if (chip->irq_ack)
+-		chip->irq_ack(&desc->irq_data);
+-
+-	handle_irq_event_percpu(desc);
++	if (irqs_pipelined()) {
++		flow = get_flow_step(desc);
++		if (may_start_flow(flow)) {
++			if (chip->irq_ack)
++				chip->irq_ack(&desc->irq_data);
++			handled = handle_oob_irq(desc);
++			if (chip->irq_eoi)
++				chip->irq_eoi(&desc->irq_data);
++			if (!handled && chip->irq_mask)
++				chip->irq_mask(&desc->irq_data);
++		} else if (flow == IRQ_FLOW_FORWARD) {
++			handle_irq_event_percpu(desc);
++		} else {
++			__kstat_incr_irqs_this_cpu(desc);
++			handle_irq_event_percpu(desc);
++			/*
++			 * irqchip handlers assume that hard irqs are
++			 * off, which is not the case on replay of
++			 * unserialized percpu irqs: fix this up.
++			 */
++			if (chip->irq_unmask) {
++				flags = hard_cond_local_irq_save();
++				chip->irq_unmask(&desc->irq_data);
++				hard_cond_local_irq_restore(flags);
++			}
++		}
++	} else {
++		/*
++		 * PER CPU interrupts are not serialized. Do not touch
++		 * desc->tot_count.
++		 */
++		__kstat_incr_irqs_this_cpu(desc);
+ 
+-	if (chip->irq_eoi)
+-		chip->irq_eoi(&desc->irq_data);
++		if (chip->irq_ack)
++			chip->irq_ack(&desc->irq_data);
++		handle_irq_event_percpu(desc);
++		if (chip->irq_eoi)
++			chip->irq_eoi(&desc->irq_data);
++	}
+ }
+ 
+ /**
+@@ -926,7 +1247,29 @@
+ 	struct irq_chip *chip = irq_desc_get_chip(desc);
+ 	struct irqaction *action = desc->action;
+ 	unsigned int irq = irq_desc_get_irq(desc);
++	unsigned long flags;
+ 	irqreturn_t res;
++	bool handled;
++	int flow;
++
++	flow = get_flow_step(desc);
++	if (irqs_pipelined()) {
++		if (may_start_flow(flow)) {
++			if (chip->irq_ack)
++				chip->irq_ack(&desc->irq_data);
++			handled = handle_oob_irq(desc);
++			if (chip->irq_eoi)
++				chip->irq_eoi(&desc->irq_data);
++			if (!handled && chip->irq_mask)
++				chip->irq_mask(&desc->irq_data);
++			return;
++		} else if (flow == IRQ_FLOW_FORWARD) {
++			handle_irq_event_percpu(desc);
++			return;
++		}
++	} else if (chip->irq_ack) {
++		chip->irq_ack(&desc->irq_data);
++	}
+ 
+ 	/*
+ 	 * PER CPU interrupts are not serialized. Do not touch
+@@ -934,9 +1277,6 @@
+ 	 */
+ 	__kstat_incr_irqs_this_cpu(desc);
+ 
+-	if (chip->irq_ack)
+-		chip->irq_ack(&desc->irq_data);
+-
+ 	if (likely(action)) {
+ 		trace_irq_handler_entry(irq, action);
+ 		res = action->handler(irq, raw_cpu_ptr(action->percpu_dev_id));
+@@ -952,8 +1292,19 @@
+ 			    enabled ? " and unmasked" : "", irq, cpu);
+ 	}
+ 
+-	if (chip->irq_eoi)
++	if (irqs_pipelined()) {
++		/*
++		 * irqchip handlers assume that hard irqs are off,
++		 * which is not the case on replay of unserialized
++		 * percpu irqs: fix this up.
++		 */
++		flags = hard_cond_local_irq_save();
++		if (chip->irq_unmask)
++			chip->irq_unmask(&desc->irq_data);
++		hard_cond_local_irq_restore(flags);
++	} else if (chip->irq_eoi) {
+ 		chip->irq_eoi(&desc->irq_data);
++	}
+ }
+ 
+ /**
+@@ -963,6 +1314,8 @@
+  *
+  * Similar to handle_fasteoi_nmi, but handling the dev_id cookie
+  * as a percpu pointer.
++ *
++ * irq_pipeline: we never log & replay NMIs.
+  */
+ void handle_percpu_devid_fasteoi_nmi(struct irq_desc *desc)
+ {
+@@ -1045,6 +1398,7 @@
+ 			desc->handle_irq = handle;
+ 		}
+ 
++		irq_settings_set_chained(desc);
+ 		irq_settings_set_noprobe(desc);
+ 		irq_settings_set_norequest(desc);
+ 		irq_settings_set_nothread(desc);
+@@ -1212,12 +1566,28 @@
+ void handle_fasteoi_ack_irq(struct irq_desc *desc)
+ {
+ 	struct irq_chip *chip = desc->irq_data.chip;
++	int flow;
+ 
+ 	raw_spin_lock(&desc->lock);
+ 
+-	if (!irq_may_run(desc))
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow) && !irq_may_run(desc))
+ 		goto out;
+ 
++	if (should_feed_pipeline(desc, flow)) {
++		chip->irq_ack(&desc->irq_data);
++		if (handle_oob_irq(desc))
++			chip->irq_eoi(&desc->irq_data);
++		else
++			mask_cond_eoi_irq(desc);
++		goto out_unlock;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
++	}
++
+ 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+ 	/*
+@@ -1231,11 +1601,13 @@
+ 	}
+ 
+ 	kstat_incr_irqs_this_cpu(desc);
+-	if (desc->istate & IRQS_ONESHOT)
+-		mask_irq(desc);
++	if (!irqs_pipelined()) {
++		if (desc->istate & IRQS_ONESHOT)
++			mask_irq(desc);
+ 
+-	/* Start handling the irq */
+-	desc->irq_data.chip->irq_ack(&desc->irq_data);
++		/* Start handling the irq */
++		chip->irq_ack(&desc->irq_data);
++	}
+ 
+ 	handle_irq_event(desc);
+ 
+@@ -1246,6 +1618,7 @@
+ out:
+ 	if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
+ 		chip->irq_eoi(&desc->irq_data);
++out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+ }
+ EXPORT_SYMBOL_GPL(handle_fasteoi_ack_irq);
+@@ -1263,12 +1636,30 @@
+ void handle_fasteoi_mask_irq(struct irq_desc *desc)
+ {
+ 	struct irq_chip *chip = desc->irq_data.chip;
++	int flow;
+ 
+ 	raw_spin_lock(&desc->lock);
+-	mask_ack_irq(desc);
+ 
+-	if (!irq_may_run(desc))
+-		goto out;
++	flow = get_flow_step(desc);
++	if (may_start_flow(flow)) {
++		mask_ack_irq(desc);
++
++		if (!irq_may_run(desc))
++			goto out;
++	}
++
++	if (should_feed_pipeline(desc, flow)) {
++		if (handle_oob_irq(desc))
++			chip->irq_eoi(&desc->irq_data);
++		else
++			cond_eoi_irq(desc);
++		goto out_unlock;
++	}
++
++	if (flow == IRQ_FLOW_FORWARD) {
++		forward_irq_event(desc);
++		goto out_unlock;
++	}
+ 
+ 	desc->istate &= ~(IRQS_REPLAY | IRQS_WAITING);
+ 
+@@ -1283,7 +1674,7 @@
+ 	}
+ 
+ 	kstat_incr_irqs_this_cpu(desc);
+-	if (desc->istate & IRQS_ONESHOT)
++	if (!irqs_pipelined() && (desc->istate & IRQS_ONESHOT))
+ 		mask_irq(desc);
+ 
+ 	handle_irq_event(desc);
+@@ -1295,6 +1686,7 @@
+ out:
+ 	if (!(chip->flags & IRQCHIP_EOI_IF_HANDLED))
+ 		chip->irq_eoi(&desc->irq_data);
++out_unlock:
+ 	raw_spin_unlock(&desc->lock);
+ }
+ EXPORT_SYMBOL_GPL(handle_fasteoi_mask_irq);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/cpuhotplug.c /home/lindows/work/linux-evl/kernel/irq/cpuhotplug.c
+--- /home/lindows/work/linux-k1/kernel/irq/cpuhotplug.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/cpuhotplug.c	2026-03-30 12:22:17.573636609 +0800
+@@ -172,6 +172,9 @@
+ {
+ 	struct irq_desc *desc;
+ 	unsigned int irq;
++	unsigned long flags;
++
++	flags = hard_local_irq_save();
+ 
+ 	for_each_active_irq(irq) {
+ 		bool affinity_broken;
+@@ -186,6 +189,8 @@
+ 					    irq, smp_processor_id());
+ 		}
+ 	}
++
++	hard_local_irq_restore(flags);
+ }
+ 
+ static bool hk_should_isolate(struct irq_data *data, unsigned int cpu)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/debug.h /home/lindows/work/linux-evl/kernel/irq/debug.h
+--- /home/lindows/work/linux-k1/kernel/irq/debug.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/debug.h	2026-03-30 12:22:17.573636609 +0800
+@@ -33,6 +33,8 @@
+ 	___P(IRQ_NOREQUEST);
+ 	___P(IRQ_NOTHREAD);
+ 	___P(IRQ_NOAUTOEN);
++	___P(IRQ_OOB);
++	___P(IRQ_CHAINED);
+ 
+ 	___PS(IRQS_AUTODETECT);
+ 	___PS(IRQS_REPLAY);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/dummychip.c /home/lindows/work/linux-evl/kernel/irq/dummychip.c
+--- /home/lindows/work/linux-k1/kernel/irq/dummychip.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/dummychip.c	2026-03-30 12:22:17.573636609 +0800
+@@ -43,7 +43,7 @@
+ 	.irq_enable	= noop,
+ 	.irq_disable	= noop,
+ 	.irq_ack	= ack_bad,
+-	.flags		= IRQCHIP_SKIP_SET_WAKE,
++	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_PIPELINE_SAFE,
+ };
+ 
+ /*
+@@ -59,6 +59,6 @@
+ 	.irq_ack	= noop,
+ 	.irq_mask	= noop,
+ 	.irq_unmask	= noop,
+-	.flags		= IRQCHIP_SKIP_SET_WAKE,
++	.flags		= IRQCHIP_SKIP_SET_WAKE | IRQCHIP_PIPELINE_SAFE,
+ };
+ EXPORT_SYMBOL_GPL(dummy_irq_chip);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/generic-chip.c /home/lindows/work/linux-evl/kernel/irq/generic-chip.c
+--- /home/lindows/work/linux-k1/kernel/irq/generic-chip.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/generic-chip.c	2026-03-30 12:22:17.573636609 +0800
+@@ -16,7 +16,7 @@
+ #include "internals.h"
+ 
+ static LIST_HEAD(gc_list);
+-static DEFINE_RAW_SPINLOCK(gc_lock);
++static DEFINE_HARD_SPINLOCK(gc_lock);
+ 
+ /**
+  * irq_gc_noop - NOOP function
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/handle.c /home/lindows/work/linux-evl/kernel/irq/handle.c
+--- /home/lindows/work/linux-k1/kernel/irq/handle.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/handle.c	2026-03-30 12:22:17.573636609 +0800
+@@ -34,9 +34,16 @@
+ {
+ 	unsigned int irq = irq_desc_get_irq(desc);
+ 
++	/* Let the in-band stage report the issue. */
++	if (on_pipeline_entry()) {
++		ack_bad_irq(irq);
++		return;
++	}
++
+ 	print_irq_desc(irq, desc);
+ 	kstat_incr_irqs_this_cpu(desc);
+-	ack_bad_irq(irq);
++	if (!irqs_pipelined())
++		ack_bad_irq(irq);
+ }
+ EXPORT_SYMBOL_GPL(handle_bad_irq);
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/internals.h /home/lindows/work/linux-evl/kernel/irq/internals.h
+--- /home/lindows/work/linux-k1/kernel/irq/internals.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/internals.h	2026-03-30 12:22:17.573636609 +0800
+@@ -56,6 +56,9 @@
+  * IRQS_SUSPENDED		- irq is suspended
+  * IRQS_NMI			- irq line is used to deliver NMIs
+  * IRQS_SYSFS			- descriptor has been added to sysfs
++ * IRQS_EDGE			- irq line received an edge event (irq_pipeline)
++ * IRQS_DEFERRED		- irq event deferred to inband (irq_pipeline)
++ * IRQS_FORWARDED		- irq event handled and forwarded to inband (irq_pipeline)
+  */
+ enum {
+ 	IRQS_AUTODETECT		= 0x00000001,
+@@ -69,6 +72,9 @@
+ 	IRQS_TIMINGS		= 0x00001000,
+ 	IRQS_NMI		= 0x00002000,
+ 	IRQS_SYSFS		= 0x00004000,
++	IRQS_EDGE		= 0x00008000,
++	IRQS_DEFERRED		= 0x00010000,
++	IRQS_FORWARDED		= 0x00020000,
+ };
+ 
+ #include "debug.h"
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/irqdesc.c /home/lindows/work/linux-evl/kernel/irq/irqdesc.c
+--- /home/lindows/work/linux-k1/kernel/irq/irqdesc.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/irqdesc.c	2026-03-30 12:22:17.573636609 +0800
+@@ -15,6 +15,7 @@
+ #include <linux/maple_tree.h>
+ #include <linux/irqdomain.h>
+ #include <linux/sysfs.h>
++#include <linux/irq_pipeline.h>
+ 
+ #include "internals.h"
+ 
+@@ -662,6 +663,17 @@
+ 
+ #endif /* !CONFIG_SPARSE_IRQ */
+ 
++static inline bool is_hardirq(struct irq_desc *desc)
++{
++	if (!irqs_pipelined())
++		return in_hardirq();
++
++	if (in_pipeline() || !(desc->istate & IRQS_DEFERRED))
++		return true;
++
++	return false;
++}
++
+ int handle_irq_desc(struct irq_desc *desc)
+ {
+ 	struct irq_data *data;
+@@ -670,7 +682,7 @@
+ 		return -EINVAL;
+ 
+ 	data = irq_desc_get_irq_data(desc);
+-	if (WARN_ON_ONCE(!in_hardirq() && handle_enforce_irqctx(data)))
++	if (WARN_ON_ONCE(!is_hardirq(desc) && handle_enforce_irqctx(data)))
+ 		return -EPERM;
+ 
+ 	generic_handle_irq_desc(desc);
+@@ -678,14 +690,18 @@
+ }
+ 
+ /**
+- * generic_handle_irq - Invoke the handler for a particular irq
++ * generic_handle_irq - Handle a particular irq
+  * @irq:	The irq number to handle
+  *
+  * Returns:	0 on success, or -EINVAL if conversion has failed
+  *
+  * 		This function must be called from an IRQ context with irq regs
+  * 		initialized.
+-  */
++ *
++ * The handler is invoked, unless we are entering the interrupt
++ * pipeline, in which case the incoming IRQ is only scheduled for
++ * deferred delivery.
++ */
+ int generic_handle_irq(unsigned int irq)
+ {
+ 	return handle_irq_desc(irq_to_desc(irq));
+@@ -729,7 +745,10 @@
+  */
+ int generic_handle_domain_irq(struct irq_domain *domain, unsigned int hwirq)
+ {
+-	return handle_irq_desc(irq_resolve_mapping(domain, hwirq));
++	struct irq_desc *desc = irq_resolve_mapping(domain, hwirq);
++
++	return irqs_pipelined() ? generic_pipeline_irq_desc(desc)
++		: handle_irq_desc(desc);
+ }
+ EXPORT_SYMBOL_GPL(generic_handle_domain_irq);
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/Kconfig /home/lindows/work/linux-evl/kernel/irq/Kconfig
+--- /home/lindows/work/linux-k1/kernel/irq/Kconfig	2026-04-01 12:32:21.234878836 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/Kconfig	2026-03-30 12:22:17.573636609 +0800
+@@ -137,20 +137,6 @@
+ 
+ 	  If you don't know what to do here, say N.
+ 
+-endmenu
+-
+-config GENERIC_IRQ_MULTI_HANDLER
+-	bool
+-	help
+-	  Allow to specify the low level IRQ handler at run time.
+-
+-# Cavium Octeon is the last system to use this deprecated option
+-# Do not even think of enabling this on any new platform
+-config DEPRECATED_IRQ_CPU_ONOFFLINE
+-	bool
+-	depends on CAVIUM_OCTEON_SOC
+-	default CAVIUM_OCTEON_SOC
+-
+ # Interrupt pipeline
+ config HAVE_IRQ_PIPELINE
+ 	bool
+@@ -165,3 +151,16 @@
+ 	  Activate this option if you want the interrupt pipeline to be
+ 	  compiled in.
+ 
++endmenu
++
++config GENERIC_IRQ_MULTI_HANDLER
++	bool
++	help
++	  Allow to specify the low level IRQ handler at run time.
++
++# Cavium Octeon is the last system to use this deprecated option
++# Do not even think of enabling this on any new platform
++config DEPRECATED_IRQ_CPU_ONOFFLINE
++	bool
++	depends on CAVIUM_OCTEON_SOC
++	default CAVIUM_OCTEON_SOC
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/Makefile /home/lindows/work/linux-evl/kernel/irq/Makefile
+--- /home/lindows/work/linux-k1/kernel/irq/Makefile	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/Makefile	2026-03-30 12:22:17.573636609 +0800
+@@ -9,6 +9,8 @@
+ obj-$(CONFIG_GENERIC_IRQ_PROBE) += autoprobe.o
+ obj-$(CONFIG_IRQ_DOMAIN) += irqdomain.o
+ obj-$(CONFIG_IRQ_SIM) += irq_sim.o
++obj-$(CONFIG_IRQ_PIPELINE) += pipeline.o
++obj-$(CONFIG_IRQ_PIPELINE_TORTURE_TEST) += irqptorture.o
+ obj-$(CONFIG_PROC_FS) += proc.o
+ obj-$(CONFIG_GENERIC_PENDING_IRQ) += migration.o
+ obj-$(CONFIG_GENERIC_IRQ_MIGRATION) += cpuhotplug.o
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/manage.c /home/lindows/work/linux-evl/kernel/irq/manage.c
+--- /home/lindows/work/linux-k1/kernel/irq/manage.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/manage.c	2026-03-30 12:22:17.573636609 +0800
+@@ -10,6 +10,7 @@
+ 
+ #include <linux/irq.h>
+ #include <linux/kthread.h>
++#include <linux/kconfig.h>
+ #include <linux/module.h>
+ #include <linux/random.h>
+ #include <linux/interrupt.h>
+@@ -932,6 +933,50 @@
+ }
+ EXPORT_SYMBOL(irq_set_irq_wake);
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++
++/**
++ *	irq_switch_oob - Control out-of-band setting for a registered IRQ descriptor
++ *	@irq:	interrupt to control
++ *	@on:	enable/disable pipelining
++ *
++ *	Enable/disable out-of-band handling for an IRQ. At least one
++ *	action must have been previously registered for such
++ *	interrupt.
++ *
++ *      The previously registered action(s) need(s) not bearing the
++ *      IRQF_OOB flag for the IRQ to be switched to out-of-band
++ *      handling. This call enables switching pre-installed IRQs from
++ *      in-band to out-of-band handling.
++ *
++ *      NOTE: This routine affects all action handlers sharing the
++ *      IRQ.
++ */
++int irq_switch_oob(unsigned int irq, bool on)
++{
++	struct irq_desc *desc;
++	unsigned long flags;
++	int ret = 0;
++
++	desc = irq_get_desc_lock(irq, &flags, 0);
++	if (!desc)
++		return -EINVAL;
++
++	if (!desc->action)
++		ret = -EINVAL;
++	else if (on)
++		irq_settings_set_oob(desc);
++	else
++		irq_settings_clr_oob(desc);
++
++	irq_put_desc_unlock(desc, flags);
++
++	return ret;
++}
++EXPORT_SYMBOL_GPL(irq_switch_oob);
++
++#endif /* CONFIG_IRQ_PIPELINE */
++
+ /*
+  * Internal function that tells the architecture code whether a
+  * particular irq has been exclusively allocated or is available
+@@ -948,7 +993,8 @@
+ 
+ 	if (irq_settings_can_request(desc)) {
+ 		if (!desc->action ||
+-		    irqflags & desc->action->flags & IRQF_SHARED)
++		    ((irqflags & desc->action->flags & IRQF_SHARED) &&
++		     !((irqflags ^ desc->action->flags) & IRQF_OOB)))
+ 			canrequest = 1;
+ 	}
+ 	irq_put_desc_unlock(desc, flags);
+@@ -1522,6 +1568,21 @@
+ 
+ 	new->irq = irq;
+ 
++	ret = -EINVAL;
++	/*
++	 *  Out-of-band interrupts can be shared but not threaded.  We
++	 *  silently ignore the OOB setting if interrupt pipelining is
++	 *  disabled.
++	 */
++	if (!irqs_pipelined())
++		new->flags &= ~IRQF_OOB;
++	else if (new->flags & IRQF_OOB) {
++		if (new->thread_fn)
++			goto out_mput;
++		new->flags |= IRQF_NO_THREAD;
++		new->flags &= ~IRQF_ONESHOT;
++	}
++
+ 	/*
+ 	 * If the trigger type is not specified by the caller,
+ 	 * then use the default for this interrupt.
+@@ -1535,10 +1596,8 @@
+ 	 */
+ 	nested = irq_settings_is_nested_thread(desc);
+ 	if (nested) {
+-		if (!new->thread_fn) {
+-			ret = -EINVAL;
++		if (!new->thread_fn)
+ 			goto out_mput;
+-		}
+ 		/*
+ 		 * Replace the primary handler which was provided from
+ 		 * the driver for non nested interrupt handling by the
+@@ -1622,7 +1681,7 @@
+ 		 * the same type (level, edge, polarity). So both flag
+ 		 * fields must have IRQF_SHARED set and the bits which
+ 		 * set the trigger type must match. Also all must
+-		 * agree on ONESHOT.
++		 * agree on ONESHOT and OOB.
+ 		 * Interrupt lines used for NMIs cannot be shared.
+ 		 */
+ 		unsigned int oldtype;
+@@ -1647,7 +1706,7 @@
+ 
+ 		if (!((old->flags & new->flags) & IRQF_SHARED) ||
+ 		    (oldtype != (new->flags & IRQF_TRIGGER_MASK)) ||
+-		    ((old->flags ^ new->flags) & IRQF_ONESHOT))
++		    ((old->flags ^ new->flags) & (IRQF_OOB|IRQF_ONESHOT)))
+ 			goto mismatch;
+ 
+ 		/* All handlers must agree on per-cpuness */
+@@ -1770,6 +1829,9 @@
+ 		if (new->flags & IRQF_ONESHOT)
+ 			desc->istate |= IRQS_ONESHOT;
+ 
++		if (new->flags & IRQF_OOB)
++			irq_settings_set_oob(desc);
++
+ 		/* Exclude IRQ from balancing if requested */
+ 		if (new->flags & IRQF_NOBALANCING) {
+ 			irq_settings_set_no_balancing(desc);
+@@ -1916,6 +1978,8 @@
+ 		irq_settings_clr_disable_unlazy(desc);
+ 		/* Only shutdown. Deactivate after synchronize_hardirq() */
+ 		irq_shutdown(desc);
++		/* Turn off OOB handling (after shutdown). */
++		irq_settings_clr_oob(desc);
+ 	}
+ 
+ #ifdef CONFIG_SMP
+@@ -1952,14 +2016,15 @@
+ 
+ #ifdef CONFIG_DEBUG_SHIRQ
+ 	/*
+-	 * It's a shared IRQ -- the driver ought to be prepared for an IRQ
+-	 * event to happen even now it's being freed, so let's make sure that
+-	 * is so by doing an extra call to the handler ....
++	 * It's a shared IRQ (with in-band handler) -- the driver
++	 * ought to be prepared for an IRQ event to happen even now
++	 * it's being freed, so let's make sure that is so by doing an
++	 * extra call to the handler ....
+ 	 *
+ 	 * ( We do this after actually deregistering it, to make sure that a
+ 	 *   'real' IRQ doesn't run in parallel with our fake. )
+ 	 */
+-	if (action->flags & IRQF_SHARED) {
++	if ((action->flags & (IRQF_SHARED|IRQF_OOB)) == IRQF_SHARED) {
+ 		local_irq_save(flags);
+ 		action->handler(irq, dev_id);
+ 		local_irq_restore(flags);
+@@ -2583,7 +2648,7 @@
+  *	__request_percpu_irq - allocate a percpu interrupt line
+  *	@irq: Interrupt line to allocate
+  *	@handler: Function to be called when the IRQ occurs.
+- *	@flags: Interrupt type flags (IRQF_TIMER only)
++ *	@flags: Interrupt type flags (IRQF_TIMER and/or IRQF_OOB only)
+  *	@devname: An ascii name for the claiming device
+  *	@dev_id: A percpu cookie passed back to the handler function
+  *
+@@ -2612,7 +2677,7 @@
+ 	    !irq_settings_is_per_cpu_devid(desc))
+ 		return -EINVAL;
+ 
+-	if (flags && flags != IRQF_TIMER)
++	if (flags & ~(IRQF_TIMER|IRQF_OOB))
+ 		return -EINVAL;
+ 
+ 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/msi.c /home/lindows/work/linux-evl/kernel/irq/msi.c
+--- /home/lindows/work/linux-k1/kernel/irq/msi.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/msi.c	2026-03-30 12:22:17.573636609 +0800
+@@ -801,6 +801,9 @@
+ 	struct irq_chip *chip = info->chip;
+ 
+ 	BUG_ON(!chip || !chip->irq_mask || !chip->irq_unmask);
++	WARN_ONCE(IS_ENABLED(CONFIG_IRQ_PIPELINE) &&
++		  (chip->flags & IRQCHIP_PIPELINE_SAFE) == 0,
++		  "MSI domain irqchip %s is not pipeline-safe!", chip->name);
+ 	if (!chip->irq_set_affinity)
+ 		chip->irq_set_affinity = msi_domain_set_affinity;
+ }
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/proc.c /home/lindows/work/linux-evl/kernel/irq/proc.c
+--- /home/lindows/work/linux-k1/kernel/irq/proc.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/proc.c	2026-03-30 12:22:17.573636609 +0800
+@@ -519,6 +519,9 @@
+ #ifdef CONFIG_GENERIC_IRQ_SHOW_LEVEL
+ 	seq_printf(p, " %-8s", irqd_is_level_type(&desc->irq_data) ? "Level" : "Edge");
+ #endif
++#ifdef CONFIG_IRQ_PIPELINE
++	seq_printf(p, " %-3s", irq_settings_is_oob(desc) ? "oob" : "");
++#endif
+ 	if (desc->name)
+ 		seq_printf(p, "-%-8s", desc->name);
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/resend.c /home/lindows/work/linux-evl/kernel/irq/resend.c
+--- /home/lindows/work/linux-k1/kernel/irq/resend.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/resend.c	2026-03-30 12:22:17.573636609 +0800
+@@ -16,10 +16,11 @@
+ #include <linux/module.h>
+ #include <linux/random.h>
+ #include <linux/interrupt.h>
++#include <linux/irq_pipeline.h>
+ 
+ #include "internals.h"
+ 
+-#ifdef CONFIG_HARDIRQS_SW_RESEND
++#if defined(CONFIG_HARDIRQS_SW_RESEND) && !defined(CONFIG_IRQ_PIPELINE)
+ 
+ /* hlist_head to handle software resend of interrupts: */
+ static HLIST_HEAD(irq_resend_list);
+@@ -100,7 +101,12 @@
+ 
+ static int irq_sw_resend(struct irq_desc *desc)
+ {
++#if defined(CONFIG_HARDIRQS_SW_RESEND) && defined(CONFIG_IRQ_PIPELINE)
++	irq_inject_pipeline(irq_desc_get_irq(desc));
++	return 0;
++#else
+ 	return -EINVAL;
++#endif
+ }
+ #endif
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/settings.h /home/lindows/work/linux-evl/kernel/irq/settings.h
+--- /home/lindows/work/linux-k1/kernel/irq/settings.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/settings.h	2026-03-30 12:22:17.573636609 +0800
+@@ -19,6 +19,8 @@
+ 	_IRQ_DISABLE_UNLAZY	= IRQ_DISABLE_UNLAZY,
+ 	_IRQ_HIDDEN		= IRQ_HIDDEN,
+ 	_IRQ_NO_DEBUG		= IRQ_NO_DEBUG,
++	_IRQ_OOB		= IRQ_OOB,
++	_IRQ_CHAINED		= IRQ_CHAINED,
+ 	_IRQF_MODIFY_MASK	= IRQF_MODIFY_MASK,
+ };
+ 
+@@ -35,6 +37,8 @@
+ #define IRQ_DISABLE_UNLAZY	GOT_YOU_MORON
+ #define IRQ_HIDDEN		GOT_YOU_MORON
+ #define IRQ_NO_DEBUG		GOT_YOU_MORON
++#define IRQ_OOB			GOT_YOU_MORON
++#define IRQ_CHAINED		GOT_YOU_MORON
+ #undef IRQF_MODIFY_MASK
+ #define IRQF_MODIFY_MASK	GOT_YOU_MORON
+ 
+@@ -186,3 +190,33 @@
+ {
+ 	return desc->status_use_accessors & _IRQ_NO_DEBUG;
+ }
++
++static inline bool irq_settings_is_oob(struct irq_desc *desc)
++{
++	return desc->status_use_accessors & _IRQ_OOB;
++}
++
++static inline void irq_settings_clr_oob(struct irq_desc *desc)
++{
++	desc->status_use_accessors &= ~_IRQ_OOB;
++}
++
++static inline void irq_settings_set_oob(struct irq_desc *desc)
++{
++	desc->status_use_accessors |= _IRQ_OOB;
++}
++
++static inline bool irq_settings_is_chained(struct irq_desc *desc)
++{
++	return desc->status_use_accessors & _IRQ_CHAINED;
++}
++
++static inline void irq_settings_set_chained(struct irq_desc *desc)
++{
++	desc->status_use_accessors |= _IRQ_CHAINED;
++}
++
++static inline void irq_settings_clr_chained(struct irq_desc *desc)
++{
++	desc->status_use_accessors &= ~_IRQ_CHAINED;
++}
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq/spurious.c /home/lindows/work/linux-evl/kernel/irq/spurious.c
+--- /home/lindows/work/linux-k1/kernel/irq/spurious.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq/spurious.c	2026-03-30 12:22:17.573636609 +0800
+@@ -176,7 +176,7 @@
+ {
+ 	unsigned int r = action_ret;
+ 
+-	if (likely(r <= (IRQ_HANDLED | IRQ_WAKE_THREAD)))
++	if (likely(r <= (IRQ_HANDLED | IRQ_WAKE_THREAD | (running_oob() ? IRQ_FORWARD : 0))))
+ 		return 0;
+ 	return 1;
+ }
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/irq_work.c /home/lindows/work/linux-evl/kernel/irq_work.c
+--- /home/lindows/work/linux-k1/kernel/irq_work.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/irq_work.c	2026-03-30 12:22:17.573636609 +0800
+@@ -76,11 +76,8 @@
+ 	 */
+ }
+ 
+-static __always_inline void irq_work_raise(struct irq_work *work)
++void __weak irq_local_work_raise(void)
+ {
+-	if (trace_ipi_send_cpu_enabled() && arch_irq_work_has_interrupt())
+-		trace_ipi_send_cpu(smp_processor_id(), _RET_IP_, work->func);
+-
+ 	arch_irq_work_raise();
+ }
+ 
+@@ -108,8 +105,11 @@
+ 		return;
+ 
+ 	/* If the work is "lazy", handle it from next tick if any */
+-	if (!lazy_work || tick_nohz_tick_stopped())
+-		irq_work_raise(work);
++	if (!lazy_work || tick_nohz_tick_stopped()) {
++		if (trace_ipi_send_cpu_enabled() && arch_irq_work_has_interrupt())
++			trace_ipi_send_cpu(smp_processor_id(), _RET_IP_, work->func);
++		irq_local_work_raise();
++	}
+ }
+ 
+ /* Enqueue the irq work @work on the current CPU */
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/kthread.c /home/lindows/work/linux-evl/kernel/kthread.c
+--- /home/lindows/work/linux-k1/kernel/kthread.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/kthread.c	2026-03-30 12:22:17.573636609 +0800
+@@ -14,6 +14,7 @@
+ #include <linux/sched/mm.h>
+ #include <linux/sched/task.h>
+ #include <linux/kthread.h>
++#include <linux/irq_pipeline.h>
+ #include <linux/completion.h>
+ #include <linux/err.h>
+ #include <linux/cgroup.h>
+@@ -1439,6 +1440,7 @@
+ {
+ 	struct mm_struct *active_mm;
+ 	struct task_struct *tsk = current;
++	unsigned long flags;
+ 
+ 	WARN_ON_ONCE(!(tsk->flags & PF_KTHREAD));
+ 	WARN_ON_ONCE(tsk->mm);
+@@ -1454,10 +1456,12 @@
+ 	/* Hold off tlb flush IPIs while switching mm's */
+ 	local_irq_disable();
+ 	active_mm = tsk->active_mm;
++	protect_inband_mm(flags);
+ 	tsk->active_mm = mm;
+ 	tsk->mm = mm;
+ 	membarrier_update_current_mm(mm);
+ 	switch_mm_irqs_off(active_mm, mm, tsk);
++	unprotect_inband_mm(flags);
+ 	local_irq_enable();
+ 	task_unlock(tsk);
+ #ifdef finish_arch_post_lock_switch
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/locking/lockdep.c /home/lindows/work/linux-evl/kernel/locking/lockdep.c
+--- /home/lindows/work/linux-k1/kernel/locking/lockdep.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/locking/lockdep.c	2026-03-30 12:22:17.573636609 +0800
+@@ -42,6 +42,7 @@
+ #include <linux/stacktrace.h>
+ #include <linux/debug_locks.h>
+ #include <linux/irqflags.h>
++#include <linux/irqstage.h>
+ #include <linux/utsname.h>
+ #include <linux/hash.h>
+ #include <linux/ftrace.h>
+@@ -136,9 +137,56 @@
+ static arch_spinlock_t __lock = (arch_spinlock_t)__ARCH_SPIN_LOCK_UNLOCKED;
+ static struct task_struct *__owner;
+ 
++static __always_inline bool lockdep_stage_disabled(void)
++{
++	return stage_disabled();
++}
++
++#ifdef CONFIG_IRQ_PIPELINE
++/*
++ * If LOCKDEP is enabled, we want irqs to be disabled for both stages
++ * when traversing the lockdep code for hard and hybrid locks (at the
++ * expense of massive latency overhead though).
++ */
++static __always_inline unsigned long lockdep_stage_test_and_disable(int *irqsoff)
++{
++	return test_and_lock_stage(irqsoff);
++}
++
++static __always_inline unsigned long lockdep_stage_disable(void)
++{
++	return lockdep_stage_test_and_disable(NULL);
++}
++
++static __always_inline void lockdep_stage_restore(unsigned long flags)
++{
++	unlock_stage(flags);
++}
++
++#else
++
++#define lockdep_stage_test_and_disable(__irqsoff)		\
++	({							\
++		unsigned long __flags;				\
++		raw_local_irq_save(__flags);			\
++		*(__irqsoff) = irqs_disabled_flags(__flags);	\
++		__flags;					\
++	})
++
++#define lockdep_stage_disable()					\
++	({							\
++		unsigned long __flags;				\
++		raw_local_irq_save(__flags);			\
++		__flags;					\
++	})
++
++#define lockdep_stage_restore(__flags)		raw_local_irq_restore(__flags)
++
++#endif /* !CONFIG_IRQ_PIPELINE */
++
+ static inline void lockdep_lock(void)
+ {
+-	DEBUG_LOCKS_WARN_ON(!irqs_disabled());
++	DEBUG_LOCKS_WARN_ON(!hard_irqs_disabled());
+ 
+ 	__this_cpu_inc(lockdep_recursion);
+ 	arch_spin_lock(&__lock);
+@@ -147,7 +195,7 @@
+ 
+ static inline void lockdep_unlock(void)
+ {
+-	DEBUG_LOCKS_WARN_ON(!irqs_disabled());
++	DEBUG_LOCKS_WARN_ON(!hard_irqs_disabled());
+ 
+ 	if (debug_locks && DEBUG_LOCKS_WARN_ON(__owner != current))
+ 		return;
+@@ -920,7 +968,7 @@
+ 	/*
+ 	 * We do an RCU walk of the hash, see lockdep_free_key_range().
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
+ 		return NULL;
+ 
+ 	hlist_for_each_entry_rcu_notrace(class, hash_head, hash_entry) {
+@@ -1219,7 +1267,7 @@
+ 		return;
+ 	hash_head = keyhashentry(key);
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	if (!graph_lock())
+ 		goto restore_irqs;
+ 	hlist_for_each_entry_rcu(k, hash_head, hash_entry) {
+@@ -1230,7 +1278,7 @@
+ out_unlock:
+ 	graph_unlock();
+ restore_irqs:
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lockdep_register_key);
+ 
+@@ -1279,7 +1327,7 @@
+ 	struct lock_class *class;
+ 	int idx;
+ 
+-	DEBUG_LOCKS_WARN_ON(!irqs_disabled());
++	DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled());
+ 
+ 	class = look_up_lock_class(lock, subclass);
+ 	if (likely(class))
+@@ -2093,11 +2141,11 @@
+ 
+ 	__bfs_init_root(&this, class);
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 	ret = __lockdep_count_forward_deps(&this);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	return ret;
+ }
+@@ -2119,11 +2167,11 @@
+ 
+ 	__bfs_init_root(&this, class);
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 	ret = __lockdep_count_backward_deps(&this);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	return ret;
+ }
+@@ -4310,6 +4358,8 @@
+  */
+ void lockdep_hardirqs_on_prepare(void)
+ {
++	unsigned long flags;
++
+ 	if (unlikely(!debug_locks))
+ 		return;
+ 
+@@ -4332,38 +4382,43 @@
+ 		return;
+ 	}
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/*
+ 	 * We're enabling irqs and according to our state above irqs weren't
+ 	 * already enabled, yet we find the hardware thinks they are in fact
+ 	 * enabled.. someone messed up their IRQ state tracing.
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
++		goto out;
+ 
+ 	/*
+ 	 * See the fine text that goes along with this variable definition.
+ 	 */
+ 	if (DEBUG_LOCKS_WARN_ON(early_boot_irqs_disabled))
+-		return;
++		goto out;
+ 
+ 	/*
+ 	 * Can't allow enabling interrupts while in an interrupt handler,
+ 	 * that's general bad form and such. Recursion, limited stack etc..
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(lockdep_hardirq_context()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(running_inband() && lockdep_hardirq_context()))
++		goto out;
+ 
+ 	current->hardirq_chain_key = current->curr_chain_key;
+ 
+ 	lockdep_recursion_inc();
+ 	__trace_hardirqs_on_caller();
+ 	lockdep_recursion_finish();
++out:
++	hard_cond_local_irq_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lockdep_hardirqs_on_prepare);
+ 
+ void noinstr lockdep_hardirqs_on(unsigned long ip)
+ {
+ 	struct irqtrace_events *trace = &current->irqtrace;
++	unsigned long flags;
+ 
+ 	if (unlikely(!debug_locks))
+ 		return;
+@@ -4401,13 +4456,15 @@
+ 		return;
+ 	}
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/*
+ 	 * We're enabling irqs and according to our state above irqs weren't
+ 	 * already enabled, yet we find the hardware thinks they are in fact
+ 	 * enabled.. someone messed up their IRQ state tracing.
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
++		goto out;
+ 
+ 	/*
+ 	 * Ensure the lock stack remained unchanged between
+@@ -4422,6 +4479,8 @@
+ 	trace->hardirq_enable_ip = ip;
+ 	trace->hardirq_enable_event = ++trace->irq_events;
+ 	debug_atomic_inc(hardirqs_on_events);
++out:
++	hard_cond_local_irq_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lockdep_hardirqs_on);
+ 
+@@ -4430,6 +4489,8 @@
+  */
+ void noinstr lockdep_hardirqs_off(unsigned long ip)
+ {
++	unsigned long flags;
++
+ 	if (unlikely(!debug_locks))
+ 		return;
+ 
+@@ -4444,12 +4505,14 @@
+ 	} else if (__this_cpu_read(lockdep_recursion))
+ 		return;
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/*
+ 	 * So we're supposed to get called after you mask local IRQs, but for
+ 	 * some reason the hardware doesn't quite think you did a proper job.
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
++		goto out;
+ 
+ 	if (lockdep_hardirqs_enabled()) {
+ 		struct irqtrace_events *trace = &current->irqtrace;
+@@ -4464,6 +4527,8 @@
+ 	} else {
+ 		debug_atomic_inc(redundant_hardirqs_off);
+ 	}
++out:
++	hard_cond_local_irq_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lockdep_hardirqs_off);
+ 
+@@ -4473,20 +4538,23 @@
+ void lockdep_softirqs_on(unsigned long ip)
+ {
+ 	struct irqtrace_events *trace = &current->irqtrace;
++	unsigned long flags;
+ 
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/*
+ 	 * We fancy IRQs being disabled here, see softirq.c, avoids
+ 	 * funny state and nesting things.
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
++		goto out;
+ 
+ 	if (current->softirqs_enabled) {
+ 		debug_atomic_inc(redundant_softirqs_on);
+-		return;
++		goto out;
+ 	}
+ 
+ 	lockdep_recursion_inc();
+@@ -4505,6 +4573,8 @@
+ 	if (lockdep_hardirqs_enabled())
+ 		mark_held_locks(current, LOCK_ENABLED_SOFTIRQ);
+ 	lockdep_recursion_finish();
++out:
++	hard_cond_local_irq_restore(flags);
+ }
+ 
+ /*
+@@ -4512,14 +4582,18 @@
+  */
+ void lockdep_softirqs_off(unsigned long ip)
+ {
++	unsigned long flags;
++
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/*
+ 	 * We fancy IRQs being disabled here, see softirq.c
+ 	 */
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
+-		return;
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
++		goto out;
+ 
+ 	if (current->softirqs_enabled) {
+ 		struct irqtrace_events *trace = &current->irqtrace;
+@@ -4537,6 +4611,8 @@
+ 		DEBUG_LOCKS_WARN_ON(!softirq_count());
+ 	} else
+ 		debug_atomic_inc(redundant_softirqs_off);
++out:
++	hard_cond_local_irq_restore(flags);
+ }
+ 
+ static int
+@@ -4906,11 +4982,11 @@
+ 		if (DEBUG_LOCKS_WARN_ON(!lockdep_enabled()))
+ 			return;
+ 
+-		raw_local_irq_save(flags);
++		flags = lockdep_stage_disable();
+ 		lockdep_recursion_inc();
+ 		register_lock_class(lock, subclass, 1);
+ 		lockdep_recursion_finish();
+-		raw_local_irq_restore(flags);
++		lockdep_stage_restore(flags);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(lockdep_init_map_type);
+@@ -5272,7 +5348,7 @@
+ 	struct held_lock *hlock;
+ 	int first_idx = idx;
+ 
+-	if (DEBUG_LOCKS_WARN_ON(!irqs_disabled()))
++	if (DEBUG_LOCKS_WARN_ON(!lockdep_stage_disabled()))
+ 		return 0;
+ 
+ 	for (hlock = curr->held_locks + idx; idx < depth; idx++, hlock++) {
+@@ -5584,14 +5660,22 @@
+ static noinstr void check_flags(unsigned long flags)
+ {
+ #if defined(CONFIG_PROVE_LOCKING) && defined(CONFIG_DEBUG_LOCKDEP)
+-	if (!debug_locks)
++	bool stalled;
++
++	/*
++	 * irq_pipeline: we can't and don't want to check the
++	 * consistency of the irq tracer when running the interrupt
++	 * entry prologue or oob stage code, since the inband stall
++	 * bit does not reflect the current irq state in these cases.
++	 */
++	if (on_pipeline_entry() || running_oob() || !debug_locks)
+ 		return;
+ 
+ 	/* Get the warning out..  */
+ 	instrumentation_begin();
+ 
+-	if (irqs_disabled_flags(flags)) {
+-		if (DEBUG_LOCKS_WARN_ON(lockdep_hardirqs_enabled())) {
++	if (stage_disabled_flags(flags, &stalled)) {
++		if (DEBUG_LOCKS_WARN_ON(lockdep_hardirqs_enabled() && stalled)) {
+ 			printk("possible reason: unannotated irqs-off.\n");
+ 		}
+ 	} else {
+@@ -5633,13 +5717,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_recursion_inc();
+ 	check_flags(flags);
+ 	if (__lock_set_class(lock, name, key, subclass, ip))
+ 		check_chain_key(current);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_set_class);
+ 
+@@ -5650,13 +5734,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_recursion_inc();
+ 	check_flags(flags);
+ 	if (__lock_downgrade(lock, ip))
+ 		check_chain_key(current);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_downgrade);
+ 
+@@ -5721,6 +5805,7 @@
+ 			  struct lockdep_map *nest_lock, unsigned long ip)
+ {
+ 	unsigned long flags;
++	int irqsoff;
+ 
+ 	trace_lock_acquire(lock, subclass, trylock, read, check, nest_lock, ip);
+ 
+@@ -5747,14 +5832,14 @@
+ 		return;
+ 	}
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_test_and_disable(&irqsoff);
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	__lock_acquire(lock, subclass, trylock, read, check,
+-		       irqs_disabled_flags(flags), nest_lock, ip, 0, 0, 0);
++	               irqsoff, nest_lock, ip, 0, 0, 0);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_acquire);
+ 
+@@ -5767,14 +5852,14 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	if (__lock_release(lock, ip))
+ 		check_chain_key(current);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_release);
+ 
+@@ -5794,7 +5879,7 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+@@ -5802,7 +5887,7 @@
+ 		       irqs_disabled_flags(flags), nest_lock, ip, 0, 0, 1);
+ 	check_chain_key(current);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_sync);
+ 
+@@ -5818,13 +5903,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return LOCK_STATE_UNKNOWN;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	ret = __lock_is_held(lock, read);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	return ret;
+ }
+@@ -5839,13 +5924,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return cookie;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	cookie = __lock_pin_lock(lock);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	return cookie;
+ }
+@@ -5858,13 +5943,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	__lock_repin_lock(lock, cookie);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_repin_lock);
+ 
+@@ -5875,13 +5960,13 @@
+ 	if (unlikely(!lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 
+ 	lockdep_recursion_inc();
+ 	__lock_unpin_lock(lock, cookie);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_unpin_lock);
+ 
+@@ -6011,12 +6096,12 @@
+ 	if (unlikely(!lock_stat || !lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 	lockdep_recursion_inc();
+ 	__lock_contended(lock, ip);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_contended);
+ 
+@@ -6029,12 +6114,12 @@
+ 	if (unlikely(!lock_stat || !lockdep_enabled()))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	check_flags(flags);
+ 	lockdep_recursion_inc();
+ 	__lock_acquired(lock, ip);
+ 	lockdep_recursion_finish();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(lock_acquired);
+ #endif
+@@ -6049,7 +6134,7 @@
+ 	unsigned long flags;
+ 	int i;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_init_task(current);
+ 	memset(current->held_locks, 0, MAX_LOCK_DEPTH*sizeof(struct held_lock));
+ 	nr_hardirq_chains = 0;
+@@ -6058,7 +6143,7 @@
+ 	debug_locks = 1;
+ 	for (i = 0; i < CHAINHASH_SIZE; i++)
+ 		INIT_HLIST_HEAD(chainhash_table + i);
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ 
+ /* Remove a class from a lock chain. Must be called with the graph lock held. */
+@@ -6235,7 +6320,7 @@
+ 	if (WARN_ON_ONCE(ch != &delayed_free.rcu_head))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 
+ 	/* closed head */
+@@ -6245,7 +6330,7 @@
+ 	need_callback =
+ 		prepare_call_rcu_zapped(delayed_free.pf + delayed_free.index);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	/*
+ 	* If there's pending free and its callback has not been scheduled,
+@@ -6253,7 +6338,6 @@
+ 	*/
+ 	if (need_callback)
+ 		call_rcu(&delayed_free.rcu_head, free_zapped_rcu);
+-
+ }
+ 
+ /*
+@@ -6297,13 +6381,13 @@
+ 
+ 	init_data_structures_once();
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 	pf = get_pending_free();
+ 	__lockdep_free_key_range(pf, start, size);
+ 	need_callback = prepare_call_rcu_zapped(pf);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 	if (need_callback)
+ 		call_rcu(&delayed_free.rcu_head, free_zapped_rcu);
+ 	/*
+@@ -6324,12 +6408,12 @@
+ 
+ 	init_data_structures_once();
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 	__lockdep_free_key_range(pf, start, size);
+ 	__free_zapped_classes(pf);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ 
+ void lockdep_free_key_range(void *start, unsigned long size)
+@@ -6401,7 +6485,7 @@
+ 	int locked;
+ 	bool need_callback = false;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	locked = graph_lock();
+ 	if (!locked)
+ 		goto out_irq;
+@@ -6412,7 +6496,7 @@
+ 
+ 	graph_unlock();
+ out_irq:
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 	if (need_callback)
+ 		call_rcu(&delayed_free.rcu_head, free_zapped_rcu);
+ }
+@@ -6426,12 +6510,12 @@
+ 	struct pending_free *pf = delayed_free.pf;
+ 	unsigned long flags;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 	__lockdep_reset_lock(pf, lock);
+ 	__free_zapped_classes(pf);
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ 
+ void lockdep_reset_lock(struct lockdep_map *lock)
+@@ -6465,7 +6549,7 @@
+ 	if (WARN_ON_ONCE(static_obj(key)))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	lockdep_lock();
+ 
+ 	hlist_for_each_entry_rcu(k, hash_head, hash_entry) {
+@@ -6482,7 +6566,7 @@
+ 		need_callback = prepare_call_rcu_zapped(pf);
+ 	}
+ 	lockdep_unlock();
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ 
+ 	if (need_callback)
+ 		call_rcu(&delayed_free.rcu_head, free_zapped_rcu);
+@@ -6576,7 +6660,7 @@
+ 	if (unlikely(!debug_locks))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = lockdep_stage_disable();
+ 	for (i = 0; i < curr->lockdep_depth; i++) {
+ 		hlock = curr->held_locks + i;
+ 
+@@ -6587,7 +6671,7 @@
+ 		print_freed_lock_bug(curr, mem_from, mem_from + mem_len, hlock);
+ 		break;
+ 	}
+-	raw_local_irq_restore(flags);
++	lockdep_stage_restore(flags);
+ }
+ EXPORT_SYMBOL_GPL(debug_check_no_locks_freed);
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/locking/lockdep_internals.h /home/lindows/work/linux-evl/kernel/locking/lockdep_internals.h
+--- /home/lindows/work/linux-k1/kernel/locking/lockdep_internals.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/locking/lockdep_internals.h	2026-03-30 12:22:17.573636609 +0800
+@@ -213,12 +213,12 @@
+ 	this_cpu_inc(lockdep_stats.ptr);
+ 
+ #define debug_atomic_inc(ptr)			{		\
+-	WARN_ON_ONCE(!irqs_disabled());				\
++	WARN_ON_ONCE(!hard_irqs_disabled() && !irqs_disabled());\
+ 	__this_cpu_inc(lockdep_stats.ptr);			\
+ }
+ 
+ #define debug_atomic_dec(ptr)			{		\
+-	WARN_ON_ONCE(!irqs_disabled());				\
++	WARN_ON_ONCE(!hard_irqs_disabled() && !irqs_disabled());\
+ 	__this_cpu_dec(lockdep_stats.ptr);			\
+ }
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/locking/Makefile /home/lindows/work/linux-evl/kernel/locking/Makefile
+--- /home/lindows/work/linux-k1/kernel/locking/Makefile	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/locking/Makefile	2026-03-30 12:22:17.573636609 +0800
+@@ -28,6 +28,7 @@
+ obj-$(CONFIG_PREEMPT_RT) += spinlock_rt.o ww_rt_mutex.o
+ obj-$(CONFIG_DEBUG_SPINLOCK) += spinlock.o
+ obj-$(CONFIG_DEBUG_SPINLOCK) += spinlock_debug.o
++obj-$(CONFIG_IRQ_PIPELINE) += pipeline.o
+ obj-$(CONFIG_QUEUED_RWLOCKS) += qrwlock.o
+ obj-$(CONFIG_LOCK_TORTURE_TEST) += locktorture.o
+ obj-$(CONFIG_WW_MUTEX_SELFTEST) += test-ww_mutex.o
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/locking/spinlock_debug.c /home/lindows/work/linux-evl/kernel/locking/spinlock_debug.c
+--- /home/lindows/work/linux-k1/kernel/locking/spinlock_debug.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/locking/spinlock_debug.c	2026-03-30 12:22:17.573636609 +0800
+@@ -116,6 +116,7 @@
+ 	mmiowb_spin_lock();
+ 	debug_spin_lock_after(lock);
+ }
++EXPORT_SYMBOL_GPL(do_raw_spin_lock);
+ 
+ int do_raw_spin_trylock(raw_spinlock_t *lock)
+ {
+@@ -133,6 +134,7 @@
+ #endif
+ 	return ret;
+ }
++EXPORT_SYMBOL_GPL(do_raw_spin_trylock);
+ 
+ void do_raw_spin_unlock(raw_spinlock_t *lock)
+ {
+@@ -140,6 +142,7 @@
+ 	debug_spin_unlock(lock);
+ 	arch_spin_unlock(&lock->raw_lock);
+ }
++EXPORT_SYMBOL_GPL(do_raw_spin_unlock);
+ 
+ #ifndef CONFIG_PREEMPT_RT
+ static void rwlock_bug(rwlock_t *lock, const char *msg)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/Makefile /home/lindows/work/linux-evl/kernel/Makefile
+--- /home/lindows/work/linux-k1/kernel/Makefile	2026-03-30 12:19:57.527179157 +0800
++++ /home/lindows/work/linux-evl/kernel/Makefile	2026-03-30 12:22:17.553589179 +0800
+@@ -107,6 +107,8 @@
+ obj-$(CONFIG_TRACEPOINTS) += trace/
+ obj-$(CONFIG_RETHOOK) += trace/
+ obj-$(CONFIG_IRQ_WORK) += irq_work.o
++obj-$(CONFIG_DOVETAIL) += dovetail.o
++obj-$(CONFIG_EVL) += evl/
+ obj-$(CONFIG_CPU_PM) += cpu_pm.o
+ obj-$(CONFIG_BPF) += bpf/
+ obj-$(CONFIG_KCSAN) += kcsan/
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/notifier.c /home/lindows/work/linux-evl/kernel/notifier.c
+--- /home/lindows/work/linux-k1/kernel/notifier.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/notifier.c	2026-03-30 12:22:17.573636609 +0800
+@@ -227,6 +227,9 @@
+ {
+ 	int ret;
+ 
++	if (!running_inband())
++		return notifier_call_chain(&nh->head, val, v, -1, NULL);
++
+ 	rcu_read_lock();
+ 	ret = notifier_call_chain(&nh->head, val, v, -1, NULL);
+ 	rcu_read_unlock();
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/panic.c /home/lindows/work/linux-evl/kernel/panic.c
+--- /home/lindows/work/linux-k1/kernel/panic.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/panic.c	2026-03-30 12:22:17.573636609 +0800
+@@ -29,6 +29,7 @@
+ #include <linux/sysrq.h>
+ #include <linux/init.h>
+ #include <linux/nmi.h>
++#include <linux/irq_pipeline.h>
+ #include <linux/console.h>
+ #include <linux/bug.h>
+ #include <linux/ratelimit.h>
+@@ -56,7 +57,7 @@
+ 	IS_ENABLED(CONFIG_RANDSTRUCT) ? (1 << TAINT_RANDSTRUCT) : 0;
+ static int pause_on_oops;
+ static int pause_on_oops_flag;
+-static DEFINE_SPINLOCK(pause_on_oops_lock);
++static DEFINE_HARD_SPINLOCK(pause_on_oops_lock);
+ bool crash_kexec_post_notifiers;
+ int panic_on_warn __read_mostly;
+ unsigned long panic_on_taint;
+@@ -298,8 +299,9 @@
+ 	 * there is nothing to prevent an interrupt handler (that runs
+ 	 * after setting panic_cpu) from invoking panic() again.
+ 	 */
+-	local_irq_disable();
++	hard_local_irq_disable();
+ 	preempt_disable_notrace();
++	irq_pipeline_oops();
+ 
+ 	/*
+ 	 * It's possible to come here directly from a panic-assertion and
+@@ -362,9 +364,12 @@
+ 
+ 	/*
+ 	 * Run any panic handlers, including those that might need to
+-	 * add information to the kmsg dump output.
++	 * add information to the kmsg dump output. Skip panic
++	 * handlers if running over the oob stage, as they would most
++	 * likely break.
+ 	 */
+-	atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
++	if (running_inband())
++		atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
+ 
+ 	panic_print_sys_info(false);
+ 
+@@ -575,7 +580,7 @@
+ 	if (!pause_on_oops)
+ 		return;
+ 
+-	spin_lock_irqsave(&pause_on_oops_lock, flags);
++	raw_spin_lock_irqsave(&pause_on_oops_lock, flags);
+ 	if (pause_on_oops_flag == 0) {
+ 		/* This CPU may now print the oops message */
+ 		pause_on_oops_flag = 1;
+@@ -585,21 +590,21 @@
+ 			/* This CPU gets to do the counting */
+ 			spin_counter = pause_on_oops;
+ 			do {
+-				spin_unlock(&pause_on_oops_lock);
++				raw_spin_unlock(&pause_on_oops_lock);
+ 				spin_msec(MSEC_PER_SEC);
+-				spin_lock(&pause_on_oops_lock);
++				raw_spin_lock(&pause_on_oops_lock);
+ 			} while (--spin_counter);
+ 			pause_on_oops_flag = 0;
+ 		} else {
+ 			/* This CPU waits for a different one */
+ 			while (spin_counter) {
+-				spin_unlock(&pause_on_oops_lock);
++				raw_spin_unlock(&pause_on_oops_lock);
+ 				spin_msec(1);
+-				spin_lock(&pause_on_oops_lock);
++				raw_spin_lock(&pause_on_oops_lock);
+ 			}
+ 		}
+ 	}
+-	spin_unlock_irqrestore(&pause_on_oops_lock, flags);
++	raw_spin_unlock_irqrestore(&pause_on_oops_lock, flags);
+ }
+ 
+ /*
+@@ -629,6 +634,7 @@
+ {
+ 	tracing_off();
+ 	/* can't trust the integrity of the kernel anymore: */
++	irq_pipeline_oops();
+ 	debug_locks_off();
+ 	do_oops_enter_exit();
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/power/hibernate.c /home/lindows/work/linux-evl/kernel/power/hibernate.c
+--- /home/lindows/work/linux-k1/kernel/power/hibernate.c	2026-03-30 14:26:41.156968761 +0800
++++ /home/lindows/work/linux-evl/kernel/power/hibernate.c	2026-03-30 12:22:17.573636609 +0800
+@@ -171,13 +171,8 @@
+ 
+ static int platform_pre_snapshot(int platform_mode)
+ {
+-#ifdef CONFIG_SOC_SPACEMIT_K1X
+-	return (/* platform_mode && */ hibernation_ops) ?
+-		hibernation_ops->pre_snapshot() : 0;
+-#else
+ 	return (platform_mode && hibernation_ops) ?
+ 		hibernation_ops->pre_snapshot() : 0;
+-#endif
+ }
+ 
+ /**
+@@ -206,13 +201,8 @@
+  */
+ static void platform_finish(int platform_mode)
+ {
+-#ifdef CONFIG_SOC_SPACEMIT_K1X
+-	if (/* platform_mode && */ hibernation_ops)
+-		hibernation_ops->finish();
+-#else
+ 	if (platform_mode && hibernation_ops)
+ 		hibernation_ops->finish();
+-#endif
+ }
+ 
+ /**
+@@ -227,13 +217,8 @@
+  */
+ static int platform_pre_restore(int platform_mode)
+ {
+-#ifdef CONFIG_SOC_SPACEMIT_K1X
+-	return (/* platform_mode && */ hibernation_ops) ?
+-		hibernation_ops->pre_restore() : 0;
+-#else
+ 	return (platform_mode && hibernation_ops) ?
+ 		hibernation_ops->pre_restore() : 0;
+-#endif
+ }
+ 
+ /**
+@@ -324,6 +309,7 @@
+ 		goto Enable_cpus;
+ 
+ 	local_irq_disable();
++	hard_cond_local_irq_disable();
+ 
+ 	system_state = SYSTEM_SUSPEND;
+ 
+@@ -493,6 +479,7 @@
+ 
+ 	local_irq_disable();
+ 	system_state = SYSTEM_SUSPEND;
++	hard_cond_local_irq_disable();
+ 
+ 	error = syscore_suspend();
+ 	if (error)
+@@ -614,6 +601,7 @@
+ 
+ 	local_irq_disable();
+ 	system_state = SYSTEM_SUSPEND;
++	hard_cond_local_irq_disable();
+ 	syscore_suspend();
+ 	if (pm_wakeup_pending()) {
+ 		error = -EAGAIN;
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/printk/internal.h /home/lindows/work/linux-evl/kernel/printk/internal.h
+--- /home/lindows/work/linux-k1/kernel/printk/internal.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/printk/internal.h	2026-03-30 12:22:17.583660323 +0800
+@@ -61,6 +61,26 @@
+ 
+ u16 printk_parse_prefix(const char *text, int *level,
+ 			enum printk_info_flags *flags);
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++extern bool irq_pipeline_active;
++
++static inline bool printk_stage_safe(void)
++{
++	return running_inband() &&
++		(!hard_irqs_disabled() || !irq_pipeline_active);
++}
++
++#else
++
++static inline bool printk_stage_safe(void)
++{
++	return true;
++}
++
++#endif
++
+ #else
+ 
+ #define PRINTK_PREFIX_MAX	0
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/printk/printk.c /home/lindows/work/linux-evl/kernel/printk/printk.c
+--- /home/lindows/work/linux-k1/kernel/printk/printk.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/printk/printk.c	2026-03-30 12:22:17.583660323 +0800
+@@ -2067,10 +2067,10 @@
+ 	bool success = true;				\
+ 							\
+ 	typecheck(u8 *, recursion_ptr);			\
+-	local_irq_save(flags);				\
++	prb_irq_save(flags);				\
+ 	(recursion_ptr) = __printk_recursion_counter();	\
+ 	if (*(recursion_ptr) > PRINTK_MAX_RECURSION) {	\
+-		local_irq_restore(flags);		\
++		prb_irq_restore(flags);			\
+ 		success = false;			\
+ 	} else {					\
+ 		(*(recursion_ptr))++;			\
+@@ -2083,7 +2083,7 @@
+ 	do {						\
+ 		typecheck(u8 *, recursion_ptr);		\
+ 		(*(recursion_ptr))--;			\
+-		local_irq_restore(flags);		\
++		prb_irq_restore(flags);			\
+ 	} while (0)
+ 
+ int printk_delay_msec __read_mostly;
+@@ -2203,9 +2203,6 @@
+ 	int ret = 0;
+ 	u64 ts_nsec;
+ 
+-	if (!printk_enter_irqsave(recursion_ptr, irqflags))
+-		return 0;
+-
+ 	/*
+ 	 * Since the duration of printk() can vary depending on the message
+ 	 * and state of the ringbuffer, grab the timestamp now so that it is
+@@ -2214,8 +2211,6 @@
+ 	 */
+ 	ts_nsec = local_clock();
+ 
+-	caller_id = printk_caller_id();
+-
+ 	/*
+ 	 * The sprintf needs to come first since the syslog prefix might be
+ 	 * passed in as a parameter. An extra byte must be reserved so that
+@@ -2239,6 +2234,12 @@
+ 	if (dev_info)
+ 		flags |= LOG_NEWLINE;
+ 
++	/* Disable interrupts as late as possible. */
++	if (!printk_enter_irqsave(recursion_ptr, irqflags))
++		return 0;
++
++	caller_id = printk_caller_id();
++
+ 	if (flags & LOG_CONT) {
+ 		prb_rec_init_wr(&r, reserve_size);
+ 		if (prb_reserve_in_last(&e, prb, &r, caller_id, PRINTKRB_RECORD_MAX)) {
+@@ -2312,6 +2313,12 @@
+ 	if (unlikely(suppress_panic_printk) && other_cpu_in_panic())
+ 		return 0;
+ 
++	if (unlikely(!printk_stage_safe())) {
++		printed_len = vprintk_store(facility, level, dev_info, fmt, args);
++		defer_console_output();
++		return printed_len;
++	}
++
+ 	if (level == LOGLEVEL_SCHED) {
+ 		level = LOGLEVEL_DEFAULT;
+ 		in_sched = true;
+@@ -2438,6 +2445,75 @@
+ 	console_set_on_cmdline = 1;
+ }
+ 
++#ifdef CONFIG_RAW_PRINTK
++static struct console *raw_console;
++static DEFINE_HARD_SPINLOCK(raw_console_lock);
++
++static inline bool console_is_usable(struct console *con);
++
++void raw_puts(const char *s, size_t len)
++{
++	unsigned long flags;
++
++	raw_spin_lock_irqsave(&raw_console_lock, flags);
++	if (raw_console)
++		raw_console->write_raw(raw_console, s, len);
++	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
++}
++EXPORT_SYMBOL(raw_puts);
++
++void raw_vprintk(const char *fmt, va_list ap)
++{
++	char buf[256];
++	size_t n;
++
++	if (raw_console == NULL || !console_is_usable(raw_console))
++		return;
++
++        touch_nmi_watchdog();
++	n = vscnprintf(buf, sizeof(buf), fmt, ap);
++	raw_puts(buf, n);
++}
++EXPORT_SYMBOL(raw_vprintk);
++
++asmlinkage __visible void raw_printk(const char *fmt, ...)
++{
++	va_list ap;
++
++	va_start(ap, fmt);
++	raw_vprintk(fmt, ap);
++	va_end(ap);
++}
++EXPORT_SYMBOL(raw_printk);
++
++static inline void register_raw_console(struct console *newcon)
++{
++	unsigned long flags;
++
++	raw_spin_lock_irqsave(&raw_console_lock, flags);
++	if (newcon->write_raw)
++		raw_console = newcon;
++	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
++}
++
++static inline void unregister_raw_console(struct console *oldcon)
++{
++	unsigned long flags;
++
++	raw_spin_lock_irqsave(&raw_console_lock, flags);
++	if (oldcon == raw_console)
++		raw_console = NULL;
++	raw_spin_unlock_irqrestore(&raw_console_lock, flags);
++}
++
++#else
++
++static inline void register_raw_console(struct console *newcon) { }
++
++static inline void unregister_raw_console(struct console *oldcon) { }
++
++#endif
++
+ static int __add_preferred_console(char *name, int idx, char *options,
+ 				   char *brl_options, bool user_specified)
+ {
+@@ -3523,6 +3599,9 @@
+ 	if (err || newcon->flags & CON_BRL)
+ 		goto unlock;
+ 
++	/* The latest raw console to register is current. */
++	register_raw_console(newcon);
++
+ 	/*
+ 	 * If we have a bootconsole, and are switching to a real console,
+ 	 * don't print everything out again, since when the boot console, and
+@@ -3595,6 +3674,8 @@
+ 
+ 	con_printk(KERN_INFO, console, "disabled\n");
+ 
++	unregister_raw_console(console);
++
+ 	res = _braille_unregister_console(console);
+ 	if (res < 0)
+ 		return res;
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/printk/printk_ringbuffer.c /home/lindows/work/linux-evl/kernel/printk/printk_ringbuffer.c
+--- /home/lindows/work/linux-k1/kernel/printk/printk_ringbuffer.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/printk/printk_ringbuffer.c	2026-03-30 12:22:17.583660323 +0800
+@@ -1356,12 +1356,12 @@
+ 	struct prb_desc *d;
+ 	unsigned long id;
+ 
+-	local_irq_save(e->irqflags);
++	prb_irq_save(e->irqflags);
+ 
+ 	/* Transition the newest descriptor back to the reserved state. */
+ 	d = desc_reopen_last(desc_ring, caller_id, &id);
+ 	if (!d) {
+-		local_irq_restore(e->irqflags);
++		prb_irq_restore(e->irqflags);
+ 		goto fail_reopen;
+ 	}
+ 
+@@ -1500,12 +1500,12 @@
+ 	 * interrupts during the reserve/commit window in order to minimize
+ 	 * the likelihood of this happening.
+ 	 */
+-	local_irq_save(e->irqflags);
++	prb_irq_save(e->irqflags);
+ 
+ 	if (!desc_reserve(rb, &id)) {
+ 		/* Descriptor reservation failures are tracked. */
+ 		atomic_long_inc(&rb->fail);
+-		local_irq_restore(e->irqflags);
++		prb_irq_restore(e->irqflags);
+ 		goto fail;
+ 	}
+ 
+@@ -1610,7 +1610,7 @@
+ 	}
+ 
+ 	/* Restore interrupts, the reserve/commit window is finished. */
+-	local_irq_restore(e->irqflags);
++	prb_irq_restore(e->irqflags);
+ }
+ 
+ /**
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/printk/printk_ringbuffer.h /home/lindows/work/linux-evl/kernel/printk/printk_ringbuffer.h
+--- /home/lindows/work/linux-k1/kernel/printk/printk_ringbuffer.h	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/printk/printk_ringbuffer.h	2026-03-30 12:22:17.583660323 +0800
+@@ -223,6 +223,18 @@
+ #define DESC0_SV(ct_bits)	DESC_SV(DESC0_ID(ct_bits), desc_reusable)
+ 
+ /*
++ * When interrupt pipelining is enabled, we want the critical sections
++ * to be protected against preemption by out-of-band code.
++ */
++#ifdef CONFIG_IRQ_PIPELINE
++#define prb_irq_save(__flags)		do { (__flags) = hard_local_irq_save(); } while (0)
++#define prb_irq_restore(__flags)	hard_local_irq_restore(__flags)
++#else
++#define prb_irq_save(__flags)		local_irq_save(__flags)
++#define prb_irq_restore(__flags)	local_irq_restore(__flags)
++#endif
++
++/*
+  * Define a ringbuffer with an external text data buffer. The same as
+  * DEFINE_PRINTKRB() but requires specifying an external buffer for the
+  * text data.
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/printk/printk_safe.c /home/lindows/work/linux-evl/kernel/printk/printk_safe.c
+--- /home/lindows/work/linux-k1/kernel/printk/printk_safe.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/printk/printk_safe.c	2026-03-30 12:22:17.583660323 +0800
+@@ -9,6 +9,7 @@
+ #include <linux/cpumask.h>
+ #include <linux/printk.h>
+ #include <linux/kprobes.h>
++#include <linux/irqstage.h>
+ 
+ #include "internal.h"
+ 
+@@ -38,7 +39,7 @@
+ 	 * Use the main logbuf even in NMI. But avoid calling console
+ 	 * drivers that might have their own locks.
+ 	 */
+-	if (this_cpu_read(printk_context) || in_nmi())
++	if (this_cpu_read(printk_context) || !printk_stage_safe() || in_nmi())
+ 		return vprintk_deferred(fmt, args);
+ 
+ 	/* No obstacles. */
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/ptrace.c /home/lindows/work/linux-evl/kernel/ptrace.c
+--- /home/lindows/work/linux-k1/kernel/ptrace.c	2026-03-30 12:19:57.547124999 +0800
++++ /home/lindows/work/linux-evl/kernel/ptrace.c	2026-03-30 12:22:17.583660323 +0800
+@@ -862,10 +862,12 @@
+ 		if (unlikely(!arch_has_block_step()))
+ 			return -EIO;
+ 		user_enable_block_step(child);
++		inband_ptstep_notify(child);
+ 	} else if (is_singlestep(request) || is_sysemu_singlestep(request)) {
+ 		if (unlikely(!arch_has_single_step()))
+ 			return -EIO;
+ 		user_enable_single_step(child);
++		inband_ptstep_notify(child);
+ 	} else {
+ 		user_disable_single_step(child);
+ 	}
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/rcu/tree.c /home/lindows/work/linux-evl/kernel/rcu/tree.c
+--- /home/lindows/work/linux-k1/kernel/rcu/tree.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/rcu/tree.c	2026-03-30 12:22:17.583660323 +0800
+@@ -612,7 +612,7 @@
+ 	struct rcu_data *rdp = this_cpu_ptr(&rcu_data);
+ 
+ 	// If we're here from NMI there's nothing to do.
+-	if (in_nmi())
++	if (in_nonmaskable())
+ 		return;
+ 
+ 	RCU_LOCKDEP_WARN(rcu_dynticks_curr_cpu_in_eqs(),
+@@ -696,6 +696,9 @@
+ {
+ 	bool ret;
+ 
++	if (on_pipeline_entry())
++ 		return true;
++ 
+ 	preempt_disable_notrace();
+ 	ret = !rcu_dynticks_curr_cpu_in_eqs();
+ 	preempt_enable_notrace();
+@@ -4201,7 +4204,7 @@
+ 	struct rcu_data *rdp;
+ 	bool ret = false;
+ 
+-	if (in_nmi() || !rcu_scheduler_fully_active)
++	if (in_nonmaskable() || !rcu_scheduler_fully_active)
+ 		return true;
+ 	preempt_disable_notrace();
+ 	rdp = this_cpu_ptr(&rcu_data);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/rcu/tree_plugin.h /home/lindows/work/linux-evl/kernel/rcu/tree_plugin.h
+--- /home/lindows/work/linux-k1/kernel/rcu/tree_plugin.h	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/rcu/tree_plugin.h	2026-03-30 12:22:17.583660323 +0800
+@@ -630,8 +630,9 @@
+ 	bool preempt_bh_were_disabled =
+ 			!!(preempt_count() & (PREEMPT_MASK | SOFTIRQ_MASK));
+ 
+-	/* NMI handlers cannot block and cannot safely manipulate state. */
+-	if (in_nmi())
++	/* Neither NMI handlers nor pipeline entry code can either
++	   block or safely manipulate state. */
++	if (in_nonmaskable())
+ 		return;
+ 
+ 	local_irq_save(flags);
+@@ -821,7 +822,7 @@
+ {
+ 	struct rcu_data *rdp;
+ 
+-	if (irqs_disabled() || preempt_count() || !rcu_state.gp_kthread)
++	if (on_pipeline_entry() || running_oob() || irqs_disabled() || preempt_count() || !rcu_state.gp_kthread)
+ 		return;
+ 	rdp = this_cpu_ptr(&rcu_data);
+ 	rdp->cpu_no_qs.b.norm = false;
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/rcu/update.c /home/lindows/work/linux-evl/kernel/rcu/update.c
+--- /home/lindows/work/linux-k1/kernel/rcu/update.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/rcu/update.c	2026-03-30 12:22:17.583660323 +0800
+@@ -101,6 +101,11 @@
+  */
+ static bool rcu_read_lock_held_common(bool *ret)
+ {
++	if (irqs_pipelined() &&
++		(hard_irqs_disabled() || running_oob())) {
++		*ret = true;
++		return true;
++	}
+ 	if (!debug_lockdep_rcu_enabled()) {
+ 		*ret = true;
+ 		return true;
+@@ -249,6 +254,32 @@
+ 
+ #endif /* #ifndef CONFIG_TINY_RCU */
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++
++/*
++ * Prepare for taking the RCU read lock when running out-of-band. Nop
++ * otherwise.
++ */
++void rcu_oob_prepare_lock(void)
++{
++	if (!on_pipeline_entry() && running_oob())
++		ct_nmi_enter();
++}
++EXPORT_SYMBOL_GPL(rcu_oob_prepare_lock);
++
++/*
++ * Converse to rcu_oob_prepare_lock(), after dropping the RCU read
++ * lock.
++ */
++void rcu_oob_finish_lock(void)
++{
++	if (!on_pipeline_entry() && running_oob())
++		ct_nmi_exit();
++}
++EXPORT_SYMBOL_GPL(rcu_oob_finish_lock);
++
++#endif	/* CONFIG_IRQ_PIPELINE */
++
+ /*
+  * Test each non-SRCU synchronous grace-period wait API.  This is
+  * useful just after a change in mode for these primitives, and
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/sched/core.c /home/lindows/work/linux-evl/kernel/sched/core.c
+--- /home/lindows/work/linux-k1/kernel/sched/core.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/sched/core.c	2026-03-30 12:22:17.583660323 +0800
+@@ -3174,6 +3174,8 @@
+ 
+ 	__do_set_cpus_allowed(p, ctx);
+ 
++	inband_migration_notify(p, dest_cpu);
++
+ 	return affine_move_task(rq, p, rf, dest_cpu, ctx->flags);
+ 
+ out:
+@@ -4213,7 +4215,7 @@
+ 		 *  - we're serialized against set_special_state() by virtue of
+ 		 *    it disabling IRQs (this allows not taking ->pi_lock).
+ 		 */
+-		if (!ttwu_state_match(p, state, &success))
++		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
+ 			goto out;
+ 
+ 		trace_sched_waking(p);
+@@ -4229,7 +4231,7 @@
+ 	 */
+ 	scoped_guard (raw_spinlock_irqsave, &p->pi_lock) {
+ 		smp_mb__after_spinlock();
+-		if (!ttwu_state_match(p, state, &success))
++		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
+ 			break;
+ 
+ 		trace_sched_waking(p);
+@@ -4536,7 +4538,9 @@
+ 	p->wake_entry.u_flags = CSD_TYPE_TTWU;
+ 	p->migration_pending = NULL;
+ #endif
+-	init_sched_mm_cid(p);
++#ifdef CONFIG_IRQ_PIPELINE
++	init_task_stall_bits(p);
++#endif
+ }
+ 
+ DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
+@@ -5186,6 +5190,13 @@
+ 	fire_sched_out_preempt_notifiers(prev, next);
+ 	kmap_local_sched_out();
+ 	prepare_task(next);
++	prepare_inband_switch(next);
++	/*
++	 * Do not fold the following hard irqs disabling into
++	 * prepare_inband_switch(), this is required when pipelining
++	 * interrupts, not only by alternate scheduling.
++	 */
++	hard_cond_local_irq_disable();
+ 	prepare_arch_switch(next);
+ }
+ 
+@@ -5306,8 +5317,19 @@
+ 	 * finish_task_switch() will drop rq->lock() and lower preempt_count
+ 	 * and the preempt_enable() will end up enabling preemption (on
+ 	 * PREEMPT_COUNT kernels).
++	 *
++	 * If interrupts are pipelined, we may enable hard irqs since
++	 * the in-band stage is stalled. If dovetailing is enabled
++	 * too, schedule_tail() is the place where transitions of
++	 * tasks from the in-band to the oob stage completes. The
++	 * companion core is notified that 'prev' is now suspended in
++	 * the in-band stage, and can be safely resumed in the oob
++	 * stage.
+ 	 */
+ 
++	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
++	hard_cond_local_irq_enable();
++	oob_trampoline();
+ 	finish_task_switch(prev);
+ 	preempt_enable();
+ 
+@@ -5364,6 +5386,20 @@
+ 		switch_mm_irqs_off(prev->active_mm, next->mm, next);
+ 		lru_gen_use_mm(next->mm);
+ 
++		/*
++		 * If dovetail is enabled, insert a short window of
++		 * opportunity for preemption by out-of-band IRQs
++		 * before finalizing the context switch.
++		 * dovetail_context_switch() can deal with preempting
++		 * partially switched in-band contexts.
++		 */
++		if (dovetailing()) {
++			struct mm_struct *oldmm = prev->active_mm;
++			prev->active_mm = next->mm;
++			hard_local_irq_sync();
++			prev->active_mm = oldmm;
++		}
++
+ 		if (!prev->mm) {                        // from kernel
+ 			/* will mmdrop_lazy_tlb() in finish_task_switch(). */
+ 			rq->prev_mm = prev->active_mm;
+@@ -5380,6 +5416,15 @@
+ 	switch_to(prev, next, prev);
+ 	barrier();
+ 
++	/*
++	 * If 'next' is on its way to the oob stage, don't run the
++	 * context switch epilogue just yet. We will do that at some
++	 * point later, when the task switches back to the in-band
++	 * stage.
++	 */
++	if (unlikely(inband_switch_tail()))
++		return NULL;
++
+ 	return finish_task_switch(prev);
+ }
+ 
+@@ -5941,6 +5986,8 @@
+ 		panic("corrupted shadow stack detected inside scheduler\n");
+ #endif
+ 
++	check_inband_stage();
++
+ #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+ 	if (!preempt && READ_ONCE(prev->__state) && prev->non_block_count) {
+ 		printk(KERN_ERR "BUG: scheduling in a non-blocking section: %s/%d/%i\n",
+@@ -6574,7 +6621,7 @@
+  *
+  * WARNING: must be called with preemption disabled!
+  */
+-static void __sched notrace __schedule(unsigned int sched_mode)
++static int __sched notrace __schedule(unsigned int sched_mode)
+ {
+ 	struct task_struct *prev, *next;
+ 	unsigned long *switch_count;
+@@ -6697,11 +6744,16 @@
+ 
+ 		/* Also unlocks the rq: */
+ 		rq = context_switch(rq, prev, next, &rf);
++		if (dovetailing() && rq == NULL)
++			/* Task moved to the oob stage. */
++			return 1;
+ 	} else {
+ 		rq_unpin_lock(rq, &rf);
+ 		__balance_callbacks(rq);
+ 		raw_spin_rq_unlock_irq(rq);
+ 	}
++
++	return 0;
+ }
+ 
+ void __noreturn do_task_dead(void)
+@@ -6770,7 +6822,8 @@
+ 	sched_submit_work(tsk);
+ 	do {
+ 		preempt_disable();
+-		__schedule(SM_NONE);
++		if (__schedule(SM_NONE))
++			return;
+ 		sched_preempt_enable_no_resched();
+ 	} while (need_resched());
+ 	sched_update_worker(tsk);
+@@ -6863,7 +6916,8 @@
+ 		 */
+ 		preempt_disable_notrace();
+ 		preempt_latency_start(1);
+-		__schedule(SM_PREEMPT);
++		if (__schedule(SM_PREEMPT))
++			return;
+ 		preempt_latency_stop(1);
+ 		preempt_enable_no_resched_notrace();
+ 
+@@ -6885,7 +6939,7 @@
+ 	 * If there is a non-zero preempt_count or interrupts are disabled,
+ 	 * we do not want to preempt the current task. Just return..
+ 	 */
+-	if (likely(!preemptible()))
++	if (likely(!running_inband() || !preemptible()))
+ 		return;
+ 	preempt_schedule_common();
+ }
+@@ -6931,7 +6985,7 @@
+ {
+ 	enum ctx_state prev_ctx;
+ 
+-	if (likely(!preemptible()))
++	if (likely(!running_inband() || !preemptible()))
+ 		return;
+ 
+ 	do {
+@@ -6993,23 +7047,41 @@
+  * off of irq context.
+  * Note, that this is called and return with irqs disabled. This will
+  * protect us against recursive calling from irq.
++ *
++ * IRQ pipeline: we are called with hard irqs off, synchronize the
++ * pipeline then return the same way, so that the in-band log is
++ * guaranteed empty and further interrupt delivery is postponed by the
++ * hardware until have exited the kernel.
+  */
+ asmlinkage __visible void __sched preempt_schedule_irq(void)
+ {
+ 	enum ctx_state prev_state;
+ 
++	if (irq_pipeline_debug()) {
++		/* Catch any weirdness in pipelined entry code. */
++		if (WARN_ON_ONCE(!running_inband()))
++			return;
++		WARN_ON_ONCE(!hard_irqs_disabled());
++	}
++
++	hard_cond_local_irq_enable();
++
+ 	/* Catch callers which need to be fixed */
+ 	BUG_ON(preempt_count() || !irqs_disabled());
+ 
+ 	prev_state = exception_enter();
+ 
+-	do {
++	for (;;) {
+ 		preempt_disable();
+ 		local_irq_enable();
+ 		__schedule(SM_PREEMPT);
++		sync_inband_irqs();
+ 		local_irq_disable();
+ 		sched_preempt_enable_no_resched();
+-	} while (need_resched());
++		if (!need_resched())
++			break;
++		hard_cond_local_irq_enable();
++	}
+ 
+ 	exception_exit(prev_state);
+ }
+@@ -8561,6 +8633,8 @@
+ #if !defined(CONFIG_PREEMPTION) || defined(CONFIG_PREEMPT_DYNAMIC)
+ int __sched __cond_resched(void)
+ {
++	check_inband_stage();
++
+ 	if (should_resched(0)) {
+ 		preempt_schedule_common();
+ 		return 1;
+@@ -10252,6 +10326,9 @@
+ {
+ 	static unsigned long prev_jiffy;
+ 
++	if (irqs_pipelined() && (running_oob() || hard_irqs_disabled()))
++		return;
++
+ 	if (irqs_disabled())
+ 		return;
+ 
+@@ -11538,6 +11615,231 @@
+ 
+ #endif	/* CONFIG_CGROUP_SCHED */
+ 
++#ifdef CONFIG_DOVETAIL
++
++int dovetail_leave_inband(void)
++{
++	struct task_struct *p = current;
++	struct irq_pipeline_data *pd;
++	unsigned long flags;
++
++	preempt_disable();
++
++	pd = raw_cpu_ptr(&irq_pipeline);
++
++	if (WARN_ON_ONCE(dovetail_debug() && pd->task_inflight))
++		goto out;	/* Paranoid. */
++
++	raw_spin_lock_irqsave(&p->pi_lock, flags);
++	pd->task_inflight = p;
++	/*
++	 * The scope of the off-stage state is broader than _TLF_OOB,
++	 * in that it includes the transition path from the in-band
++	 * context to the oob stage.
++	 */
++	set_thread_local_flags(_TLF_OFFSTAGE);
++	set_current_state(TASK_INTERRUPTIBLE);
++	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
++	sched_submit_work(p);
++	/*
++	 * The current task is scheduled out from the inband stage,
++	 * before resuming on the oob stage. Since this code stands
++	 * for the scheduling tail of the oob scheduler,
++	 * arch_dovetail_switch_finish() is called to perform
++	 * architecture-specific fixups (e.g. fpu context reload).
++	 */
++	if (likely(__schedule(SM_NONE))) {
++		arch_dovetail_switch_finish(false);
++		return 0;
++	}
++
++	clear_thread_local_flags(_TLF_OFFSTAGE);
++	pd->task_inflight = NULL;
++out:
++	preempt_enable();
++
++	return -ERESTARTSYS;
++}
++EXPORT_SYMBOL_GPL(dovetail_leave_inband);
++
++void dovetail_resume_inband(void)
++{
++	struct task_struct *p;
++
++	p = __this_cpu_read(irq_pipeline.rqlock_owner);
++	if (WARN_ON_ONCE(dovetail_debug() && p == NULL))
++		return;
++
++	if (WARN_ON_ONCE(dovetail_debug() && (preempt_count() & STAGE_MASK)))
++		return;
++
++	finish_task_switch(p);
++	preempt_enable();
++	oob_trampoline();
++}
++EXPORT_SYMBOL_GPL(dovetail_resume_inband);
++
++#ifdef CONFIG_KVM
++
++#include <linux/kvm_host.h>
++
++static inline void notify_guest_preempt(void)
++{
++	struct kvm_oob_notifier *nfy;
++	struct irq_pipeline_data *p;
++
++	p = raw_cpu_ptr(&irq_pipeline);
++	nfy = p->vcpu_notify;
++	if (unlikely(nfy))
++		nfy->handler(nfy);
++}
++#else
++static inline void notify_guest_preempt(void)
++{ }
++#endif
++
++bool dovetail_context_switch(struct dovetail_altsched_context *out,
++			struct dovetail_altsched_context *in,
++			bool leave_inband)
++{
++	unsigned long pc __maybe_unused, lockdep_irqs;
++	struct task_struct *next, *prev, *last;
++	struct mm_struct *prev_mm, *next_mm;
++	bool inband_tail = false;
++
++	WARN_ON_ONCE(dovetail_debug() && on_pipeline_entry());
++
++	if (leave_inband) {
++		struct task_struct *tsk = current;
++		/*
++		 * We are about to leave the current inband context
++		 * for switching to an out-of-band task, save the
++		 * preempted context information.
++		 */
++		out->task = tsk;
++		out->active_mm = tsk->active_mm;
++		/*
++		 * Switching out-of-band may require some housekeeping
++		 * from a kernel VM which might currently run guest
++		 * code, notify it about the upcoming preemption.
++		 */
++		notify_guest_preempt();
++	}
++
++	arch_dovetail_switch_prepare(leave_inband);
++
++	next = in->task;
++	prev = out->task;
++	prev_mm = out->active_mm;
++	next_mm = in->active_mm;
++
++	if (next_mm == NULL) {
++		in->active_mm = prev_mm;
++		in->borrowed_mm = true;
++		enter_lazy_tlb(prev_mm, next);
++	} else {
++		switch_oob_mm(prev_mm, next_mm, next);
++		/*
++		 * We might be switching back to the inband context
++		 * which we preempted earlier, shortly after "current"
++		 * dropped its mm context in the do_exit() path
++		 * (next->mm == NULL). In such a case, a lazy TLB
++		 * state is expected when leaving the mm.
++		 */
++		if (next->mm == NULL)
++			enter_lazy_tlb(prev_mm, next);
++	}
++
++	if (out->borrowed_mm) {
++		out->borrowed_mm = false;
++		out->active_mm = NULL;
++	}
++
++	/*
++	 * Tasks running out-of-band may alter the (in-band)
++	 * preemption count as long as they don't trigger an in-band
++	 * rescheduling, which Dovetail properly blocks.
++	 *
++	 * If the preemption count is not stack-based but a global
++	 * per-cpu variable instead, changing it has a globally
++	 * visible side-effect though, which is a problem if the
++	 * out-of-band task is preempted and schedules away before the
++	 * change is rolled back: this may cause the in-band context
++	 * to later resume with a broken preemption count.
++	 *
++	 * For this reason, the preemption count of any context which
++	 * blocks from the out-of-band stage is carried over and
++	 * restored across switches, emulating a stack-based
++	 * storage.
++	 *
++	 * Eventually, the count is reset to FORK_PREEMPT_COUNT upon
++	 * transition from out-of-band to in-band stage, reinstating
++	 * the value in effect when the converse transition happened
++	 * at some point before.
++	 */
++	if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
++		pc = preempt_count();
++
++	/*
++	 * Like the preemption count and for the same reason, the irq
++	 * state maintained by lockdep must be preserved across
++	 * switches.
++	 */
++	lockdep_irqs = lockdep_read_irqs_state();
++
++	switch_to(prev, next, last);
++	barrier();
++
++	if (check_hard_irqs_disabled())
++		hard_local_irq_disable();
++
++	/*
++	 * If we entered this routine for switching to an out-of-band
++	 * task but don't have _TLF_OOB set for the current context
++	 * when resuming, this portion of code is the switch tail of
++	 * the inband schedule() routine, finalizing a transition to
++	 * the inband stage for the current task. Update the stage
++	 * level as/if required.
++	 */
++	if (unlikely(!leave_inband && !test_thread_local_flags(_TLF_OOB))) {
++		if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
++			preempt_count_set(FORK_PREEMPT_COUNT);
++		else if (unlikely(dovetail_debug() &&
++					!(preempt_count() & STAGE_MASK)))
++			WARN_ON_ONCE(1);
++		else
++			preempt_count_sub(STAGE_OFFSET);
++
++		lockdep_write_irqs_state(lockdep_irqs);
++
++		/*
++		 * Fixup the interrupt state conversely to what
++		 * inband_switch_tail() does for the opposite stage
++		 * switching direction.
++		 */
++		stall_inband();
++		trace_hardirqs_off();
++		inband_tail = true;
++	} else {
++		if (IS_ENABLED(CONFIG_HAVE_PERCPU_PREEMPT_COUNT))
++			preempt_count_set(pc);
++
++		lockdep_write_irqs_state(lockdep_irqs);
++	}
++
++	arch_dovetail_switch_finish(leave_inband);
++
++	/*
++	 * inband_tail is true whenever we are finalizing a transition
++	 * to the inband stage from the oob context for current. See
++	 * above.
++	 */
++	return inband_tail;
++}
++EXPORT_SYMBOL_GPL(dovetail_context_switch);
++
++#endif /* CONFIG_DOVETAIL */
++
+ void dump_cpu_task(int cpu)
+ {
+ 	if (cpu == smp_processor_id() && in_hardirq()) {
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/sched/idle.c /home/lindows/work/linux-evl/kernel/sched/idle.c
+--- /home/lindows/work/linux-k1/kernel/sched/idle.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/sched/idle.c	2026-03-30 12:22:17.583660323 +0800
+@@ -85,9 +85,14 @@
+  * default_idle_call - Default CPU idle routine.
+  *
+  * To use when the cpuidle framework cannot be used.
++ *
++ * IRQ pipeline: this call is entered with hard irqs off, in-band
++ * stage is stalled and its log is empty. Returns unstalled with hard
++ * irqs on.
+  */
+ void __cpuidle default_idle_call(void)
+ {
++	irq_pipeline_idling_checks();
+ 	instrumentation_begin();
+ 	if (!current_clr_polling_and_test()) {
+ 		trace_cpu_idle(1, smp_processor_id());
+@@ -100,7 +105,7 @@
+ 		start_critical_timings();
+ 		trace_cpu_idle(PWR_EVENT_EXIT, smp_processor_id());
+ 	}
+-	local_irq_enable();
++	local_irq_enable_full();
+ 	instrumentation_end();
+ }
+ 
+@@ -142,6 +147,8 @@
+  * On architectures that support TIF_POLLING_NRFLAG, is called with polling
+  * set, and it returns with polling set.  If it ever stops polling, it
+  * must clear the polling bit.
++ *
++ * IRQ pipeline: we enter this code stalled with hard irqs on.
+  */
+ static void cpuidle_idle_call(void)
+ {
+@@ -166,8 +173,10 @@
+ 
+ 	if (cpuidle_not_available(drv, dev)) {
+ 		tick_nohz_idle_stop_tick();
+-
+-		default_idle_call();
++		if (irq_pipeline_can_idle())
++			default_idle_call();
++		else
++			local_irq_enable_full();
+ 		goto exit_idle;
+ 	}
+ 
+@@ -223,6 +232,13 @@
+ 	__current_set_polling();
+ 
+ 	/*
++	 *  Catch mishandling of the CPU's interrupt disable flag when
++	 *  pipelining IRQs.
++	 */
++	if (WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled()))
++		hard_local_irq_enable();
++
++	/*
+ 	 * It is up to the idle functions to reenable local interrupts
+ 	 */
+ 	if (WARN_ON_ONCE(irqs_disabled()))
+@@ -280,6 +296,7 @@
+ 			cpu_idle_poll();
+ 		} else {
+ 			cpuidle_idle_call();
++			WARN_ON_ONCE(irq_pipeline_debug() && hard_irqs_disabled());
+ 		}
+ 		arch_cpu_idle_exit();
+ 	}
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/sched/sched.h /home/lindows/work/linux-evl/kernel/sched/sched.h
+--- /home/lindows/work/linux-k1/kernel/sched/sched.h	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/sched/sched.h	2026-03-30 12:22:17.583660323 +0800
+@@ -48,6 +48,8 @@
+ #include <linux/mutex_api.h>
+ #include <linux/plist.h>
+ #include <linux/poll.h>
++#include <linux/irq_pipeline.h>
++#include <linux/dovetail.h>
+ #include <linux/proc_fs.h>
+ #include <linux/profile.h>
+ #include <linux/psi.h>
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/sched/wait.c /home/lindows/work/linux-evl/kernel/sched/wait.c
+--- /home/lindows/work/linux-k1/kernel/sched/wait.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/sched/wait.c	2026-03-30 12:22:17.583660323 +0800
+@@ -84,6 +84,8 @@
+ 	wait_queue_entry_t *curr, *next;
+ 	int cnt = 0;
+ 
++	check_inband_stage();
++
+ 	lockdep_assert_held(&wq_head->lock);
+ 
+ 	if (bookmark && (bookmark->flags & WQ_FLAG_BOOKMARK)) {
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/signal.c /home/lindows/work/linux-evl/kernel/signal.c
+--- /home/lindows/work/linux-k1/kernel/signal.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/signal.c	2026-03-30 12:22:17.583660323 +0800
+@@ -773,6 +773,9 @@
+ 
+ 	set_tsk_thread_flag(t, TIF_SIGPENDING);
+ 
++	/* TIF_SIGPENDING must be set prior to notifying. */
++	inband_signal_notify(t);
++
+ 	/*
+ 	 * TASK_WAKEKILL also means wake it up in the stopped/traced/killable
+ 	 * case. We don't check t->state here because there is a race with it
+@@ -996,8 +999,11 @@
+ 	if (sig == SIGKILL)
+ 		return true;
+ 
+-	if (task_is_stopped_or_traced(p))
++	if (task_is_stopped_or_traced(p)) {
++		if (!signal_pending(p))
++			inband_signal_notify(p);
+ 		return false;
++	}
+ 
+ 	return task_curr(p) || !task_sigpending(p);
+ }
+@@ -2258,6 +2264,8 @@
+ 		spin_lock_irq(&current->sighand->siglock);
+ 	}
+ 
++	inband_ptstop_notify();
++
+ 	/*
+ 	 * After this point ptrace_signal_wake_up or signal_wake_up
+ 	 * will clear TASK_TRACED if ptrace_unlink happens or a fatal
+@@ -2342,6 +2350,8 @@
+ 	schedule();
+ 	cgroup_leave_frozen(true);
+ 
++	inband_ptcont_notify();
++
+ 	/*
+ 	 * We are back.  Now reacquire the siglock before touching
+ 	 * last_siginfo, so that we are sure to have synchronized with
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/smp.c /home/lindows/work/linux-evl/kernel/smp.c
+--- /home/lindows/work/linux-k1/kernel/smp.c	2026-03-30 14:26:41.156968761 +0800
++++ /home/lindows/work/linux-evl/kernel/smp.c	2026-03-30 12:22:17.583660323 +0800
+@@ -15,6 +15,7 @@
+ #include <linux/percpu.h>
+ #include <linux/init.h>
+ #include <linux/interrupt.h>
++#include <linux/irq_pipeline.h>
+ #include <linux/gfp.h>
+ #include <linux/smp.h>
+ #include <linux/cpu.h>
+@@ -50,6 +51,8 @@
+ 
+ static void __flush_smp_call_function_queue(bool warn_cpu_offline);
+ 
++static void call_function_oob_init(void);
++
+ int smpcfd_prepare_cpu(unsigned int cpu)
+ {
+ 	struct call_function_data *cfd = &per_cpu(cfd_data, cpu);
+@@ -105,6 +108,8 @@
+ 	for_each_possible_cpu(i)
+ 		init_llist_head(&per_cpu(call_single_queue, i));
+ 
++	call_function_oob_init();
++
+ 	smpcfd_prepare_cpu(smp_processor_id());
+ }
+ 
+@@ -987,10 +992,6 @@
+ 
+ 	/* Any cleanup work */
+ 	smp_cpus_done(setup_max_cpus);
+-
+-#ifdef CONFIG_BIND_THREAD_TO_AICORES
+-	ai_core_mask_get();
+-#endif
+ }
+ 
+ /*
+@@ -1128,3 +1129,142 @@
+ 	return sscs.ret;
+ }
+ EXPORT_SYMBOL_GPL(smp_call_on_cpu);
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++static DEFINE_PER_CPU_SHARED_ALIGNED(struct llist_head, call_oob_queue);
++static DEFINE_PER_CPU_SHARED_ALIGNED(call_single_data_t, csd_oob_data);
++
++static void __init call_function_oob_init(void)
++{
++	int n;
++
++	for_each_possible_cpu(n)
++		init_llist_head(&per_cpu(call_oob_queue, n));
++}
++
++/*
++ * Runs the oob callbacks queued by remote CPUs. Hard irqs off, oob
++ * stage on entry. The implementation was shamelessly lifted from
++ * __flush_smp_call_function_queue().
++ */
++void smp_flush_oob_call_function_queue(void)
++{
++	call_single_data_t *csd, *csd_next;
++	struct llist_node *entry, *prev;
++	struct llist_head *head;
++
++	WARN_ON(irq_pipeline_debug() && (!hard_irqs_disabled() || running_inband()));
++
++	head = raw_cpu_ptr(&call_oob_queue);
++	if (llist_empty(head))
++		return;
++
++	entry = llist_del_all(head);
++
++	/*
++	 * Run all SYNC callbacks first since senders are waiting for
++	 * us. Callbacks are pushed at head, so walk the list in
++	 * reverse order to preserve the enqueuing sequence.
++	 */
++	entry = llist_reverse_order(entry);
++	prev = NULL;
++	llist_for_each_entry_safe(csd, csd_next, entry, node.llist) {
++		if (CSD_TYPE(csd) == CSD_TYPE_SYNC) {
++			smp_call_func_t func = csd->func;
++			void *info = csd->info;
++
++			if (prev)
++				prev->next = &csd_next->node.llist;
++			else
++				entry = &csd_next->node.llist;
++
++			csd_do_func(func, info, csd);
++			csd_unlock(csd);
++		} else {
++			prev = &csd->node.llist;
++		}
++	}
++
++	if (!entry)
++		return;
++
++	/* Finish with ASYNC calls. */
++	prev = NULL;
++	llist_for_each_entry_safe(csd, csd_next, entry, node.llist) {
++		if (prev)
++			prev->next = &csd_next->node.llist;
++		else
++			entry = &csd_next->node.llist;
++		if (CSD_TYPE(csd) == CSD_TYPE_ASYNC) {
++			smp_call_func_t func = csd->func;
++			void *info = csd->info;
++
++			csd_unlock(csd);
++			csd_do_func(func, info, csd);
++		}
++	}
++}
++
++/*
++ * smp_call_function_oob - Run a function on a specific CPU, on the
++ *                         out-of-band stage.
++ *
++ * @func: The function to run. This must be fast and non-blocking.
++ * @info: An arbitrary pointer to pass to the function.
++ * @wait: If true, wait until function has completed on the target CPU.
++ *
++ * Hard irqs must be enabled on entry.
++ *
++ * Returns 0 on success, else a negative status code.
++ */
++int smp_call_function_oob(int cpu, smp_call_func_t func, void *info, bool wait)
++{
++	call_single_data_t csd_stack = {
++		.node = { .u_flags = CSD_FLAG_LOCK | CSD_TYPE_SYNC },
++	}, *csd;
++	unsigned long flags;
++	int this_cpu;
++
++	/*
++	 * If hard irqs are off, this call might deadlock if two CPUs
++	 * are waiting for each other to unlock the csd. Make sure to
++	 * detect this.
++	 */
++	WARN_ON_ONCE(hard_irqs_disabled());
++
++	if ((unsigned)cpu >= nr_cpu_ids || !cpu_online(cpu))
++		return -ENXIO;
++
++	this_cpu = hard_get_cpu(flags);
++	if (this_cpu == cpu) {
++	  	trace_csd_function_entry(func, NULL);
++		up_oob_call(func, info);
++		trace_csd_function_exit(func, NULL);
++		goto out;
++	}
++
++	csd = &csd_stack;
++	if (!wait) {
++		csd = raw_cpu_ptr(&csd_oob_data);
++		csd_lock(csd);
++	}
++
++	csd->func = func;
++	csd->info = info;
++
++	if (llist_add(&csd->node.llist, &per_cpu(call_oob_queue, cpu)))
++		irq_send_oob_ipi(CALL_FUNCTION_OOB_IPI, cpumask_of(cpu));
++
++	if (wait)
++		csd_lock_wait(csd);
++out:
++	hard_put_cpu(flags);
++
++	return 0;
++}
++EXPORT_SYMBOL_GPL(smp_call_function_oob);
++
++#else
++static inline void call_function_oob_init(void) { }
++#endif
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/stop_machine.c /home/lindows/work/linux-evl/kernel/stop_machine.c
+--- /home/lindows/work/linux-k1/kernel/stop_machine.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/stop_machine.c	2026-03-30 12:22:17.583660323 +0800
+@@ -232,8 +232,8 @@
+ 			curstate = newstate;
+ 			switch (curstate) {
+ 			case MULTI_STOP_DISABLE_IRQ:
+-				local_irq_disable();
+ 				hard_irq_disable();
++				local_irq_disable();
+ 				break;
+ 			case MULTI_STOP_RUN:
+ 				if (is_active)
+@@ -254,6 +254,7 @@
+ 		rcu_momentary_dyntick_idle();
+ 	} while (curstate != MULTI_STOP_EXIT);
+ 
++	hard_irq_enable();
+ 	local_irq_restore(flags);
+ 	return err;
+ }
+@@ -609,6 +610,7 @@
+ 		local_irq_save(flags);
+ 		hard_irq_disable();
+ 		ret = (*fn)(data);
++		hard_irq_enable();
+ 		local_irq_restore(flags);
+ 
+ 		return ret;
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/clockevents.c /home/lindows/work/linux-evl/kernel/time/clockevents.c
+--- /home/lindows/work/linux-k1/kernel/time/clockevents.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/clockevents.c	2026-03-30 12:22:17.593684037 +0800
+@@ -97,6 +97,7 @@
+ 	/* Transition with new state-specific callbacks */
+ 	switch (state) {
+ 	case CLOCK_EVT_STATE_DETACHED:
++	case CLOCK_EVT_STATE_RESERVED:
+ 		/* The clockevent device is getting replaced. Shut it down. */
+ 
+ 	case CLOCK_EVT_STATE_SHUTDOWN:
+@@ -436,6 +437,69 @@
+ }
+ EXPORT_SYMBOL_GPL(clockevents_unbind_device);
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++
++/**
++ * clockevents_register_proxy - register a proxy device on the current CPU
++ * @dev:	proxy to register
++ */
++int clockevents_register_proxy(struct clock_proxy_device *dev)
++{
++	struct clock_event_device *proxy_dev, *real_dev;
++	unsigned long flags;
++	u32 freq;
++	int ret;
++
++	raw_spin_lock_irqsave(&clockevents_lock, flags);
++
++	ret = tick_setup_proxy(dev);
++	if (ret)  {
++		raw_spin_unlock_irqrestore(&clockevents_lock, flags);
++		return ret;
++	}
++
++	proxy_dev = &dev->proxy_device;
++	clockevent_set_state(proxy_dev, CLOCK_EVT_STATE_DETACHED);
++
++	list_add(&proxy_dev->list, &clockevent_devices);
++	tick_check_new_device(proxy_dev);
++	clockevents_notify_released();
++
++	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
++
++	real_dev = dev->real_device;
++	freq = (1000000000ULL * real_dev->mult) >> real_dev->shift;
++	printk(KERN_INFO "CPU%d: proxy tick device registered (%u.%02uMHz)\n",
++		 smp_processor_id(), freq / 1000000, (freq / 10000) % 100);
++
++	return ret;
++}
++
++void clockevents_unregister_proxy(struct clock_proxy_device *dev)
++{
++	unsigned long flags;
++	int ret;
++
++	clockevents_register_device(dev->real_device);
++	clockevents_switch_state(dev->real_device, CLOCK_EVT_STATE_DETACHED);
++
++	/*
++	 *  Pop the proxy device, do not give it back to the
++	 *  framework.
++	 */
++	raw_spin_lock_irqsave(&clockevents_lock, flags);
++	ret = clockevents_replace(&dev->proxy_device);
++	raw_spin_unlock_irqrestore(&clockevents_lock, flags);
++
++	if (WARN_ON(ret))
++		return;
++
++	printk(KERN_INFO "CPU%d: proxy tick device unregistered\n",
++		smp_processor_id());
++}
++
++#endif
++
+ /**
+  * clockevents_register_device - register a clock event device
+  * @dev:	device to register
+@@ -574,8 +638,18 @@
+ 	 */
+ 	if (old) {
+ 		module_put(old->owner);
+-		clockevents_switch_state(old, CLOCK_EVT_STATE_DETACHED);
+-		list_move(&old->list, &clockevents_released);
++		/*
++		 * Do not move the device backing a proxy tick device
++		 * to the release list, keep it around but mark it as
++		 * reserved.
++		 */
++		if (tick_check_is_proxy(new)) {
++			list_del(&old->list);
++			clockevents_switch_state(old, CLOCK_EVT_STATE_RESERVED);
++		} else {
++			clockevents_switch_state(old, CLOCK_EVT_STATE_DETACHED);
++			list_move(&old->list, &clockevents_released);
++		}
+ 	}
+ 
+ 	if (new) {
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/clocksource.c /home/lindows/work/linux-evl/kernel/time/clocksource.c
+--- /home/lindows/work/linux-k1/kernel/time/clocksource.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/clocksource.c	2026-03-30 12:22:17.593684037 +0800
+@@ -1186,8 +1186,8 @@
+ 
+ 	clocksource_update_max_deferment(cs);
+ 
+-	pr_info("%s: mask: 0x%llx max_cycles: 0x%llx, max_idle_ns: %lld ns\n",
+-		cs->name, cs->mask, cs->max_cycles, cs->max_idle_ns);
++	pr_info("%s: freq: %Lu Hz, mask: 0x%llx max_cycles: 0x%llx, max_idle_ns: %lld ns\n",
++		cs->name, (u64)freq * scale, cs->mask, cs->max_cycles, cs->max_idle_ns);
+ }
+ EXPORT_SYMBOL_GPL(__clocksource_update_freq_scale);
+ 
+@@ -1456,10 +1456,36 @@
+ }
+ static DEVICE_ATTR_RO(available_clocksource);
+ 
++/**
++ * vdso_clocksource_show - sysfs interface for vDSO type of
++ *      current clocksource
++ * @dev:	unused
++ * @attr:	unused
++ * @buf:	char buffer to be filled with vDSO type
++ */
++static ssize_t vdso_clocksource_show(struct device *dev,
++				struct device_attribute *attr,
++				char *buf)
++{
++	ssize_t count = 0, type;
++
++	mutex_lock(&clocksource_mutex);
++	type = curr_clocksource->vdso_type;
++	count = snprintf(buf, PAGE_SIZE, "%s\n",
++			type == CLOCKSOURCE_VDSO_NONE ?	"none" :
++			type == CLOCKSOURCE_VDSO_ARCHITECTED ?	"architected" :
++			"mmio");
++	mutex_unlock(&clocksource_mutex);
++
++	return count;
++}
++static DEVICE_ATTR_RO(vdso_clocksource);
++
+ static struct attribute *clocksource_attrs[] = {
+ 	&dev_attr_current_clocksource.attr,
+ 	&dev_attr_unbind_clocksource.attr,
+ 	&dev_attr_available_clocksource.attr,
++	&dev_attr_vdso_clocksource.attr,
+ 	NULL
+ };
+ ATTRIBUTE_GROUPS(clocksource);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/hrtimer.c /home/lindows/work/linux-evl/kernel/time/hrtimer.c
+--- /home/lindows/work/linux-k1/kernel/time/hrtimer.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/hrtimer.c	2026-03-30 12:22:17.593684037 +0800
+@@ -981,6 +981,7 @@
+ 
+ out_timerfd:
+ 	timerfd_clock_was_set();
++	inband_clock_was_set();
+ }
+ 
+ static void clock_was_set_work(struct work_struct *work)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/Makefile /home/lindows/work/linux-evl/kernel/time/Makefile
+--- /home/lindows/work/linux-k1/kernel/time/Makefile	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/Makefile	2026-03-30 12:22:17.593684037 +0800
+@@ -16,6 +16,7 @@
+ endif
+ obj-$(CONFIG_GENERIC_SCHED_CLOCK)		+= sched_clock.o
+ obj-$(CONFIG_TICK_ONESHOT)			+= tick-oneshot.o tick-sched.o
++obj-$(CONFIG_IRQ_PIPELINE)			+= tick-proxy.o
+ obj-$(CONFIG_LEGACY_TIMER_TICK)			+= tick-legacy.o
+ obj-$(CONFIG_HAVE_GENERIC_VDSO)			+= vsyscall.o
+ obj-$(CONFIG_DEBUG_FS)				+= timekeeping_debug.o
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/tick-broadcast.c /home/lindows/work/linux-evl/kernel/time/tick-broadcast.c
+--- /home/lindows/work/linux-k1/kernel/time/tick-broadcast.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/tick-broadcast.c	2026-03-30 12:22:17.593684037 +0800
+@@ -801,6 +801,14 @@
+ 	int ret = 0;
+ 	ktime_t now;
+ 
++	/*
++	 * If proxying the hardware timer for high-precision tick
++	 * delivery to the out-of-band stage, the whole broadcast
++	 * dance is a no-go. Deny entering deep idle.
++	 */
++	if (dev->features & CLOCK_EVT_FEAT_PROXY)
++		return -EBUSY;
++
+ 	raw_spin_lock(&tick_broadcast_lock);
+ 	bc = tick_broadcast_device.evtdev;
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/tick-common.c /home/lindows/work/linux-evl/kernel/time/tick-common.c
+--- /home/lindows/work/linux-k1/kernel/time/tick-common.c	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/tick-common.c	2026-03-30 12:22:17.593684037 +0800
+@@ -231,7 +231,8 @@
+ 	} else {
+ 		handler = td->evtdev->event_handler;
+ 		next_event = td->evtdev->next_event;
+-		td->evtdev->event_handler = clockevents_handle_noop;
++		if (!clockevent_state_reserved(td->evtdev))
++			td->evtdev->event_handler = clockevents_handle_noop;
+ 	}
+ 
+ 	td->evtdev = newdev;
+@@ -313,6 +314,12 @@
+ bool tick_check_replacement(struct clock_event_device *curdev,
+ 			    struct clock_event_device *newdev)
+ {
++	/*
++	 * Never replace an active proxy except when unregistering it.
++	 */
++	if (tick_check_is_proxy(curdev))
++		return false;
++
+ 	if (!tick_check_percpu(curdev, newdev, smp_processor_id()))
+ 		return false;
+ 
+@@ -333,6 +340,9 @@
+ 	td = &per_cpu(tick_cpu_device, cpu);
+ 	curdev = td->evtdev;
+ 
++	if (tick_check_is_proxy(curdev))
++		goto out_bc;
++
+ 	if (!tick_check_replacement(curdev, newdev))
+ 		goto out_bc;
+ 
+@@ -345,7 +355,12 @@
+ 	 * not give it back to the clockevents layer !
+ 	 */
+ 	if (tick_is_broadcast_device(curdev)) {
+-		clockevents_shutdown(curdev);
++		if (tick_check_is_proxy(newdev)) {
++			list_del(&curdev->list);
++			clockevents_switch_state(curdev, CLOCK_EVT_STATE_RESERVED);
++		} else {
++			clockevents_shutdown(curdev);
++		}
+ 		curdev = NULL;
+ 	}
+ 	clockevents_exchange_device(curdev, newdev);
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/tick-internal.h /home/lindows/work/linux-evl/kernel/time/tick-internal.h
+--- /home/lindows/work/linux-k1/kernel/time/tick-internal.h	2026-03-30 12:19:57.557097919 +0800
++++ /home/lindows/work/linux-evl/kernel/time/tick-internal.h	2026-03-30 12:22:17.593684037 +0800
+@@ -47,15 +47,26 @@
+ 	dev->state_use_accessors = state;
+ }
+ 
++static inline bool tick_check_is_proxy(struct clock_event_device *dev)
++{
++	if (!irqs_pipelined())
++		return false;
++
++	return dev && dev->features & CLOCK_EVT_FEAT_PROXY;
++}
++
+ extern void clockevents_shutdown(struct clock_event_device *dev);
+ extern void clockevents_exchange_device(struct clock_event_device *old,
+ 					struct clock_event_device *new);
+-extern void clockevents_switch_state(struct clock_event_device *dev,
+-				     enum clock_event_state state);
+ extern int clockevents_program_event(struct clock_event_device *dev,
+ 				     ktime_t expires, bool force);
+ extern void clockevents_handle_noop(struct clock_event_device *dev);
+ extern int __clockevents_update_freq(struct clock_event_device *dev, u32 freq);
++#ifdef CONFIG_IRQ_PIPELINE
++int clockevents_register_proxy(struct clock_proxy_device *dev);
++extern void clockevents_unregister_proxy(struct clock_proxy_device *dev);
++int tick_setup_proxy(struct clock_proxy_device *dev);
++#endif
+ extern ssize_t sysfs_get_uname(const char *buf, char *dst, size_t cnt);
+ 
+ /* Broadcasting support */
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/time/vsyscall.c /home/lindows/work/linux-evl/kernel/time/vsyscall.c
+--- /home/lindows/work/linux-k1/kernel/time/vsyscall.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/time/vsyscall.c	2026-03-30 12:22:17.593684037 +0800
+@@ -69,16 +69,42 @@
+ 	vdso_ts->nsec	= tk->tkr_mono.xtime_nsec;
+ }
+ 
++static void update_generic_mmio(struct vdso_data *vdata, struct timekeeper *tk)
++{
++#ifdef CONFIG_GENERIC_CLOCKSOURCE_VDSO
++	const struct clocksource *cs = tk->tkr_mono.clock;
++	u16 seq;
++
++	if (cs->vdso_type == (vdata->cs_type_seq >> 16))
++		return;
++
++	seq = vdata->cs_type_seq;
++	if (++seq == 0)
++		seq = 1;
++
++	vdata->cs_type_seq = cs->vdso_type << 16 | seq;
++
++	if (cs->vdso_type >= CLOCKSOURCE_VDSO_MMIO)
++		snprintf(vdata->cs_mmdev, sizeof(vdata->cs_mmdev),
++			"/dev/ucs/%u", cs->vdso_type - CLOCKSOURCE_VDSO_MMIO);
++#endif
++}
++
+ void update_vsyscall(struct timekeeper *tk)
+ {
+ 	struct vdso_data *vdata = __arch_get_k_vdso_data();
+ 	struct vdso_timestamp *vdso_ts;
++	unsigned long flags;
+ 	s32 clock_mode;
+ 	u64 nsec;
+ 
++	flags = hard_cond_local_irq_save();
++
+ 	/* copy vsyscall data */
+ 	vdso_write_begin(vdata);
+ 
++	update_generic_mmio(vdata, tk);
++
+ 	clock_mode = tk->tkr_mono.clock->vdso_clock_mode;
+ 	vdata[CS_HRES_COARSE].clock_mode	= clock_mode;
+ 	vdata[CS_RAW].clock_mode		= clock_mode;
+@@ -110,13 +136,16 @@
+ 	 * If the current clocksource is not VDSO capable, then spare the
+ 	 * update of the high resolution parts.
+ 	 */
+-	if (clock_mode != VDSO_CLOCKMODE_NONE)
++	if (IS_ENABLED(CONFIG_GENERIC_CLOCKSOURCE_VDSO) ||
++	    clock_mode != VDSO_CLOCKMODE_NONE)
+ 		update_vdso_data(vdata, tk);
+ 
+ 	__arch_update_vsyscall(vdata, tk);
+ 
+ 	vdso_write_end(vdata);
+ 
++	hard_cond_local_irq_restore(flags);
++
+ 	__arch_sync_vdso_data(vdata);
+ }
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/ftrace.c /home/lindows/work/linux-evl/kernel/trace/ftrace.c
+--- /home/lindows/work/linux-k1/kernel/trace/ftrace.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/ftrace.c	2026-03-30 12:22:17.593684037 +0800
+@@ -6582,10 +6582,10 @@
+ 	 * reason to cause large interrupt latencies while we do it.
+ 	 */
+ 	if (!mod)
+-		local_irq_save(flags);
++		flags = hard_local_irq_save();
+ 	ftrace_update_code(mod, start_pg);
+ 	if (!mod)
+-		local_irq_restore(flags);
++		hard_local_irq_restore(flags);
+ 	ret = 0;
+  out:
+ 	mutex_unlock(&ftrace_lock);
+@@ -7233,9 +7233,9 @@
+ 	unsigned long count, flags;
+ 	int ret;
+ 
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	ret = ftrace_dyn_arch_init();
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 	if (ret)
+ 		goto failed;
+ 
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/ring_buffer.c /home/lindows/work/linux-evl/kernel/trace/ring_buffer.c
+--- /home/lindows/work/linux-k1/kernel/trace/ring_buffer.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/ring_buffer.c	2026-03-30 12:22:17.593684037 +0800
+@@ -3291,9 +3291,14 @@
+ {
+ 	unsigned int val = cpu_buffer->current_context;
+ 	int bit = interrupt_context_level();
++	unsigned long flags;
+ 
+ 	bit = RB_CTX_NORMAL - bit;
+ 
++	flags = hard_cond_local_irq_save();
++
++	val = cpu_buffer->current_context;
++
+ 	if (unlikely(val & (1 << (bit + cpu_buffer->nest)))) {
+ 		/*
+ 		 * It is possible that this was called by transitioning
+@@ -3303,6 +3308,7 @@
+ 		bit = RB_CTX_TRANSITION;
+ 		if (val & (1 << (bit + cpu_buffer->nest))) {
+ 			do_ring_buffer_record_recursion();
++			hard_cond_local_irq_restore(flags);
+ 			return true;
+ 		}
+ 	}
+@@ -3310,14 +3316,20 @@
+ 	val |= (1 << (bit + cpu_buffer->nest));
+ 	cpu_buffer->current_context = val;
+ 
++	hard_cond_local_irq_restore(flags);
++
+ 	return false;
+ }
+ 
+ static __always_inline void
+ trace_recursive_unlock(struct ring_buffer_per_cpu *cpu_buffer)
+ {
++	unsigned long flags;
++
++	flags = hard_cond_local_irq_save();
+ 	cpu_buffer->current_context &=
+ 		cpu_buffer->current_context - (1 << cpu_buffer->nest);
++	hard_cond_local_irq_restore(flags);
+ }
+ 
+ /* The recursive locking above uses 5 bits */
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_branch.c /home/lindows/work/linux-evl/kernel/trace/trace_branch.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_branch.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_branch.c	2026-03-30 12:22:17.593684037 +0800
+@@ -53,7 +53,7 @@
+ 	if (unlikely(!tr))
+ 		return;
+ 
+-	raw_local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	current->trace_recursion |= TRACE_BRANCH_BIT;
+ 	data = this_cpu_ptr(tr->array_buffer.data);
+ 	if (atomic_read(&data->disabled))
+@@ -87,7 +87,7 @@
+ 
+  out:
+ 	current->trace_recursion &= ~TRACE_BRANCH_BIT;
+-	raw_local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ }
+ 
+ static inline
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace.c /home/lindows/work/linux-evl/kernel/trace/trace.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace.c	2026-03-30 12:22:17.593684037 +0800
+@@ -1175,9 +1175,9 @@
+ 		return;
+ 	}
+ 
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	update_max_tr(tr, current, smp_processor_id(), cond_data);
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ }
+ 
+ void tracing_snapshot_instance(struct trace_array *tr)
+@@ -1867,7 +1867,7 @@
+ 	if (tr->stop_count)
+ 		return;
+ 
+-	WARN_ON_ONCE(!irqs_disabled());
++	WARN_ON_ONCE(!hard_irqs_disabled());
+ 
+ 	if (!tr->allocated_snapshot) {
+ 		/* Only the nop tracer should hit this when disabling */
+@@ -1915,7 +1915,7 @@
+ 	if (tr->stop_count)
+ 		return;
+ 
+-	WARN_ON_ONCE(!irqs_disabled());
++	WARN_ON_ONCE(!hard_irqs_disabled());
+ 	if (!tr->allocated_snapshot) {
+ 		/* Only the nop tracer should hit this when disabling */
+ 		WARN_ON_ONCE(tr->current_trace != &nop_trace);
+@@ -2695,7 +2695,7 @@
+ 
+ 	pc = preempt_count();
+ 
+-	if (pc & NMI_MASK)
++	if (pc & (NMI_MASK|STAGE_MASK))
+ 		trace_flags |= TRACE_FLAG_NMI;
+ 	if (pc & HARDIRQ_MASK)
+ 		trace_flags |= TRACE_FLAG_HARDIRQ;
+@@ -2703,6 +2703,8 @@
+ 		trace_flags |= TRACE_FLAG_SOFTIRQ;
+ 	if (softirq_count() >> (SOFTIRQ_SHIFT + 1))
+ 		trace_flags |= TRACE_FLAG_BH_OFF;
++	if (irqs_pipelined() && hard_irqs_disabled())
++		trace_flags |= TRACE_FLAG_IRQS_HARDOFF;
+ 
+ 	if (tif_need_resched())
+ 		trace_flags |= TRACE_FLAG_NEED_RESCHED;
+@@ -7635,7 +7637,9 @@
+ 
+ static void tracing_swap_cpu_buffer(void *tr)
+ {
++	hard_local_irq_disable();
+ 	update_max_tr_single((struct trace_array *)tr, current, smp_processor_id());
++	hard_local_irq_enable();
+ }
+ 
+ static ssize_t
+@@ -7698,12 +7702,12 @@
+ 			break;
+ 		/* Now, we're going to swap */
+ 		if (iter->cpu_file == RING_BUFFER_ALL_CPUS) {
+-			local_irq_disable();
++			hard_local_irq_disable();
+ 			update_max_tr(tr, current, smp_processor_id(), NULL);
+-			local_irq_enable();
++			hard_local_irq_enable();
+ 		} else {
+ 			smp_call_function_single(iter->cpu_file, tracing_swap_cpu_buffer,
+-						 (void *)tr, 1);
++						(void *)tr, 1);
+ 		}
+ 		break;
+ 	default:
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_clock.c /home/lindows/work/linux-evl/kernel/trace/trace_clock.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_clock.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_clock.c	2026-03-30 12:22:17.593684037 +0800
+@@ -97,7 +97,7 @@
+ 	int this_cpu;
+ 	u64 now, prev_time;
+ 
+-	raw_local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 
+ 	this_cpu = raw_smp_processor_id();
+ 
+@@ -139,7 +139,7 @@
+ 		arch_spin_unlock(&trace_clock_struct.lock);
+ 	}
+  out:
+-	raw_local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 
+ 	return now;
+ }
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_functions.c /home/lindows/work/linux-evl/kernel/trace/trace_functions.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_functions.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_functions.c	2026-03-30 12:22:17.593684037 +0800
+@@ -231,7 +231,7 @@
+ 	 * Need to use raw, since this must be called before the
+ 	 * recursive protection is performed.
+ 	 */
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	cpu = raw_smp_processor_id();
+ 	data = per_cpu_ptr(tr->array_buffer.data, cpu);
+ 	disabled = atomic_inc_return(&data->disabled);
+@@ -243,7 +243,7 @@
+ 	}
+ 
+ 	atomic_dec(&data->disabled);
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ }
+ 
+ static inline bool is_repeat_check(struct trace_array *tr,
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_functions_graph.c /home/lindows/work/linux-evl/kernel/trace/trace_functions_graph.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_functions_graph.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_functions_graph.c	2026-03-30 12:22:17.593684037 +0800
+@@ -174,7 +174,7 @@
+ 	if (tracing_thresh)
+ 		return 1;
+ 
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	cpu = raw_smp_processor_id();
+ 	data = per_cpu_ptr(tr->array_buffer.data, cpu);
+ 	disabled = atomic_inc_return(&data->disabled);
+@@ -186,7 +186,7 @@
+ 	}
+ 
+ 	atomic_dec(&data->disabled);
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ 
+ 	return ret;
+ }
+@@ -254,7 +254,7 @@
+ 		return;
+ 	}
+ 
+-	local_irq_save(flags);
++	flags = hard_local_irq_save();
+ 	cpu = raw_smp_processor_id();
+ 	data = per_cpu_ptr(tr->array_buffer.data, cpu);
+ 	disabled = atomic_inc_return(&data->disabled);
+@@ -263,7 +263,7 @@
+ 		__trace_graph_return(tr, trace, trace_ctx);
+ 	}
+ 	atomic_dec(&data->disabled);
+-	local_irq_restore(flags);
++	hard_local_irq_restore(flags);
+ }
+ 
+ void set_graph_array(struct trace_array *tr)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_irqsoff.c /home/lindows/work/linux-evl/kernel/trace/trace_irqsoff.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_irqsoff.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_irqsoff.c	2026-03-30 12:22:17.593684037 +0800
+@@ -14,6 +14,7 @@
+ #include <linux/uaccess.h>
+ #include <linux/module.h>
+ #include <linux/ftrace.h>
++#include <linux/irqstage.h>
+ #include <linux/kprobes.h>
+ 
+ #include "trace.h"
+@@ -26,7 +27,7 @@
+ 
+ static DEFINE_PER_CPU(int, tracing_cpu);
+ 
+-static DEFINE_RAW_SPINLOCK(max_trace_lock);
++static DEFINE_HARD_SPINLOCK(max_trace_lock);
+ 
+ enum {
+ 	TRACER_IRQS_OFF		= (1 << 1),
+@@ -44,7 +45,7 @@
+ static inline int
+ preempt_trace(int pc)
+ {
+-	return ((trace_type & TRACER_PREEMPT_OFF) && pc);
++	return (running_inband() && (trace_type & TRACER_PREEMPT_OFF) && pc);
+ }
+ #else
+ # define preempt_trace(pc) (0)
+@@ -55,7 +56,7 @@
+ irq_trace(void)
+ {
+ 	return ((trace_type & TRACER_IRQS_OFF) &&
+-		irqs_disabled());
++		(hard_irqs_disabled() || (running_inband() && irqs_disabled())));
+ }
+ #else
+ # define irq_trace() (0)
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_output.c /home/lindows/work/linux-evl/kernel/trace/trace_output.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_output.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_output.c	2026-03-30 12:22:17.593684037 +0800
+@@ -450,18 +450,22 @@
+ 	int softirq;
+ 	int bh_off;
+ 	int nmi;
++	int none;
+ 
+ 	nmi = entry->flags & TRACE_FLAG_NMI;
+ 	hardirq = entry->flags & TRACE_FLAG_HARDIRQ;
+ 	softirq = entry->flags & TRACE_FLAG_SOFTIRQ;
+ 	bh_off = entry->flags & TRACE_FLAG_BH_OFF;
++	none = !irqs_pipelined() && (entry->flags & TRACE_FLAG_IRQS_NOSUPPORT) ? 'X' : '.';
+ 
+ 	irqs_off =
++		(entry->flags & (TRACE_FLAG_IRQS_OFF|TRACE_FLAG_IRQS_HARDOFF)) ==
++		(TRACE_FLAG_IRQS_OFF|TRACE_FLAG_IRQS_HARDOFF) ? '*' :
++		(entry->flags & TRACE_FLAG_IRQS_HARDOFF) ? '#' :
+ 		(entry->flags & TRACE_FLAG_IRQS_OFF && bh_off) ? 'D' :
+ 		(entry->flags & TRACE_FLAG_IRQS_OFF) ? 'd' :
+ 		bh_off ? 'b' :
+-		(entry->flags & TRACE_FLAG_IRQS_NOSUPPORT) ? 'X' :
+-		'.';
++		none;
+ 
+ 	switch (entry->flags & (TRACE_FLAG_NEED_RESCHED |
+ 				TRACE_FLAG_PREEMPT_RESCHED)) {
+@@ -480,6 +484,7 @@
+ 	}
+ 
+ 	hardsoft_irq =
++		irqs_pipelined() && nmi ? '~' :
+ 		(nmi && hardirq)     ? 'Z' :
+ 		nmi                  ? 'z' :
+ 		(hardirq && softirq) ? 'H' :
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_preemptirq.c /home/lindows/work/linux-evl/kernel/trace/trace_preemptirq.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_preemptirq.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_preemptirq.c	2026-03-30 12:22:17.593684037 +0800
+@@ -10,6 +10,7 @@
+ #include <linux/module.h>
+ #include <linux/ftrace.h>
+ #include <linux/kprobes.h>
++#include <linux/irq_pipeline.h>
+ #include "trace.h"
+ 
+ #define CREATE_TRACE_POINTS
+@@ -94,6 +95,57 @@
+ }
+ EXPORT_SYMBOL(trace_hardirqs_off);
+ NOKPROBE_SYMBOL(trace_hardirqs_off);
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++void trace_hardirqs_off_pipelined(void)
++{
++	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
++
++	if (running_inband())
++		trace_hardirqs_off();
++}
++EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
++NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
++
++void trace_hardirqs_on_pipelined(void)
++{
++	WARN_ON(irq_pipeline_debug() && !hard_irqs_disabled());
++
++	/*
++	 * If the in-band stage of the kernel is current but the IRQ
++	 * was not delivered because the latter is stalled, keep the
++	 * tracing logic unaware of the receipt, so that no false
++	 * positive is triggered in lockdep (e.g. IN-HARDIRQ-W ->
++	 * HARDIRQ-ON-W).
++	 */
++	if (running_inband() && !irqs_disabled()) {
++		stall_inband();
++		trace_hardirqs_on();
++		unstall_inband_nocheck();
++	}
++}
++EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
++NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
++
++#else
++
++void trace_hardirqs_off_pipelined(void)
++{
++	trace_hardirqs_off();
++}
++EXPORT_SYMBOL(trace_hardirqs_off_pipelined);
++NOKPROBE_SYMBOL(trace_hardirqs_off_pipelined);
++
++void trace_hardirqs_on_pipelined(void)
++{
++	trace_hardirqs_on();
++}
++EXPORT_SYMBOL(trace_hardirqs_on_pipelined);
++NOKPROBE_SYMBOL(trace_hardirqs_on_pipelined);
++
++#endif
++
+ #endif /* CONFIG_TRACE_IRQFLAGS */
+ 
+ #ifdef CONFIG_TRACE_PREEMPT_TOGGLE
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_sched_wakeup.c /home/lindows/work/linux-evl/kernel/trace/trace_sched_wakeup.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_sched_wakeup.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_sched_wakeup.c	2026-03-30 12:22:17.603707751 +0800
+@@ -486,7 +486,9 @@
+ 
+ 	if (likely(!is_tracing_stopped())) {
+ 		wakeup_trace->max_latency = delta;
++		hard_local_irq_disable();
+ 		update_max_tr(wakeup_trace, wakeup_task, wakeup_cpu, NULL);
++		hard_local_irq_enable();
+ 	}
+ 
+ out_unlock:
+diff -ru '--exclude=*.o' '--exclude=*.cmd' /home/lindows/work/linux-k1/kernel/trace/trace_stack.c /home/lindows/work/linux-evl/kernel/trace/trace_stack.c
+--- /home/lindows/work/linux-k1/kernel/trace/trace_stack.c	2026-03-30 12:19:57.567070838 +0800
++++ /home/lindows/work/linux-evl/kernel/trace/trace_stack.c	2026-03-30 12:22:17.603707751 +0800
+@@ -171,8 +171,9 @@
+ 	if (!object_is_on_stack(stack))
+ 		return;
+ 
+-	/* Can't do this from NMI context (can cause deadlocks) */
+-	if (in_nmi())
++	/* Can't do this from NMI or oob stage contexts (can cause
++	   deadlocks) */
++	if (in_nmi() || !running_inband())
+ 		return;
+ 
+ 	local_irq_save(flags);

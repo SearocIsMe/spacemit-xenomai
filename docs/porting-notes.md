@@ -303,8 +303,329 @@ RISC-V FPU state (F/D registers) must be saved/restored when switching between O
 | 2026-03-30 | `00-setup-env.sh`: fixed EVL clone — use `source.denx.de` mirror, tag `v6.6.63-evl2-rebase` | ✅ Done |
 | 2026-03-30 | Confirmed: `v6.6.63-evl2-rebase` has `kernel/evl/` + `kernel/dovetail/` but **no** `arch/riscv/` Dovetail hooks | ✅ Investigated |
 | 2026-03-30 | RISC-V Dovetail arch hooks not yet in any stable EVL branch — must source from mailing list | ⚠️ Blocked |
-| TBD | Obtain RISC-V Dovetail arch patches (mailing list or write from scratch) | ⏳ Pending |
-| TBD | Apply patches to SpacemiT v6.6.63 | ⏳ Pending |
-| TBD | First kernel build attempt | ⏳ Pending |
-| TBD | Boot test on Jupiter | ⏳ Pending |
-| TBD | EVL latency measurement | ⏳ Pending |
+| 2026-03-30 | Built full SD card image `evl-sdcard-k1-20260331.img` via `make-full-sdcard-img.sh` | ✅ Done |
+| 2026-04-01 | Boot test on Jupiter (Milk-V) with HDMI display: Bianbu icon ✅, Bianbu load ✅, terminal ✅ | ✅ **Booted** |
+| 2026-04-01 | EVL verification on Jupiter: `dmesg\|grep evl` empty, `/sys/devices/virtual/evl` absent, `evl check` → not found | ❌ **EVL absent** — see §8 |
+| 2026-04-01 | Wrote RISC-V Dovetail arch hooks from scratch (`patches/0002-riscv-dovetail-arch-hooks.patch`) | ✅ Done |
+| 2026-04-01 | Applied `0001`+`0002`+`0003` patches; fixed 14 build errors (see §10) | ✅ Done |
+| 2026-04-01 | **Kernel build succeeded** — `arch/riscv/boot/Image` (28 MB) | ✅ **BUILD OK** |
+| 2026-04-01 | Generated `patches/0004-riscv-evl-build-fixes.patch` capturing all build-fix changes | ✅ Done |
+| TBD | Flash new EVL kernel to SD card and boot Jupiter | ⏳ Pending |
+| TBD | Verify EVL core loaded (`dmesg | grep -i evl`, `evl check`) | ⏳ Pending |
+| TBD | EVL latency measurement (`evl run latmus -T 60 -c 1`) | ⏳ Pending |
+
+---
+
+## 8. Root-Cause Analysis: EVL Absent from Current Image (2026-04-01)
+
+### 8.1 Symptom
+
+On Jupiter, after booting `evl-sdcard-k1-20260331.img`:
+
+```
+# dmesg | grep -i evl
+(no output)
+# ls /sys/devices/virtual/evl
+ls: /sys/devices/virtual/evl: No such file or directory
+# evl check
+/bin/sh: evl: not found
+```
+
+### 8.2 Root Cause
+
+The patch `patches/0001-evl-dovetail-from-filesystem-diff.patch` was generated
+from a filesystem diff between the EVL tree (`linux-evl`) and the SpacemiT tree
+(`linux-k1`). Inspection of the patch shows it contains **only**:
+
+```
+kernel/evl/*          ← EVL core (scheduler, clock, heap, etc.)
+include/linux/dovetail.h
+include/linux/irq_pipeline.h
+```
+
+It contains **no `arch/riscv/` files at all**.
+
+### 8.3 Why This Matters
+
+`CONFIG_DOVETAIL` in `kernel/Kconfig` has the dependency:
+
+```
+config DOVETAIL
+    bool "..."
+    depends on HAVE_DOVETAIL
+```
+
+`HAVE_DOVETAIL` is set by the architecture's `arch/riscv/Kconfig` — specifically
+by a line like:
+
+```
+select HAVE_DOVETAIL
+```
+
+which is added by the RISC-V Dovetail arch patch. Without that line, `DOVETAIL`
+is invisible in Kconfig and silently ignored. The `02-configure.sh` script
+attempts to set `CONFIG_DOVETAIL=y` but `olddefconfig` drops it because the
+symbol doesn't exist. The resulting kernel is a plain SpacemiT kernel with no
+EVL infrastructure whatsoever.
+
+### 8.4 What Is Missing
+
+The following files must be added/modified by the RISC-V Dovetail arch patch:
+
+| File | What it does |
+|------|-------------|
+| `arch/riscv/Kconfig` | Add `select HAVE_DOVETAIL` |
+| `arch/riscv/include/asm/dovetail.h` | RISC-V OOB thread state, FPU hooks |
+| `arch/riscv/include/asm/thread_info.h` | Add `struct oob_thread_state oob_state` |
+| `arch/riscv/kernel/entry.S` | OOB IRQ entry stub before normal IRQ dispatch |
+| `arch/riscv/kernel/irq.c` | Dovetail pipeline dispatch |
+| `arch/riscv/kernel/process.c` | OOB context switch hooks |
+| `arch/riscv/kernel/fpu.S` | FPU save/restore for OOB↔in-band switches |
+| `include/asm-generic/dovetail.h` | Generic Dovetail arch fallback header |
+
+None of these are present in `v6.6.63-evl2-rebase` on `source.denx.de`.
+
+### 8.5 Confirmed Build Config Behaviour
+
+Even though `configs/k1_evl_defconfig` sets `CONFIG_DOVETAIL=y`, the kernel
+`make olddefconfig` step silently drops it because `HAVE_DOVETAIL` is not
+selected. The built kernel is therefore identical to a plain SpacemiT kernel.
+
+To verify this on the running Jupiter:
+
+```bash
+# Check if DOVETAIL was actually compiled in
+zcat /proc/config.gz | grep -E "DOVETAIL|EVL|IRQ_PIPELINE"
+# Expected (bad): all lines show "# CONFIG_... is not set" or are absent
+# Expected (good, after fix): CONFIG_DOVETAIL=y, CONFIG_EVL_CORE=y
+```
+
+---
+
+## 9. Next Steps: Writing the RISC-V Dovetail Arch Hooks
+
+> **Confirmed (2026-04-01):** After inspecting `~/work/linux-evl` (tag
+> `v6.6.63-evl2-rebase`), the EVL tree has **no RISC-V Dovetail support
+> anywhere** — no branches, no tags, no commits touching `arch/riscv/` for
+> Dovetail. `HAVE_DOVETAIL` is only selected for `arm64` and `arm`.
+> The mailing list option is worth checking, but the most reliable path is
+> to write the arch hooks from scratch using ARM64 as a template.
+
+### 9.1 Check EVL Mailing List First (Quick, Low Effort)
+
+Before writing from scratch, spend 10 minutes checking the mailing list:
+
+```
+https://lore.kernel.org/xenomai/
+https://xenomai.org/pipermail/xenomai/
+```
+
+Search: `riscv dovetail` — if a patch series exists, download and save to
+`patches/`, then skip to §9.4.
+
+### 9.2 Confirmed State of the EVL Tree
+
+```bash
+# Verified on 2026-04-01:
+cd ~/work/linux-evl
+
+# No RISC-V Dovetail commits on any branch:
+git log --oneline --all -- arch/riscv/ | grep -i "dovetail\|pipeline\|oob"
+# Output: (empty — only one unrelated file-rename commit)
+
+# No HAVE_DOVETAIL for RISC-V:
+grep -rn "HAVE_DOVETAIL" arch/riscv/
+# Output: (empty)
+
+# arch/riscv/include/asm/dovetail.h does NOT exist
+# HAVE_DOVETAIL only exists for: arch/arm64, arch/arm
+```
+
+### 9.3 Writing the Arch Hooks from Scratch
+
+The patch is in `patches/0002-riscv-dovetail-arch-hooks.patch`. It adds the
+minimum set of changes needed to make `CONFIG_DOVETAIL=y` work on RISC-V.
+
+#### Files to create/modify:
+
+| File | Change | Template |
+|------|--------|----------|
+| `arch/riscv/Kconfig` | Add `select HAVE_IRQ_PIPELINE` + `select HAVE_DOVETAIL` | `arch/arm64/Kconfig` line 218-219 |
+| `arch/riscv/include/asm/dovetail.h` | New file: trap macros, FPU hooks | `arch/arm64/include/asm/dovetail.h` |
+| `arch/riscv/include/dovetail/thread_info.h` | New file: include asm-generic EVL thread_info | `arch/arm64/include/dovetail/thread_info.h` |
+| `arch/riscv/include/asm/thread_info.h` | Add `struct oob_thread_state oob_state` to `struct thread_info` | `arch/arm64/include/asm/thread_info.h` line 48 |
+| `arch/riscv/kernel/traps.c` | `handle_riscv_irq`: wrap `handle_arch_irq` with `handle_irq_pipelined` | `arch/arm64/kernel/irq.c` |
+
+#### Key insight from ARM64 reference:
+
+The ARM64 `irq.c` includes `<linux/irq_pipeline.h>` and the `handle_arch_irq`
+function pointer is called through the pipeline. For RISC-V, `handle_riscv_irq`
+in `arch/riscv/kernel/traps.c` calls `handle_arch_irq(regs)` directly — this
+needs to be wrapped with `handle_irq_pipelined()` when `CONFIG_IRQ_PIPELINE=y`.
+
+The patch is already written at `patches/0002-riscv-dovetail-arch-hooks.patch`.
+
+### 9.4 Applying the Patch and Rebuilding
+
+```bash
+# On WSL2 host, in the kernel tree
+cd ~/work/linux-k1
+
+# Apply the new arch patch (0001 is already applied)
+git apply --check patches/0002-riscv-dovetail-arch-hooks.patch
+git apply patches/0002-riscv-dovetail-arch-hooks.patch
+
+# Verify the key files now exist
+ls arch/riscv/include/asm/dovetail.h          # must exist
+grep "HAVE_DOVETAIL" arch/riscv/Kconfig        # must show: select HAVE_DOVETAIL
+
+# Reconfigure — this time CONFIG_DOVETAIL=y will actually be accepted
+rm -f .evl-patches-applied   # allow re-apply if needed
+bash scripts/build/02-configure.sh
+
+# Verify config
+grep "CONFIG_DOVETAIL\|CONFIG_EVL_CORE\|CONFIG_IRQ_PIPELINE" ~/work/build-k1/.config
+# Must show: CONFIG_DOVETAIL=y, CONFIG_EVL_CORE=y, CONFIG_IRQ_PIPELINE=y
+
+# Build
+bash scripts/build/03-build-kernel.sh
+
+# Make new image
+bash scripts/flash/make-full-sdcard-img.sh \
+  ~/Downloads/buildroot-k1_rt-sdcard.img \
+  ~/work/build-k1 \
+  /tmp
+
+# Flash to SD card, reboot Jupiter, then verify via SSH:
+ssh root@192.168.1.110 "dmesg | grep -i evl"
+# Expected: EVL: core started, ABI 19
+```
+
+### 9.5 Expected Build Errors and Fixes
+
+The first build attempt with the arch patch will likely hit compilation errors.
+Common ones:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `undefined reference to 'handle_irq_pipelined'` | `CONFIG_IRQ_PIPELINE=y` not set, or `irq_pipeline.h` not included | Add `#include <linux/irq_pipeline.h>` to `traps.c` |
+| `arch/riscv/include/asm/dovetail.h: No such file` | Patch not applied | Re-run `git apply` |
+| `struct thread_info has no member oob_state` | `thread_info.h` patch missing | Check patch applied correctly |
+| `HAVE_DOVETAIL` not in `.config` | `arch/riscv/Kconfig` patch missing | Verify `select HAVE_DOVETAIL` in Kconfig |
+| FPU-related build error | `arch_dovetail_switch_finish` references missing FPU function | Stub out FPU hooks initially (no-op), add real FPU save/restore later |
+
+---
+
+## 10. Build Fixes Applied (2026-04-01) — `patches/0004-riscv-evl-build-fixes.patch`
+
+After applying patches `0001`–`0003`, the kernel build hit 14 distinct errors.
+All were fixed and captured in `patches/0004-riscv-evl-build-fixes.patch`.
+
+### 10.1 Summary of Fixes
+
+| # | Error | File(s) Changed | Fix |
+|---|-------|-----------------|-----|
+| 1 | `evl_wait_channel` incomplete type in `evl_put_thread_wchan` | `include/evl/thread.h` | Add `#include <evl/wait.h>` before the inline function |
+| 2 | `EVL_MM_PTSYNC_BIT` undeclared | `include/dovetail/mm_info.h` | Include `asm-generic/evl/mm_info.h` when `CONFIG_EVL` is set |
+| 3 | `mmc_host_ops.encrypt_config` missing field | `include/linux/mmc/host.h` | Restore SpacemiT-specific `void (*encrypt_config)(struct mmc_host *, unsigned int)` |
+| 4 | `MMC_CAP2_DISABLE_PROBE_SCAN` undeclared | `include/linux/mmc/host.h` | Restore `#define MMC_CAP2_DISABLE_PROBE_SCAN (1 << 29)` |
+| 5 | `asm/evl/calibration.h` missing | `arch/riscv/include/asm/evl/calibration.h` | New file: `evl_get_default_clock_gravity()` returns 3000 ns |
+| 6 | `asm/evl/fptest.h` missing | `arch/riscv/include/asm/evl/fptest.h`, `arch/riscv/include/uapi/asm/evl/fptest.h` | New files: RISC-V FPU test hooks using `CONFIG_FPU` guard and `fmv.d.x`/`fmv.x.d` |
+| 7 | `syscall_get_arg0` undeclared | `arch/riscv/include/asm/syscall.h` | Add `syscall_get_arg0()` returning `regs->orig_a0` |
+| 8 | `EVL_POLL_NR_CONNECTORS` / `evl_poll_connector` undefined | `include/dovetail/poll.h` | Include `asm-generic/evl/poll.h` when `CONFIG_EVL` is set |
+| 9 | Assembly error from `asm-generic/evl/thread_info.h` | `include/asm-generic/evl/thread_info.h`, `arch/riscv/include/asm/thread_info.h` | Add `#ifndef __ASSEMBLY__` guard; move `dovetail/thread_info.h` include inside `#ifndef __ASSEMBLY__` |
+| 10 | `dovetail/thread_info.h` missing full `oob_thread_state` | `include/dovetail/thread_info.h` | Include `asm-generic/evl/thread_info.h` when `CONFIG_EVL` is set |
+| 11 | `irq_send_oob_ipi` undefined reference | `arch/riscv/kernel/smp.c` | Add implementation using `__ipi_send_mask(ipi_desc[slot], cpumask)` |
+| 12 | `compat_ptr_oob_ioctl` undefined reference | `fs/ioctl.c` | Add `compat_ptr_oob_ioctl()` delegating to `file->f_op->oob_ioctl` |
+| 13 | `arch_do_IRQ_pipelined` undefined reference | `arch/riscv/kernel/irq_pipeline.c` (new) | New file: RISC-V arch hook using `irq_enter/exit` + `handle_irq_desc` |
+| 14 | `arch_irq_pipeline_init` undefined reference | `arch/riscv/kernel/irq_pipeline.c` (new) | Empty init (no per-arch init needed for RISC-V) |
+
+### 10.2 Key Design Decisions
+
+#### `irq_send_oob_ipi` (RISC-V-specific)
+
+RISC-V uses a virtual IPI descriptor array (`ipi_desc[]`) indexed from
+`ipi_virq_base`. OOB IPIs occupy slots `OOB_IPI_OFFSET` through
+`OOB_IPI_OFFSET + OOB_NR_IPI - 1`. The implementation:
+
+```c
+void irq_send_oob_ipi(unsigned int irq, const struct cpumask *cpumask)
+{
+    unsigned int slot = irq - ipi_virq_base;
+    __ipi_send_mask(ipi_desc[slot], cpumask);
+}
+```
+
+This uses generic RISC-V IPI infrastructure — **not** a copy of ARM64.
+
+#### `arch_do_IRQ_pipelined` (RISC-V-specific)
+
+Uses generic kernel APIs (`irq_pipeline` per-CPU struct, `irq_enter/exit`,
+`handle_irq_desc`, `set_irq_regs`) that are architecture-independent:
+
+```c
+void arch_do_IRQ_pipelined(struct irq_desc *desc)
+{
+    struct pt_regs *regs = raw_cpu_ptr(&irq_pipeline.tick_regs);
+    struct pt_regs *old_regs = set_irq_regs(regs);
+    irq_enter();
+    handle_irq_desc(desc);
+    irq_exit();
+    set_irq_regs(old_regs);
+}
+```
+
+#### Dovetail placeholder headers
+
+Many `include/dovetail/` headers are stubs that define empty structs by
+default. When `CONFIG_EVL` is set they must include the real EVL struct
+definitions from `include/asm-generic/evl/`. The fix pattern is:
+
+```c
+#ifdef CONFIG_EVL
+#include <asm-generic/evl/X.h>
+#else
+struct oob_X_state { };
+#endif
+```
+
+Applied to: `dovetail/mm_info.h`, `dovetail/poll.h`, `dovetail/thread_info.h`.
+
+#### SpacemiT-specific MMC additions
+
+When EVL headers were bulk-copied from the EVL reference tree, SpacemiT-specific
+additions in `include/linux/mmc/host.h` were overwritten. These must be
+preserved:
+
+- `void (*encrypt_config)(struct mmc_host *host, unsigned int enc_flag)` in
+  `struct mmc_host_ops` — used by `drivers/mmc/host/sdhci.c`
+- `#define MMC_CAP2_DISABLE_PROBE_SCAN (1 << 29)` — used by SpacemiT SDHCI
+
+### 10.3 Build Result
+
+```
+  LD      vmlinux
+  OBJCOPY arch/riscv/boot/Image
+  Kernel: arch/riscv/boot/Image is ready
+```
+
+Image size: **28 MB** at `~/work/build-k1/arch/riscv/boot/Image`.
+
+### 10.4 Next Step: Flash and Verify
+
+```bash
+# Build SD card image with new EVL kernel
+bash scripts/flash/make-full-sdcard-img.sh \
+  ~/Downloads/buildroot-k1_rt-sdcard.img \
+  ~/work/build-k1 \
+  /tmp
+
+# Flash to SD card (replace /dev/sdX)
+sudo dd if=/tmp/evl-sdcard-k1-$(date +%Y%m%d).img of=/dev/sdX bs=4M status=progress
+
+# Boot Jupiter, then verify via SSH:
+ssh root@<jupiter-ip> "dmesg | grep -i evl"
+# Expected: EVL: core started, ABI 19
+ssh root@<jupiter-ip> "evl check"
+# Expected: OK
+```

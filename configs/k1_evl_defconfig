@@ -28,14 +28,13 @@ CONFIG_DOVETAIL=y
 CONFIG_IRQ_PIPELINE=y
 
 # EVL core
-CONFIG_EVL_CORE=y
+# EVL real-time core (correct symbol is CONFIG_EVL, not CONFIG_EVL_CORE)
+CONFIG_EVL=y
 
 # EVL scheduler policies
 CONFIG_EVL_SCHED_QUOTA=y
 CONFIG_EVL_SCHED_TP=y
 
-# EVL heap allocator
-CONFIG_EVL_HEAP=y
 
 # EVL proxy driver (for bridging in-band and OOB I/O)
 CONFIG_EVL_PROXY=y
@@ -91,8 +90,6 @@ CONFIG_FPU=y
 # Debugging (enable during initial bring-up, disable for production)
 # -----------------------------------------------------------------------------
 
-# EVL latency tracing
-CONFIG_EVL_LATENCY_USER=y
 
 # Kernel latency tracer (ftrace-based)
 CONFIG_FTRACE=y
@@ -134,3 +131,5 @@ CONFIG_PACKET=y
 # These are not needed for real-time EVL work.
 # CONFIG_BCMDHD is not set
 # CONFIG_RTL8852BS is not set
+
+# CONFIG_RISCV_ISA_ZICOND is not set

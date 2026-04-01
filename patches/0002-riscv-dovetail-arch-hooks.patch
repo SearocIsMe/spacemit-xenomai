@@ -1,0 +1,335 @@
+diff --git a/arch/riscv/Kconfig b/arch/riscv/Kconfig
+index 247c53645..e3b5ab53f 100644
+--- a/arch/riscv/Kconfig
++++ b/arch/riscv/Kconfig
+@@ -92,6 +92,9 @@ config RISCV
+ 	select GENERIC_TIME_VSYSCALL if MMU && 64BIT
+ 	select GENERIC_VDSO_TIME_NS if HAVE_GENERIC_VDSO
+ 	select HARDIRQS_SW_RESEND
++	select HAVE_IRQ_PIPELINE
++	select HAVE_DOVETAIL
++	select HAVE_OOB_IRQ_REGS
+ 	select HAS_IOPORT if MMU
+ 	select HAVE_ARCH_AUDITSYSCALL
+ 	select HAVE_ARCH_HUGE_VMALLOC if HAVE_ARCH_HUGE_VMAP
+diff --git a/arch/riscv/include/asm/dovetail.h b/arch/riscv/include/asm/dovetail.h
+new file mode 100644
+index 000000000..71a82f13f
+--- /dev/null
++++ b/arch/riscv/include/asm/dovetail.h
+@@ -0,0 +1,77 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * RISC-V Dovetail arch hooks for EVL.
++ *
++ * Ported from arch/arm64/include/asm/dovetail.h
++ * Copyright (C) 2018 Philippe Gerum <rpm@xenomai.org>
++ *
++ * RISC-V adaptation for SpacemiT K1 (2026).
++ * FPU/Vector context save/restore is stubbed — add real hooks once
++ * basic EVL boot is confirmed (dmesg: "EVL: core started").
++ */
++#ifndef _ASM_RISCV_DOVETAIL_H
++#define _ASM_RISCV_DOVETAIL_H
++
++/*
++ * RISC-V exception/trap codes (scause values, interrupt bit clear).
++ * Matches the RISC-V privileged spec §4.1.8 (Table 4.2).
++ */
++#define RISCV_TRAP_MISALIGNED_FETCH	0
++#define RISCV_TRAP_FETCH_ACCESS		1
++#define RISCV_TRAP_ILLEGAL_INSN		2
++#define RISCV_TRAP_BREAKPOINT		3
++#define RISCV_TRAP_MISALIGNED_LOAD	4
++#define RISCV_TRAP_LOAD_ACCESS		5
++#define RISCV_TRAP_MISALIGNED_STORE	6
++#define RISCV_TRAP_STORE_ACCESS		7
++#define RISCV_TRAP_ECALL_U		8
++#define RISCV_TRAP_ECALL_S		9
++#define RISCV_TRAP_ECALL_M		11
++#define RISCV_TRAP_FETCH_PAGE		12
++#define RISCV_TRAP_LOAD_PAGE		13
++#define RISCV_TRAP_STORE_PAGE		15
++
++#ifdef CONFIG_DOVETAIL
++
++static inline void arch_dovetail_exec_prepare(void)
++{ }
++
++static inline void arch_dovetail_switch_prepare(bool leave_inband)
++{ }
++
++/*
++ * Called when switching back to in-band context after an OOB section.
++ * TODO: restore FPU/Vector state for OOB threads.
++ * Stubbed for initial bring-up — sufficient to get EVL core started.
++ */
++static inline void arch_dovetail_switch_finish(bool enter_inband)
++{ }
++
++#define arch_dovetail_is_prctl(__nr)	((__nr) == __NR_prctl)
++
++#endif /* CONFIG_DOVETAIL */
++
++/*
++ * Pass the trap event to the companion core. Return true if running
++ * in-band afterwards.
++ */
++#define mark_cond_trap_entry(__trapnr, __regs)			\
++	({							\
++		bool __ret;					\
++		oob_trap_notify(__trapnr, __regs);		\
++		__ret = running_inband();			\
++		if (!__ret)					\
++			oob_trap_unwind(__trapnr, __regs);	\
++		__ret;						\
++	})
++
++#define mark_trap_entry(__trapnr, __regs)				\
++	do {								\
++		bool __ret = mark_cond_trap_entry(__trapnr, __regs);	\
++		BUG_ON(dovetail_debug() && !__ret);			\
++	} while (0)
++
++#define mark_trap_exit(__trapnr, __regs)				\
++	oob_trap_unwind(__trapnr, __regs)
++
++#endif /* _ASM_RISCV_DOVETAIL_H */
+diff --git a/arch/riscv/include/asm/irq_pipeline.h b/arch/riscv/include/asm/irq_pipeline.h
+new file mode 100644
+index 000000000..0dbb7bc6e
+--- /dev/null
++++ b/arch/riscv/include/asm/irq_pipeline.h
+@@ -0,0 +1,156 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * RISC-V IRQ pipeline (Dovetail) arch hooks.
++ *
++ * Ported from arch/arm64/include/asm/irq_pipeline.h
++ * Copyright (C) 2018 Philippe Gerum <rpm@xenomai.org>
++ *
++ * RISC-V adaptation for SpacemiT K1 (2026).
++ */
++#ifndef _ASM_RISCV_IRQ_PIPELINE_H
++#define _ASM_RISCV_IRQ_PIPELINE_H
++
++#include <asm-generic/irq_pipeline.h>
++
++#ifdef CONFIG_IRQ_PIPELINE
++
++#include <asm/csr.h>
++#include <asm/irqflags.h>
++
++/*
++ * RISC-V uses the SR_IE bit in sstatus for hardware IRQ masking.
++ * The pipeline virtualises this: the "virtual" IRQ state is the
++ * software stall flag; the "native" state is the actual SR_IE bit.
++ *
++ * IRQMASK_i_POS: bit position of the virtual (software) stall flag.
++ * IRQMASK_I_POS: bit position of the native SR_IE hardware flag.
++ */
++#define IRQMASK_i_POS		0	/* virtual stall flag bit */
++#define IRQMASK_I_POS		1	/* SR_IE position in sstatus */
++#define IRQMASK_I_BIT		SR_IE
++
++static inline notrace
++unsigned long arch_irqs_virtual_to_native_flags(int stalled)
++{
++	/*
++	 * stalled=1 → IRQs disabled → SR_IE should be 0.
++	 * Return SR_IE set only when NOT stalled (IRQs enabled).
++	 */
++	return (!stalled) ? SR_IE : 0UL;
++}
++
++static inline notrace
++unsigned long arch_irqs_native_to_virtual_flags(unsigned long flags)
++{
++	/*
++	 * SR_IE=0 → IRQs disabled → stalled=1.
++	 */
++	return (!(flags & SR_IE)) ? (1UL << IRQMASK_i_POS) : 0UL;
++}
++
++static inline notrace unsigned long arch_local_irq_save(void)
++{
++	int stalled = inband_irq_save();
++	barrier();
++	return arch_irqs_virtual_to_native_flags(stalled);
++}
++
++static inline notrace void arch_local_irq_enable(void)
++{
++	barrier();
++	inband_irq_enable();
++}
++
++static inline notrace void arch_local_irq_disable(void)
++{
++	inband_irq_disable();
++	barrier();
++}
++
++static inline notrace unsigned long arch_local_save_flags(void)
++{
++	int stalled = inband_irqs_disabled();
++	barrier();
++	return arch_irqs_virtual_to_native_flags(stalled);
++}
++
++static inline int arch_irqs_disabled_flags(unsigned long flags)
++{
++	return native_irqs_disabled_flags(flags);
++}
++
++static inline notrace void arch_local_irq_restore(unsigned long flags)
++{
++	inband_irq_restore(arch_irqs_disabled_flags(flags));
++	barrier();
++}
++
++static inline void arch_save_timer_regs(struct pt_regs *dst,
++					struct pt_regs *src)
++{
++	dst->status = src->status;
++	dst->epc    = src->epc;
++}
++
++static inline bool arch_steal_pipelined_tick(struct pt_regs *regs)
++{
++	/* SR_IE clear means IRQs were disabled when the tick fired */
++	return !(regs->status & SR_IE);
++}
++
++static inline int arch_enable_oob_stage(void)
++{
++	return 0;
++}
++
++extern void (*handle_arch_irq)(struct pt_regs *);
++
++static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
++{
++	handle_arch_irq(regs);
++}
++
++#define arch_kentry_get_irqstate(__regs)	0
++#define arch_kentry_set_irqstate(__regs, __irqstate)	\
++	do { (void)(__irqstate); } while (0)
++
++#else  /* !CONFIG_IRQ_PIPELINE */
++
++static inline unsigned long arch_local_irq_save(void)
++{
++	return native_irq_save();
++}
++
++static inline void arch_local_irq_enable(void)
++{
++	native_irq_enable();
++}
++
++static inline void arch_local_irq_disable(void)
++{
++	native_irq_disable();
++}
++
++static inline unsigned long arch_local_save_flags(void)
++{
++	return native_save_flags();
++}
++
++static inline void arch_local_irq_restore(unsigned long flags)
++{
++	native_irq_restore(flags);
++}
++
++static inline int arch_irqs_disabled_flags(unsigned long flags)
++{
++	return native_irqs_disabled_flags(flags);
++}
++
++#endif /* !CONFIG_IRQ_PIPELINE */
++
++static inline int arch_irqs_disabled(void)
++{
++	return arch_irqs_disabled_flags(arch_local_save_flags());
++}
++
++#endif /* _ASM_RISCV_IRQ_PIPELINE_H */
+diff --git a/arch/riscv/include/asm/thread_info.h b/arch/riscv/include/asm/thread_info.h
+index eec9d4394..a52ba90c8 100644
+--- a/arch/riscv/include/asm/thread_info.h
++++ b/arch/riscv/include/asm/thread_info.h
+@@ -8,6 +8,10 @@
+ #ifndef _ASM_RISCV_THREAD_INFO_H
+ #define _ASM_RISCV_THREAD_INFO_H
+ 
++#ifdef CONFIG_DOVETAIL
++#include <dovetail/thread_info.h>
++#endif
++
+ #include <asm/page.h>
+ #include <linux/const.h>
+ 
+@@ -65,6 +69,9 @@ struct thread_info {
+ 	void			*scs_base;
+ 	void			*scs_sp;
+ #endif
++#ifdef CONFIG_DOVETAIL
++	struct oob_thread_state	oob_state;
++#endif
+ };
+ 
+ #ifdef CONFIG_SHADOW_CALL_STACK
+diff --git a/arch/riscv/include/dovetail/thread_info.h b/arch/riscv/include/dovetail/thread_info.h
+new file mode 100644
+index 000000000..416c11ca7
+--- /dev/null
++++ b/arch/riscv/include/dovetail/thread_info.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * RISC-V Dovetail per-thread OOB state.
++ *
++ * The actual oob_thread_state struct is defined by the EVL co-kernel
++ * in include/asm-generic/evl/thread_info.h (struct evl_thread pointer,
++ * subscriber pointer, preempt_count). When CONFIG_EVL is not set, it
++ * falls back to an empty struct.
++ */
++#ifndef _RISCV_DOVETAIL_THREAD_INFO_H
++#define _RISCV_DOVETAIL_THREAD_INFO_H
++
++#include <asm-generic/evl/thread_info.h>
++
++#endif /* _RISCV_DOVETAIL_THREAD_INFO_H */
+diff --git a/arch/riscv/kernel/traps.c b/arch/riscv/kernel/traps.c
+index 865f191ab..ce74bf9d0 100644
+--- a/arch/riscv/kernel/traps.c
++++ b/arch/riscv/kernel/traps.c
+@@ -20,6 +20,7 @@
+ #include <linux/irq.h>
+ #include <linux/kexec.h>
+ #include <linux/entry-common.h>
++#include <linux/irq_pipeline.h>
+ 
+ #include <asm/asm-prototypes.h>
+ #include <asm/bug.h>
+@@ -364,6 +365,17 @@ static void noinstr handle_riscv_irq(struct pt_regs *regs)
+ {
+ 	struct pt_regs *old_regs;
+ 
++#ifdef CONFIG_IRQ_PIPELINE
++	/*
++	 * When the Dovetail IRQ pipeline is active, route the interrupt
++	 * through handle_irq_pipelined() which handles set_irq_regs()
++	 * internally and delivers pending in-band IRQs on exit.
++	 */
++	if (irq_pipeline_active()) {
++		handle_irq_pipelined(regs);
++		return;
++	}
++#endif
+ 	irq_enter_rcu();
+ 	old_regs = set_irq_regs(regs);
+ 	handle_arch_irq(regs);
