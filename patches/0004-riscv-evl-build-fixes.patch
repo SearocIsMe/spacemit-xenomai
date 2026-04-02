@@ -1,7 +1,7 @@
 From dea9192fa110aedf2fab14ae905e45f32e9c170b Mon Sep 17 00:00:00 2001
 From: searoisme <haipeng.jiang@gmail.com>
 Date: Wed, 1 Apr 2026 14:59:10 +0800
-Subject: [PATCH] riscv: evl: fix build errors for SpacemiT K1 EVL port
+Subject: [PATCH 1/2] riscv: evl: fix build errors for SpacemiT K1 EVL port
 
 Fix all build errors encountered when building the EVL-enabled kernel
 for SpacemiT K1 (RISC-V64, Milk-V Jupiter board).
@@ -1292,6 +1292,127 @@ index c8cf4dbb8..9bddeff54 100644
 +#define MMC_CAP2_DISABLE_PROBE_SCAN (1 << 29)	/* SpacemiT: disable probe scan */
  
  	int			fixed_drv_type;	/* fixed driver type for non-removable media */
+ 
+-- 
+2.34.1
+
+
+From 6d7abda8ebafe6eb5becba6ee196d0bca3f5d421 Mon Sep 17 00:00:00 2001
+From: searoisme <haipeng.jiang@gmail.com>
+Date: Thu, 2 Apr 2026 12:43:05 +0800
+Subject: [PATCH 2/2] riscv: irq_pipeline: fix
+ arch_irqs_virtual_to_native_flags inversion
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The previous implementation was:
+  return (!!stalled) << IRQMASK_I_POS;
+
+This is wrong for RISC-V because SR_IE semantics are OPPOSITE to ARM64:
+  ARM64: PSR_I_BIT set = IRQs DISABLED (so stalled=1 → set bit = correct)
+  RISC-V: SR_IE set   = IRQs ENABLED  (so stalled=1 → set bit = WRONG)
+
+The correct implementation:
+  return (!stalled) ? SR_IE : 0UL;
+
+stalled=1 (IRQs disabled) → SR_IE clear (0) ✓
+stalled=0 (IRQs enabled)  → SR_IE set        ✓
+
+Also improve arch_irqs_native_to_virtual_flags comment for clarity.
+The implementation was already correct:
+  return (!(flags & SR_IE)) ? (1UL << IRQMASK_i_POS) : 0UL;
+---
+ arch/riscv/include/asm/irq_pipeline.h | 42 ++++++++++++++++++++++-----
+ 1 file changed, 34 insertions(+), 8 deletions(-)
+
+diff --git a/arch/riscv/include/asm/irq_pipeline.h b/arch/riscv/include/asm/irq_pipeline.h
+index 0dbb7bc6e..a8230a303 100644
+--- a/arch/riscv/include/asm/irq_pipeline.h
++++ b/arch/riscv/include/asm/irq_pipeline.h
+@@ -15,7 +15,22 @@
+ #ifdef CONFIG_IRQ_PIPELINE
+ 
+ #include <asm/csr.h>
+-#include <asm/irqflags.h>
++
++#ifdef CONFIG_SMP
++/*
++ * OOB IPIs for RISC-V use the IPI mux virtual IRQ range.
++ * In-band IPIs occupy slots 0-4 (IPI_RESCHEDULE..IPI_TIMER).
++ * OOB IPIs use slots 5, 6, 7.
++ */
++#define OOB_NR_IPI		3
++#define OOB_IPI_OFFSET		5	/* first OOB slot in IPI mux */
++
++extern int ipi_virq_base;
++
++#define TIMER_OOB_IPI		(ipi_virq_base + OOB_IPI_OFFSET)
++#define RESCHEDULE_OOB_IPI	(TIMER_OOB_IPI + 1)
++#define CALL_FUNCTION_OOB_IPI	(RESCHEDULE_OOB_IPI + 1)
++#endif /* CONFIG_SMP */
+ 
+ /*
+  * RISC-V uses the SR_IE bit in sstatus for hardware IRQ masking.
+@@ -24,17 +39,22 @@
+  *
+  * IRQMASK_i_POS: bit position of the virtual (software) stall flag.
+  * IRQMASK_I_POS: bit position of the native SR_IE hardware flag.
++ * (These are defined in irqflags.h)
+  */
+-#define IRQMASK_i_POS		0	/* virtual stall flag bit */
+-#define IRQMASK_I_POS		1	/* SR_IE position in sstatus */
+-#define IRQMASK_I_BIT		SR_IE
+ 
+ static inline notrace
+ unsigned long arch_irqs_virtual_to_native_flags(int stalled)
+ {
+ 	/*
+-	 * stalled=1 → IRQs disabled → SR_IE should be 0.
+-	 * Return SR_IE set only when NOT stalled (IRQs enabled).
++	 * stalled=1 → IRQs disabled → SR_IE should be 0 (clear).
++	 * stalled=0 → IRQs enabled  → SR_IE should be 1 (set).
++	 *
++	 * NOTE: RISC-V SR_IE semantics are OPPOSITE to ARM64 PSR_I_BIT:
++	 *   ARM64: PSR_I_BIT set   = IRQs DISABLED
++	 *   RISC-V: SR_IE set      = IRQs ENABLED
++	 *
++	 * So: stalled=1 → return 0 (SR_IE clear = disabled)
++	 *     stalled=0 → return SR_IE (SR_IE set = enabled)
+ 	 */
+ 	return (!stalled) ? SR_IE : 0UL;
+ }
+@@ -43,7 +63,8 @@ static inline notrace
+ unsigned long arch_irqs_native_to_virtual_flags(unsigned long flags)
+ {
+ 	/*
+-	 * SR_IE=0 → IRQs disabled → stalled=1.
++	 * SR_IE=0 → IRQs disabled → stalled=1 → virtual stall bit set.
++	 * SR_IE=1 → IRQs enabled  → stalled=0 → virtual stall bit clear.
+ 	 */
+ 	return (!(flags & SR_IE)) ? (1UL << IRQMASK_i_POS) : 0UL;
+ }
+@@ -95,7 +116,7 @@ static inline void arch_save_timer_regs(struct pt_regs *dst,
+ static inline bool arch_steal_pipelined_tick(struct pt_regs *regs)
+ {
+ 	/* SR_IE clear means IRQs were disabled when the tick fired */
+-	return !(regs->status & SR_IE);
++	return !!(regs->status & IRQMASK_I_BIT);
+ }
+ 
+ static inline int arch_enable_oob_stage(void)
+@@ -110,7 +131,12 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
+ 	handle_arch_irq(regs);
+ }
+ 
++/*
++ * We use neither the generic entry code nor
++ * kentry_enter/exit_pipelined yet. Build no-op versions for now.
++ */
+ #define arch_kentry_get_irqstate(__regs)	0
++
+ #define arch_kentry_set_irqstate(__regs, __irqstate)	\
+ 	do { (void)(__irqstate); } while (0)
  
 -- 
 2.34.1
