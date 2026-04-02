@@ -323,10 +323,12 @@ fi
 #   NOTE: U-Boot's start_kernel uses "booti" for plain Image (not bootm),
 #   so the load address just needs to be in free RAM — 0x200000 is fine.
 #
-# console=ttyS0,115200  (KEEP — do not add console=tty1)
-#   The SpacemiT DRM driver initialises late.  Adding console=tty1 before
-#   the DRM driver is ready causes no output at all.  Keep UART-only for
-#   now; once SSH access is confirmed we can add tty1 back.
+# console=tty0 console=ttyS0,115200
+#   console=tty0 routes kernel messages to the first virtual console
+#   (framebuffer), making boot log visible on HDMI even before the DRM
+#   driver fully initialises.  This is essential for diagnosing early
+#   boot panics without a serial cable.
+#   console=ttyS0,115200 is kept as a secondary console for serial access.
 # ---------------------------------------------------------------------------
 ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
 if [[ -f "${ENV_FILE}" ]]; then
@@ -352,6 +354,15 @@ if [[ -f "${ENV_FILE}" ]]; then
     ok "Restored kernel_addr_r to 0x200000 (original working value)"
   else
     ok "kernel_addr_r already set — no change needed"
+  fi
+
+  # Add console=tty0 for HDMI framebuffer boot log (essential for diagnosing
+  # early panics without a serial cable).
+  if ! sudo grep -q 'console=tty0' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|console=ttyS0|console=tty0 console=ttyS0|g' "${ENV_FILE}"
+    ok "Added console=tty0 to env_k1-x.txt (HDMI boot log)"
+  else
+    ok "console=tty0 already present — no change needed"
   fi
 
   info "Updated env_k1-x.txt:"
