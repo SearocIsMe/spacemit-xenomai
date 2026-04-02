@@ -562,8 +562,19 @@ if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
       else
         ok "ttyS0 getty already present in /etc/inittab."
       fi
+
+      # 4. Add tty1 getty for HDMI framebuffer login prompt
+      #    Without this, the HDMI screen shows a blinking cursor but no login.
+      #    BusyBox getty on tty1 provides the HDMI login prompt.
+      if ! sudo grep -q 'tty1' "${INITTAB}" 2>/dev/null; then
+        echo "tty1::respawn:/sbin/getty 38400 tty1" | \
+          sudo tee -a "${INITTAB}" > /dev/null
+        ok "Added tty1 getty to /etc/inittab (HDMI login prompt)."
+      else
+        ok "tty1 getty already present in /etc/inittab."
+      fi
     else
-      warn "/etc/inittab not found in rootfs — cannot add ttyS0 getty."
+      warn "/etc/inittab not found in rootfs — cannot add ttyS0/tty1 getty."
     fi
 
     sync
