@@ -304,23 +304,29 @@ fi
 # ---------------------------------------------------------------------------
 # Step 7: Patch env_k1-x.txt for correct plain Image boot
 #
-# Fix 1: kernel_addr_r=0x200000 → 0x20000000
-#   The default Bianbu env uses 0x200000 (2MB) which is designed for the
-#   compressed FIT image (Image.itb, ~10MB).  Our plain uncompressed Image
-#   is ~36MB.  CRITICAL: Bianbu U-Boot loads the splash BMP at splashimage=
-#   0x11000000.  A 36MB kernel at 0x10000000 ends at 0x1230a200, which
-#   OVERLAPS with 0x11000000 — the splash load corrupts the kernel in RAM.
-#   0x20000000 (512MB) is safe: kernel ends at ~0x2230a200, well below
-#   the 2GB RAM ceiling and above all U-Boot working buffers.
+# The Bianbu U-Boot environment text file (env_k1-x.txt) is loaded from the
+# FAT32 bootfs partition and merged into the running U-Boot environment via
+# "env import -t".  Variables here override the compiled-in defaults stored
+# in the env partition (p2).
 #
-# Fix 2: console=tty1
-#   Without this, all kernel output goes to UART only; HDMI shows blank cursor.
+# What we change and why:
 #
-# Fix 3: nowatchdog
-#   CONFIG_SPACEMIT_WATCHDOG=y is enabled in the kernel.  Bianbu's watchdog
-#   daemon feeds it during normal operation.  If the daemon fails to start
-#   (e.g. due to EVL kernel differences), the watchdog expires (~60-120s)
-#   and resets the board.  nowatchdog disables the hardware watchdog at boot.
+# knl_name=Image
+#   The p2 env default is knl_name=Image.itb (FIT image).  We replace the
+#   FIT image with a plain uncompressed Image, so we must override this.
+#   (The original env_k1-x.txt already sets knl_name=Image — we keep it.)
+#
+# kernel_addr_r=0x200000  (KEEP the original value)
+#   The original Bianbu env uses 0x200000.  Our 36MB EVL kernel loaded at
+#   0x200000 ends at ~0x2600000, well below the splash BMP at 0x11000000.
+#   No overlap.  We keep 0x200000 to match the working original image.
+#   NOTE: U-Boot's start_kernel uses "booti" for plain Image (not bootm),
+#   so the load address just needs to be in free RAM — 0x200000 is fine.
+#
+# console=ttyS0,115200  (KEEP — do not add console=tty1)
+#   The SpacemiT DRM driver initialises late.  Adding console=tty1 before
+#   the DRM driver is ready causes no output at all.  Keep UART-only for
+#   now; once SSH access is confirmed we can add tty1 back.
 # ---------------------------------------------------------------------------
 ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
 if [[ -f "${ENV_FILE}" ]]; then
@@ -328,51 +334,24 @@ if [[ -f "${ENV_FILE}" ]]; then
   sudo cat "${ENV_FILE}"
   echo ""
 
-  # Fix 1: kernel_addr_r — CRITICAL for plain 33MB Image
-  if sudo grep -q 'kernel_addr_r=0x200000\b' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|kernel_addr_r=0x200000\b|kernel_addr_r=0x20000000|g' "${ENV_FILE}"
-    ok "Fixed kernel_addr_r: 0x200000 → 0x20000000"
-  elif sudo grep -q 'kernel_addr_r=0x10000000' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|kernel_addr_r=0x10000000|kernel_addr_r=0x20000000|g' "${ENV_FILE}"
-    ok "Fixed kernel_addr_r: 0x10000000 → 0x20000000 (splash overlap fix)"
-  elif ! sudo grep -q 'kernel_addr_r' "${ENV_FILE}" 2>/dev/null; then
-    echo "kernel_addr_r=0x20000000" | sudo tee -a "${ENV_FILE}" > /dev/null
-    ok "Added kernel_addr_r=0x20000000"
+  # Ensure knl_name=Image (not Image.itb)
+  if sudo grep -q 'knl_name=Image\.itb' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|knl_name=Image\.itb|knl_name=Image|g' "${ENV_FILE}"
+    ok "Fixed knl_name: Image.itb → Image"
   else
-    ok "kernel_addr_r already correct — no change needed"
+    ok "knl_name already set to Image — no change needed"
   fi
 
-  # Fix 2: console=tty1 for HDMI framebuffer output
-  if ! sudo grep -q 'console=tty1' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|console=ttyS0|console=tty1 console=ttyS0|g' "${ENV_FILE}"
-    ok "Added console=tty1 to env_k1-x.txt"
+  # Ensure kernel_addr_r=0x200000 (original value — do NOT change to 0x20000000)
+  # Our 36MB kernel at 0x200000 ends at ~0x2600000, safely below splash at 0x11000000.
+  if ! sudo grep -q 'kernel_addr_r' "${ENV_FILE}" 2>/dev/null; then
+    echo "kernel_addr_r=0x200000" | sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added kernel_addr_r=0x200000"
+  elif sudo grep -q 'kernel_addr_r=0x20000000\|kernel_addr_r=0x10000000' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|kernel_addr_r=0x[0-9a-fA-F]*|kernel_addr_r=0x200000|g' "${ENV_FILE}"
+    ok "Restored kernel_addr_r to 0x200000 (original working value)"
   else
-    ok "console=tty1 already present — no change needed"
-  fi
-
-  # Fix 3: nowatchdog — prevent hardware watchdog reboot if daemon doesn't start
-  if ! sudo grep -q 'nowatchdog' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|\(console=ttyS0[^ ]*\)|\1 nowatchdog|g' "${ENV_FILE}"
-    ok "Added nowatchdog to env_k1-x.txt"
-  else
-    ok "nowatchdog already present — no change needed"
-  fi
-
-  # Fix 4: plymouth.enable=0 — disable Plymouth splash so kernel messages appear
-  #         on HDMI framebuffer instead of being hidden behind the splash screen.
-  if ! sudo grep -q 'plymouth.enable=0' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|nowatchdog|nowatchdog plymouth.enable=0|g' "${ENV_FILE}"
-    ok "Added plymouth.enable=0 to env_k1-x.txt"
-  else
-    ok "plymouth.enable=0 already present — no change needed"
-  fi
-
-  # Fix 5: loglevel=7 — show all kernel messages on console (helps diagnose hangs)
-  if ! sudo grep -q 'loglevel=' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|plymouth.enable=0|plymouth.enable=0 loglevel=7|g' "${ENV_FILE}"
-    ok "Added loglevel=7 to env_k1-x.txt"
-  else
-    ok "loglevel already set — no change needed"
+    ok "kernel_addr_r already set — no change needed"
   fi
 
   info "Updated env_k1-x.txt:"
@@ -508,6 +487,72 @@ if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
     else
       warn "No modules found in ${MODULES_DIR}/lib/modules/ — skipping rootfs module injection."
       warn "Run: make modules_install INSTALL_MOD_PATH=\${BUILD_DIR}/modules_install"
+    fi
+
+    # -------------------------------------------------------------------------
+    # Step 10b: Rootfs post-processing for EVL compatibility
+    #
+    # The Bianbu buildroot rootfs needs a few tweaks to work with our EVL
+    # kernel:
+    #
+    # 1. Disable Weston autostart
+    #    Weston uses MESA_LOADER_DRIVER_OVERRIDE=pvr (PowerVR GPU).  The
+    #    PowerVR kernel driver is not available in our EVL kernel build.
+    #    Weston crashes immediately on start, causing a display crash loop.
+    #    We disable it by removing the execute bit from S30weston-setup.sh.
+    #    Re-enable later with: chmod +x /etc/init.d/S30weston-setup.sh
+    #
+    # 2. Set root password to a known value
+    #    The original Bianbu image has an unknown root password.  We set it
+    #    to "root" so SSH access works for first-boot diagnosis.
+    #    Change it after first login: passwd root
+    #
+    # 3. Add ttyS0 getty for serial console access
+    #    Adds a login prompt on UART0 (115200 baud) so a serial cable can
+    #    be used for diagnosis if SSH is not available.
+    # -------------------------------------------------------------------------
+    info "Applying rootfs post-processing for EVL compatibility ..."
+
+    # 1. Disable Weston (PowerVR GPU not available with EVL kernel)
+    WESTON_INIT="${ROOTFS_MOUNT}/etc/init.d/S30weston-setup.sh"
+    if [[ -f "${WESTON_INIT}" ]]; then
+      sudo chmod -x "${WESTON_INIT}"
+      ok "Weston autostart disabled (S30weston-setup.sh — chmod -x)."
+      ok "  Re-enable after confirming EVL works: chmod +x /etc/init.d/S30weston-setup.sh"
+    else
+      info "S30weston-setup.sh not found — skipping Weston disable."
+    fi
+
+    # 2. Set root password to "root" for first-boot SSH access
+    SHADOW_FILE="${ROOTFS_MOUNT}/etc/shadow"
+    if [[ -f "${SHADOW_FILE}" ]]; then
+      # Generate SHA-512 hash for "root" using Python (available on most hosts)
+      ROOT_HASH=$(python3 -c \
+        "import crypt; print(crypt.crypt('root', crypt.mksalt(crypt.METHOD_SHA512)))" \
+        2>/dev/null || true)
+      if [[ -n "${ROOT_HASH}" ]]; then
+        sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${SHADOW_FILE}"
+        ok "Root password set to 'root' for first-boot SSH access."
+        ok "  Change after login: passwd root"
+      else
+        warn "Could not generate password hash (python3 not available) — root password unchanged."
+      fi
+    else
+      warn "/etc/shadow not found in rootfs — cannot set root password."
+    fi
+
+    # 3. Add ttyS0 getty for serial console access
+    INITTAB="${ROOTFS_MOUNT}/etc/inittab"
+    if [[ -f "${INITTAB}" ]]; then
+      if ! sudo grep -q 'ttyS0' "${INITTAB}" 2>/dev/null; then
+        echo "ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100" | \
+          sudo tee -a "${INITTAB}" > /dev/null
+        ok "Added ttyS0 getty to /etc/inittab (serial console at 115200 baud)."
+      else
+        ok "ttyS0 getty already present in /etc/inittab."
+      fi
+    else
+      warn "/etc/inittab not found in rootfs — cannot add ttyS0 getty."
     fi
 
     sync
