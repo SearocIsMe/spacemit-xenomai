@@ -304,11 +304,14 @@ fi
 # ---------------------------------------------------------------------------
 # Step 7: Patch env_k1-x.txt for correct plain Image boot
 #
-# Fix 1: kernel_addr_r=0x200000 → 0x10000000
+# Fix 1: kernel_addr_r=0x200000 → 0x20000000
 #   The default Bianbu env uses 0x200000 (2MB) which is designed for the
 #   compressed FIT image (Image.itb, ~10MB).  Our plain uncompressed Image
-#   is ~33MB; loading it at 0x200000 overwrites U-Boot memory and crashes.
-#   0x10000000 (256MB) is safe for a 33MB kernel on a 2GB board.
+#   is ~36MB.  CRITICAL: Bianbu U-Boot loads the splash BMP at splashimage=
+#   0x11000000.  A 36MB kernel at 0x10000000 ends at 0x1230a200, which
+#   OVERLAPS with 0x11000000 — the splash load corrupts the kernel in RAM.
+#   0x20000000 (512MB) is safe: kernel ends at ~0x2230a200, well below
+#   the 2GB RAM ceiling and above all U-Boot working buffers.
 #
 # Fix 2: console=tty1
 #   Without this, all kernel output goes to UART only; HDMI shows blank cursor.
@@ -326,14 +329,17 @@ if [[ -f "${ENV_FILE}" ]]; then
   echo ""
 
   # Fix 1: kernel_addr_r — CRITICAL for plain 33MB Image
-  if sudo grep -q 'kernel_addr_r=0x200000' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|kernel_addr_r=0x200000|kernel_addr_r=0x10000000|g' "${ENV_FILE}"
-    ok "Fixed kernel_addr_r: 0x200000 → 0x10000000"
+  if sudo grep -q 'kernel_addr_r=0x200000\b' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|kernel_addr_r=0x200000\b|kernel_addr_r=0x20000000|g' "${ENV_FILE}"
+    ok "Fixed kernel_addr_r: 0x200000 → 0x20000000"
+  elif sudo grep -q 'kernel_addr_r=0x10000000' "${ENV_FILE}" 2>/dev/null; then
+    sudo sed -i 's|kernel_addr_r=0x10000000|kernel_addr_r=0x20000000|g' "${ENV_FILE}"
+    ok "Fixed kernel_addr_r: 0x10000000 → 0x20000000 (splash overlap fix)"
   elif ! sudo grep -q 'kernel_addr_r' "${ENV_FILE}" 2>/dev/null; then
-    echo "kernel_addr_r=0x10000000" | sudo tee -a "${ENV_FILE}" > /dev/null
-    ok "Added kernel_addr_r=0x10000000"
+    echo "kernel_addr_r=0x20000000" | sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added kernel_addr_r=0x20000000"
   else
-    ok "kernel_addr_r already correct (not 0x200000) — no change needed"
+    ok "kernel_addr_r already correct — no change needed"
   fi
 
   # Fix 2: console=tty1 for HDMI framebuffer output
