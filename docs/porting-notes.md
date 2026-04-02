@@ -308,10 +308,12 @@ RISC-V FPU state (F/D registers) must be saved/restored when switching between O
 | 2026-04-01 | EVL verification on Jupiter: `dmesg\|grep evl` empty, `/sys/devices/virtual/evl` absent, `evl check` → not found | ❌ **EVL absent** — see §8 |
 | 2026-04-01 | Wrote RISC-V Dovetail arch hooks from scratch (`patches/0002-riscv-dovetail-arch-hooks.patch`) | ✅ Done |
 | 2026-04-01 | Applied `0001`+`0002`+`0003` patches; fixed 14 build errors (see §10) | ✅ Done |
-| 2026-04-01 | **Kernel build succeeded** — `arch/riscv/boot/Image` (28 MB) | ✅ **BUILD OK** |
+| 2026-04-01 | **Kernel build succeeded** — `arch/riscv/boot/Image` (36 MB) | ✅ **BUILD OK** |
 | 2026-04-01 | Generated `patches/0004-riscv-evl-build-fixes.patch` capturing all build-fix changes | ✅ Done |
-| TBD | Flash new EVL kernel to SD card and boot Jupiter | ⏳ Pending |
-| TBD | Verify EVL core loaded (`dmesg | grep -i evl`, `evl check`) | ⏳ Pending |
+| 2026-04-02 | **EVL kernel boots on Jupiter** — DRM/HDMI init, framebuffer console, ext4 mount, udev, init all OK | ✅ **BOOTS** |
+| 2026-04-02 | Added `tty1` getty to rootfs `/etc/inittab` — HDMI login prompt now appears | ✅ Done |
+| 2026-04-02 | Fixed `arch_irqs_virtual_to_native_flags` inversion (RISC-V SR_IE semantics opposite to ARM64 PSR_I_BIT) | ✅ Fixed |
+| TBD | Verify EVL core loaded (`dmesg \| grep -i evl`, `evl check`) | ⏳ Pending |
 | TBD | EVL latency measurement (`evl run latmus -T 60 -c 1`) | ⏳ Pending |
 
 ---
