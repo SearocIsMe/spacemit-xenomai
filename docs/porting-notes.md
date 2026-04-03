@@ -313,6 +313,10 @@ RISC-V FPU state (F/D registers) must be saved/restored when switching between O
 | 2026-04-02 | **EVL kernel boots on Jupiter** — DRM/HDMI init, framebuffer console, ext4 mount, udev, init all OK | ✅ **BOOTS** |
 | 2026-04-02 | Added `tty1` getty to rootfs `/etc/inittab` — HDMI login prompt now appears | ✅ Done |
 | 2026-04-02 | Fixed `arch_irqs_virtual_to_native_flags` inversion (RISC-V SR_IE semantics opposite to ARM64 PSR_I_BIT) | ✅ Fixed |
+| 2026-04-03 | Boot test with `evl-sdcard-k1-20260403.img`: system hangs at Bianbu icon — jiffies frozen, never reaches loading/login | ❌ **Hang** |
+| 2026-04-03 | Root cause: `arch_steal_pipelined_tick` checked `SR_IE` (always 0 in trap frame) → every tick stolen → timer starvation | 🐛 Found |
+| 2026-04-03 | Fix: change check to `SR_PIE` (pre-trap SIE value) in `arch/riscv/include/asm/irq_pipeline.h`; overlay updated | ✅ Fixed — see §11 |
+| TBD | Rebuild kernel, flash new image, verify boot reaches login prompt | ⏳ Pending |
 | TBD | Verify EVL core loaded (`dmesg \| grep -i evl`, `evl check`) | ⏳ Pending |
 | TBD | EVL latency measurement (`evl run latmus -T 60 -c 1`) | ⏳ Pending |
 
@@ -630,4 +634,84 @@ ssh root@<jupiter-ip> "dmesg | grep -i evl"
 # Expected: EVL: core started, ABI 19
 ssh root@<jupiter-ip> "evl check"
 # Expected: OK
+```
+
+---
+
+## 11. Boot Hang at Bianbu Splash (2026-04-03) — `arch_steal_pipelined_tick` SR_IE Bug
+
+### 11.1 Symptom
+
+`evl-sdcard-k1-20260403.img` boots to the Bianbu icon and freezes there.
+The display never advances to the loading spinner or login prompt.
+No kernel panic, no serial output stall — just a silent hang after the splash.
+
+### 11.2 Root Cause
+
+`arch_steal_pipelined_tick()` in `arch/riscv/include/asm/irq_pipeline.h`
+originally checked `regs->status & SR_IE`:
+
+```c
+/* WRONG — SR_IE is always 0 in a RISC-V trap frame */
+return !(regs->status & SR_IE);
+```
+
+On RISC-V, the hardware performs these operations **atomically on every trap entry**:
+
+1. `sstatus.SPIE ← sstatus.SIE`   (save old IE into "previous IE")
+2. `sstatus.SIE ← 0`               (disable interrupts)
+
+Therefore `regs->status & SR_IE` (= `SR_SIE`) is **always 0** in the trap frame,
+regardless of whether in-band IRQs were actually enabled before the trap fired.
+
+Consequence: `arch_steal_pipelined_tick` always returned `true` → the OOB
+stage stole **every** timer tick → Linux `jiffies` never advanced → all
+`schedule_timeout()` / `msleep()` calls in DRM, MMC, USB initialisation
+blocked forever → system appeared to freeze at the Bianbu splash.
+
+### 11.3 The ARM64 Difference
+
+ARM64 does **not** clear `PSTATE.I` on exception entry (software EL change
+manages masking differently). So on ARM64 `regs->pstate & PSR_I_BIT` directly
+reflects the pre-exception state and checking it is correct. RISC-V behaves
+oppositely — we must read the **saved** pre-trap state from `SR_PIE`.
+
+### 11.4 Fix
+
+Change `arch_steal_pipelined_tick()` to check `SR_PIE` (= `SR_SPIE` in S-mode),
+the pre-trap copy of `SIE`:
+
+```c
+/* CORRECT — SR_PIE holds the pre-trap SIE value */
+static inline bool arch_steal_pipelined_tick(struct pt_regs *regs)
+{
+    /*
+     * SR_PIE == 0 → IRQs were disabled when the tick fired → steal (OOB owns it).
+     * SR_PIE == 1 → IRQs were enabled → deliver to in-band Linux.
+     */
+    return !(regs->status & SR_PIE);
+}
+```
+
+Files changed:
+- `arch/riscv/include/asm/irq_pipeline.h` (in `~/work/linux-k1` **and** `kernel-overlay/`)
+
+### 11.5 Rebuild and Flash
+
+```bash
+# Rebuild kernel (only irq_pipeline.h changed — incremental build is fast)
+bash scripts/build/03-build-kernel.sh
+
+# Build new SD card image
+sudo bash scripts/flash/make-full-sdcard-img.sh \
+  ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+  ~/work/build-k1 \
+  ~/work
+
+# Flash (replace /dev/sdX)
+sudo dd if=~/work/evl-sdcard-k1-$(date +%Y%m%d).img of=/dev/sdX bs=4M status=progress conv=fsync
+
+# After boot, verify via serial or SSH:
+dmesg | grep -i evl
+# Expected: EVL: core started, ABI 19
 ```

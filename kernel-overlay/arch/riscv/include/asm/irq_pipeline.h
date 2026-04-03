@@ -11,7 +11,7 @@
  * !CONFIG_IRQ_PIPELINE.  native_*() hardware ops are defined in
  * asm/irqflags.h which is included below.
  *
- * Design (matches ARM64 reference and working Apr-2 build):
+ * Design:
  *
  *   CONFIG_IRQ_PIPELINE=y:
  *     arch_local_*() → inband_irq_*() — stall-bit virtualisation.
@@ -19,6 +19,15 @@
  *
  *   CONFIG_IRQ_PIPELINE=n:
  *     arch_local_*() → native_*() — direct SR_IE CSR manipulation.
+ *
+ * RISC-V trap-entry SR_IE vs SR_PIE note:
+ *   On RISC-V, hardware clears sstatus.SIE and copies its old value to
+ *   sstatus.SPIE on every trap entry.  As a result regs->status & SR_IE
+ *   is ALWAYS 0 in a trap frame.  arch_steal_pipelined_tick() must check
+ *   SR_PIE (the pre-trap value) — NOT SR_IE — to determine whether in-band
+ *   IRQs were enabled before the tick fired.  Using SR_IE here causes every
+ *   tick to be stolen by the OOB stage, jiffies never advance, and the
+ *   system hangs at the splash screen (fixed Apr 2026).
  */
 #ifndef _ASM_RISCV_IRQ_PIPELINE_H
 #define _ASM_RISCV_IRQ_PIPELINE_H
@@ -112,8 +121,23 @@ static inline void arch_save_timer_regs(struct pt_regs *dst,
 
 static inline bool arch_steal_pipelined_tick(struct pt_regs *regs)
 {
-	/* SR_IE clear means IRQs were disabled when the tick fired */
-	return !(regs->status & SR_IE);
+	/*
+	 * On RISC-V, the hardware atomically copies sstatus.SIE → sstatus.SPIE
+	 * and clears sstatus.SIE on trap entry.  Therefore regs->status & SR_IE
+	 * (= SR_SIE) is ALWAYS 0 in the trap frame — checking it would steal
+	 * every tick and starve in-band Linux of timer interrupts (boot hangs
+	 * at Bianbu splash, jiffies frozen).
+	 *
+	 * The correct check is SR_PIE (= SR_SPIE in S-mode), which holds the
+	 * pre-trap SIE value:
+	 *   SR_PIE == 0  → IRQs were disabled when the tick fired → steal.
+	 *   SR_PIE == 1  → IRQs were enabled → deliver to in-band Linux.
+	 *
+	 * This matches the ARM64 reference (PSR_I_BIT is NOT cleared on exception
+	 * entry on ARM64, so arm64 can use the I-bit directly; RISC-V must use
+	 * SR_PIE instead).
+	 */
+	return !(regs->status & SR_PIE);
 }
 
 static inline int arch_enable_oob_stage(void)
