@@ -365,6 +365,18 @@ if [[ -f "${ENV_FILE}" ]]; then
     ok "console=tty0 already present — no change needed"
   fi
 
+  # Add debug/nosplash kernel parameters so kernel messages are visible on
+  # HDMI and serial even during early boot (before DRM/fbcon is up).
+  # These are appended as a separate line (U-Boot "env import -t" merges all
+  # lines into the running env). They are idempotent — won't be added twice.
+  if ! sudo grep -q 'nosplash' "${ENV_FILE}" 2>/dev/null; then
+    printf 'debug ignore_loglevel nosplash no_console_suspend\n' | \
+      sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added debug/nosplash params to env_k1-x.txt (verbose boot output)"
+  else
+    ok "nosplash already present in env_k1-x.txt — no change needed"
+  fi
+
   info "Updated env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
   echo ""
