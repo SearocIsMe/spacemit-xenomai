@@ -14,9 +14,10 @@
 #       include/linux/irq_pipeline.h
 #       include/linux/dovetail.h
 #       include/linux/spinlock_pipeline.h
-#   - RISC-V arch hooks (new files):
+#   - RISC-V arch hooks (new/modified files):
+#       arch/riscv/include/asm/irqflags.h   (defines native_*() + arch_local_*() as hw ops)
 #       arch/riscv/include/asm/dovetail.h
-#       arch/riscv/include/asm/irq_pipeline.h
+#       arch/riscv/include/asm/irq_pipeline.h  (pipeline hooks; no arch_local_*() defs)
 #       arch/riscv/include/dovetail/thread_info.h
 #   - Modified existing files:
 #       arch/riscv/include/asm/thread_info.h  (adds oob_thread_state)

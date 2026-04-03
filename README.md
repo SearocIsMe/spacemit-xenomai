@@ -623,6 +623,32 @@ removed from the `00b-deploy-overlay.sh` injector.
 
 ---
 
+#### Fix 6 (ROOT CAUSE — boot hang): `arch/riscv/include/asm/irqflags.h` routing `arch_local_*()` through stall-bit ops
+
+**Symptom:** Apr 3 kernel build hung at the Bianbu splash screen on Milk-V Jupiter; Apr 2 (before the `irqflags.h` modification) booted fine.
+
+**Root cause identified:** `arch/riscv/include/asm/irqflags.h` was modified to:
+1. Rename the original `arch_local_*()` hardware ops to `native_*()` (correct)
+2. Add `#include <asm/irq_pipeline.h>` at the **end** of the file (the regression)
+
+Because `asm/irq_pipeline.h` includes `asm-generic/irq_pipeline.h`, which in turn (with `CONFIG_IRQ_PIPELINE`) redefines `arch_local_irq_enable()` → `inband_irq_enable()` — a stall-bit-only operation that does **not** set hardware `SR_IE`. The result: hardware timer interrupts never fire during boot because `SR_IE=0` is never cleared, causing a permanent deadlock (boot hang).
+
+**Timeline:** `arch_local_irq_enable()` is called many times before `arch_irq_pipeline_init()` (which is empty on RISC-V). Until the pipeline starts, the hardware `SR_IE` bit must be set by the arch-level `arch_local_irq_enable()`. After the regression, this never happened.
+
+**Fix applied:**
+- `arch/riscv/include/asm/irqflags.h`: defines `native_*()` as direct `SR_IE` hardware ops + `arch_local_*()` as direct aliases to `native_*()`. **Does NOT include `<asm/irq_pipeline.h>`**.
+- `arch/riscv/include/asm/irq_pipeline.h`: removed all `arch_local_*()` / `arch_irqs_disabled()` definitions (they now live in `irqflags.h`). Kept only RISC-V-specific pipeline hooks: `arch_irqs_virtual_to_native_flags()`, `arch_irqs_native_to_virtual_flags()`, OOB IPI constants, `arch_handle_irq_pipelined()`, etc.
+
+**Key invariant:**
+```
+arch_local_irq_enable() → native_irq_enable() → csr_set(CSR_STATUS, SR_IE)
+```
+Hardware `SR_IE` is always set correctly regardless of pipeline state.
+
+Both fixed files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed by `00b-deploy-overlay.sh` via rsync.
+
+---
+
 ## 9. s-aiotm Integration Targets
 
 | Capability | Implementation Plan | EVL Primitive |
