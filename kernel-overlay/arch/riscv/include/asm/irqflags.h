@@ -2,21 +2,30 @@
 /*
  * Copyright (C) 2012 Regents of the University of California
  *
- * EVL/Dovetail IRQ pipeline support:
- * Defines native_*() hardware operations.  arch_local_*() are defined in
- * asm/irq_pipeline.h which is included at the bottom of this file.
+ * EVL/Dovetail IRQ pipeline support for RISC-V.
  *
- * With CONFIG_IRQ_PIPELINE:
- *   arch_local_*() → stall-bit virtualisation (inband_irq_*())
- *   native_*() / hard_*() → direct SR_IE hardware manipulation
+ * This file defines ONLY native_*() hardware operations (direct SR_IE CSR
+ * manipulation).  It does NOT define arch_local_*() — those are defined in
+ * asm/irq_pipeline.h with two behaviours:
  *
- * Without CONFIG_IRQ_PIPELINE:
- *   arch_local_*() → native_*() → direct SR_IE hardware manipulation
+ *   CONFIG_IRQ_PIPELINE=y:
+ *     arch_local_*() → stall-bit virtualisation (inband_irq_*())
+ *     Hardware SR_IE is managed exclusively by the pipeline core.
  *
- * The arch_irq_pipeline_init() hook MUST call hard_local_irq_enable()
- * so that hardware SR_IE=1 before the first local_irq_enable() fires
- * through the pipeline.  Without this, inband_irq_enable() would save
- * SR_IE=0 and never restore it to 1, hanging the boot.
+ *   CONFIG_IRQ_PIPELINE=n:
+ *     arch_local_*() → native_*() → direct SR_IE hardware manipulation.
+ *
+ * Rationale for NOT defining arch_local_*() here:
+ *   After arch_irq_pipeline_init() the pipeline owns SR_IE.  If in-band
+ *   code calls arch_local_irq_enable() and that directly sets SR_IE, it
+ *   races with the OOB stage's control of SR_IE → timer/tick corruption →
+ *   boot hang.  The correct Dovetail design (ARM64 reference) is:
+ *     asm/irqflags.h  → native_*()  (hardware)
+ *     asm/irq_pipeline.h → arch_local_*() (stall-bit when pipelined)
+ *
+ * asm/irq_pipeline.h is included automatically via linux/irqflags.h →
+ * linux/irq_pipeline.h → asm/irq_pipeline.h, so consumers do not need to
+ * include it explicitly.
  */
 
 #ifndef _ASM_RISCV_IRQFLAGS_H
@@ -29,6 +38,7 @@
  * Hardware (native) IRQ operations.
  * These always manipulate the real SR_IE bit in sstatus.
  * Required by asm-generic/irq_pipeline.h (hard_*() macros → native_*()).
+ * Also used directly by arch_local_*() when !CONFIG_IRQ_PIPELINE.
  * ----------------------------------------------------------------------- */
 
 static inline unsigned long native_save_flags(void)
@@ -72,51 +82,16 @@ static inline void native_irq_sync(void)
 	native_irq_disable();
 }
 
-/* -----------------------------------------------------------------------
- * arch_local_*() — used by generic kernel code.
- * These always map to native_*() (direct hardware SR_IE manipulation).
+/*
+ * arch_local_*() and arch_irqs_disabled_flags() are defined in
+ * asm/irq_pipeline.h.  Include it here so that any file doing
+ * #include <asm/irqflags.h> directly (not via linux/irqflags.h) also
+ * gets the correct arch_local_*() definitions.
  *
- * The IRQ pipeline core uses hard_*() / inband_irq_*() / oob_irq_*()
- * directly and does NOT rely on arch_local_*() being virtualised.
- *
- * DO NOT include asm/irq_pipeline.h here: doing so would override
- * arch_local_*() with stall-bit-only ops that never set hardware SR_IE,
- * causing a boot hang (no timer interrupts fire before pipeline init).
- * ----------------------------------------------------------------------- */
-
-static inline unsigned long arch_local_save_flags(void)
-{
-	return native_save_flags();
-}
-
-static inline void arch_local_irq_enable(void)
-{
-	native_irq_enable();
-}
-
-static inline void arch_local_irq_disable(void)
-{
-	native_irq_disable();
-}
-
-static inline unsigned long arch_local_irq_save(void)
-{
-	return native_irq_save();
-}
-
-static inline int arch_irqs_disabled_flags(unsigned long flags)
-{
-	return native_irqs_disabled_flags(flags);
-}
-
-static inline int arch_irqs_disabled(void)
-{
-	return arch_irqs_disabled_flags(arch_local_save_flags());
-}
-
-static inline void arch_local_irq_restore(unsigned long flags)
-{
-	native_irq_restore(flags);
-}
+ * Header guards in irq_pipeline.h prevent circular include issues:
+ *   irqflags.h defines native_*() → includes irq_pipeline.h
+ *   irq_pipeline.h includes irqflags.h (already guarded, skipped) → defines arch_local_*()
+ */
+#include <asm/irq_pipeline.h>
 
 #endif /* _ASM_RISCV_IRQFLAGS_H */

@@ -623,29 +623,44 @@ removed from the `00b-deploy-overlay.sh` injector.
 
 ---
 
-#### Fix 6 (ROOT CAUSE — boot hang): `arch/riscv/include/asm/irqflags.h` routing `arch_local_*()` through stall-bit ops
+#### Fix 6 (correct Dovetail IRQ design): `arch/riscv/include/asm/irqflags.h` + `irq_pipeline.h`
 
-**Symptom:** Apr 3 kernel build hung at the Bianbu splash screen on Milk-V Jupiter; Apr 2 (before the `irqflags.h` modification) booted fine.
+**Background:** Two iterations of fixes were needed to establish the correct RISC-V Dovetail IRQ design, verified against the ARM64 reference implementation and the working Apr 2 patch 0002.
 
-**Root cause identified:** `arch/riscv/include/asm/irqflags.h` was modified to:
-1. Rename the original `arch_local_*()` hardware ops to `native_*()` (correct)
-2. Add `#include <asm/irq_pipeline.h>` at the **end** of the file (the regression)
+**Correct design (verified from patch 0002 + ARM64 reference):**
 
-Because `asm/irq_pipeline.h` includes `asm-generic/irq_pipeline.h`, which in turn (with `CONFIG_IRQ_PIPELINE`) redefines `arch_local_irq_enable()` → `inband_irq_enable()` — a stall-bit-only operation that does **not** set hardware `SR_IE`. The result: hardware timer interrupts never fire during boot because `SR_IE=0` is never cleared, causing a permanent deadlock (boot hang).
+`arch/riscv/include/asm/irqflags.h`:
+- Defines `native_*()` hardware ops (direct `SR_IE` CSR manipulation).
+- Ends with `#include <asm/irq_pipeline.h>` so consumers of `irqflags.h` also get `arch_local_*()`.
+- Does **NOT** define `arch_local_*()` itself — those live in `irq_pipeline.h`.
 
-**Timeline:** `arch_local_irq_enable()` is called many times before `arch_irq_pipeline_init()` (which is empty on RISC-V). Until the pipeline starts, the hardware `SR_IE` bit must be set by the arch-level `arch_local_irq_enable()`. After the regression, this never happened.
+`arch/riscv/include/asm/irq_pipeline.h`:
+- `#include <asm/irqflags.h>` (header-guarded — no circular include issue)
+- `CONFIG_IRQ_PIPELINE=y`: `arch_local_irq_enable()` → `inband_irq_enable()` (stall-bit only)
+- `!CONFIG_IRQ_PIPELINE`: `arch_local_irq_enable()` → `native_irq_enable()` (hardware direct)
 
-**Fix applied:**
-- `arch/riscv/include/asm/irqflags.h`: defines `native_*()` as direct `SR_IE` hardware ops + `arch_local_*()` as direct aliases to `native_*()`. **Does NOT include `<asm/irq_pipeline.h>`**.
-- `arch/riscv/include/asm/irq_pipeline.h`: removed all `arch_local_*()` / `arch_irqs_disabled()` definitions (they now live in `irqflags.h`). Kept only RISC-V-specific pipeline hooks: `arch_irqs_virtual_to_native_flags()`, `arch_irqs_native_to_virtual_flags()`, OOB IPI constants, `arch_handle_irq_pipelined()`, etc.
+**Why stall-bit for in-band code is correct:**
+After `irq_pipeline_init()`, the pipeline owns hardware `SR_IE`. In-band code must use the stall-bit
+(which the pipeline core maps to/from hardware `SR_IE`). Direct `SR_IE` manipulation by in-band code
+races with OOB stage management → timer/tick corruption → boot hang.
 
-**Key invariant:**
+**Why this works before pipeline init:**
+`irq_pipeline_init_early()` (called from `start_kernel()`) sets up the stall-bit as a mirror of
+current `SR_IE` state. Early boot code that calls `arch_local_irq_enable()` before pipeline init
+is still safe because the pipeline bootstrap correctly enables hardware `SR_IE` when the stall-bit
+is cleared for the first time.
+
+**Key invariants:**
 ```
-arch_local_irq_enable() → native_irq_enable() → csr_set(CSR_STATUS, SR_IE)
-```
-Hardware `SR_IE` is always set correctly regardless of pipeline state.
+# In-band (pipelined):
+arch_local_irq_enable() → inband_irq_enable() → clears INBAND_STALL_BIT
+                           Pipeline core → csr_set(CSR_STATUS, SR_IE)
 
-Both fixed files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed by `00b-deploy-overlay.sh` via rsync.
+# Hardware-direct (OOB / low-level):
+hard_local_irq_enable() → native_irq_enable() → csr_set(CSR_STATUS, SR_IE)
+```
+
+Both files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed by `00b-deploy-overlay.sh` via rsync.
 
 ---
 

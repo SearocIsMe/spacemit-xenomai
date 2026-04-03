@@ -7,10 +7,18 @@
  *
  * RISC-V adaptation for SpacemiT K1 (2026).
  *
- * This file is included at the bottom of asm/irqflags.h (after native_*
- * are defined), so it may safely reference them.
+ * This file defines arch_local_*() for both CONFIG_IRQ_PIPELINE and
+ * !CONFIG_IRQ_PIPELINE.  native_*() hardware ops are defined in
+ * asm/irqflags.h which is included below.
  *
- * arch_*() are defined here for both CONFIG_IRQ_PIPELINE and !CONFIG_IRQ_PIPELINE.
+ * Design (matches ARM64 reference and working Apr-2 build):
+ *
+ *   CONFIG_IRQ_PIPELINE=y:
+ *     arch_local_*() → inband_irq_*() — stall-bit virtualisation.
+ *     Hardware SR_IE is managed by the pipeline core, NOT in-band code.
+ *
+ *   CONFIG_IRQ_PIPELINE=n:
+ *     arch_local_*() → native_*() — direct SR_IE CSR manipulation.
  */
 #ifndef _ASM_RISCV_IRQ_PIPELINE_H
 #define _ASM_RISCV_IRQ_PIPELINE_H
@@ -20,17 +28,7 @@
 #ifdef CONFIG_IRQ_PIPELINE
 
 #include <asm/csr.h>
-
-/*
- * Out-of-band IPI assignments for RISC-V.
- * ipi_irq_base is set during SMP init; OOB IPIs are offset from it.
- */
-#define OOB_NR_IPI		3
-#define OOB_IPI_OFFSET		1
-extern int ipi_irq_base;
-#define TIMER_OOB_IPI		(ipi_irq_base + OOB_IPI_OFFSET)
-#define RESCHEDULE_OOB_IPI	(TIMER_OOB_IPI + 1)
-#define CALL_FUNCTION_OOB_IPI	(RESCHEDULE_OOB_IPI + 1)
+#include <asm/irqflags.h>
 
 /*
  * RISC-V uses the SR_IE bit in sstatus for hardware IRQ masking.
@@ -63,6 +61,48 @@ unsigned long arch_irqs_native_to_virtual_flags(unsigned long flags)
 	return (!(flags & SR_IE)) ? (1UL << IRQMASK_i_POS) : 0UL;
 }
 
+/*
+ * arch_local_*(): in-band IRQ state management via stall-bit.
+ * After arch_irq_pipeline_init(), the pipeline owns hardware SR_IE.
+ * In-band code must ONLY touch the stall flag, not SR_IE directly.
+ */
+static inline notrace unsigned long arch_local_irq_save(void)
+{
+	int stalled = inband_irq_save();
+	barrier();
+	return arch_irqs_virtual_to_native_flags(stalled);
+}
+
+static inline notrace void arch_local_irq_enable(void)
+{
+	barrier();
+	inband_irq_enable();
+}
+
+static inline notrace void arch_local_irq_disable(void)
+{
+	inband_irq_disable();
+	barrier();
+}
+
+static inline notrace unsigned long arch_local_save_flags(void)
+{
+	int stalled = inband_irqs_disabled();
+	barrier();
+	return arch_irqs_virtual_to_native_flags(stalled);
+}
+
+static inline int arch_irqs_disabled_flags(unsigned long flags)
+{
+	return native_irqs_disabled_flags(flags);
+}
+
+static inline notrace void arch_local_irq_restore(unsigned long flags)
+{
+	inband_irq_restore(arch_irqs_disabled_flags(flags));
+	barrier();
+}
+
 static inline void arch_save_timer_regs(struct pt_regs *dst,
 					struct pt_regs *src)
 {
@@ -92,6 +132,59 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 #define arch_kentry_set_irqstate(__regs, __irqstate)	\
 	do { (void)(__irqstate); } while (0)
 
+/*
+ * Out-of-band IPI assignments for RISC-V.
+ * ipi_irq_base is set during SMP init; OOB IPIs are offset from it.
+ */
+#define OOB_NR_IPI		3
+#define OOB_IPI_OFFSET		1
+extern int ipi_irq_base;
+#define TIMER_OOB_IPI		(ipi_irq_base + OOB_IPI_OFFSET)
+#define RESCHEDULE_OOB_IPI	(TIMER_OOB_IPI + 1)
+#define CALL_FUNCTION_OOB_IPI	(RESCHEDULE_OOB_IPI + 1)
+
+#else  /* !CONFIG_IRQ_PIPELINE */
+
+#include <asm/irqflags.h>
+
+/*
+ * arch_local_*(): without IRQ pipeline, map directly to hardware ops.
+ */
+static inline unsigned long arch_local_irq_save(void)
+{
+	return native_irq_save();
+}
+
+static inline void arch_local_irq_enable(void)
+{
+	native_irq_enable();
+}
+
+static inline void arch_local_irq_disable(void)
+{
+	native_irq_disable();
+}
+
+static inline unsigned long arch_local_save_flags(void)
+{
+	return native_save_flags();
+}
+
+static inline void arch_local_irq_restore(unsigned long flags)
+{
+	native_irq_restore(flags);
+}
+
+static inline int arch_irqs_disabled_flags(unsigned long flags)
+{
+	return native_irqs_disabled_flags(flags);
+}
+
 #endif /* !CONFIG_IRQ_PIPELINE */
+
+static inline int arch_irqs_disabled(void)
+{
+	return arch_irqs_disabled_flags(arch_local_save_flags());
+}
 
 #endif /* _ASM_RISCV_IRQ_PIPELINE_H */
