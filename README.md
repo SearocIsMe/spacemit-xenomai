@@ -584,6 +584,36 @@ EVL's IRQ pipeline requires `stall_bits` per task for pipeline stall state track
 ```
 **Symptom:** `error: 'struct task_struct' has no member named 'stall_bits'`.
 
+#### Fix 5: `init_task_stall_bits()` never called → boot hang at Bianbu splash
+
+EVL requires `INBAND_STALL_BIT` (bit 0 of `task_struct.stall_bits`) to be **set** at task creation.
+If it is left 0 (cleared), the pipeline treats the task as OOB-stalled and hangs during early boot — the
+kernel freezes at the Bianbu splash screen with no further output.
+
+Two sub-fixes injected by `00b-deploy-overlay.sh` into `kernel/sched/core.c`:
+
+**5a: Missing `#include <linux/irqstage.h>`** — the header that declares `init_task_stall_bits()`.
+`linux-k1`'s `core.c` does not include `irq_pipeline.h` or `dovetail.h` transitively, unlike the EVL
+reference tree.
+```c
+// kernel/sched/core.c — added just before #include <linux/highmem.h>:
+#ifdef CONFIG_IRQ_PIPELINE
+#include <linux/irqstage.h>
+#endif
+```
+**Symptom:** `implicit declaration of function 'init_task_stall_bits'` compile error.
+
+**5b: `init_task_stall_bits(p)` missing from `__sched_fork()`** — the function that sets up a new task.
+```c
+// kernel/sched/core.c — added at end of __sched_fork(), after init_sched_mm_cid(p):
+#ifdef CONFIG_IRQ_PIPELINE
+    init_task_stall_bits(p);
+#endif
+```
+**Symptom:** Kernel boots, loads initramfs, then freezes at Bianbu splash screen (no oops, no output).
+`INBAND_STALL_BIT = 0` means EVL sees every newly created task as "OOB stalled" and deadlocks the
+scheduler when the pipeline is active.
+
 ---
 
 ## 9. s-aiotm Integration Targets

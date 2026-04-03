@@ -127,6 +127,65 @@ PYEOF
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# Patch kernel/sched/core.c: add init_task_stall_bits(p) to __sched_fork()
+# Required for EVL IRQ pipeline: every task (including idle) must start with
+# INBAND_STALL_BIT set so inband_irqs_disabled() is correct from the start.
+# ---------------------------------------------------------------------------
+if [[ "${DRY_RUN}" != "1" ]]; then
+  CORE_C="${KERNEL_DIR}/kernel/sched/core.c"
+  if ! grep -q "init_task_stall_bits" "${CORE_C}"; then
+    info "Patching kernel/sched/core.c (adding init_task_stall_bits for EVL)..."
+    python3 - "${CORE_C}" <<'PYEOF'
+import sys
+
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+# 1. Add #include <linux/irqstage.h> at the top (before first #include)
+irqstage_block = '#ifdef CONFIG_IRQ_PIPELINE\n#include <linux/irqstage.h>\n#endif\n'
+first_include = '#include <linux/highmem.h>'
+if irqstage_block not in content and first_include in content:
+    content = content.replace(first_include,
+                              irqstage_block + first_include, 1)
+    print("  core.c: irqstage.h include injected OK")
+elif irqstage_block in content:
+    print("  core.c: irqstage.h include already present")
+else:
+    print("WARNING: could not locate '#include <linux/highmem.h>' in core.c",
+          file=sys.stderr)
+    sys.exit(1)
+
+# 2. Add init_task_stall_bits(p) at end of __sched_fork()
+old = '\tinit_sched_mm_cid(p);\n}'
+new = ('\tinit_sched_mm_cid(p);\n'
+       '#ifdef CONFIG_IRQ_PIPELINE\n'
+       '\tinit_task_stall_bits(p);\n'
+       '#endif\n'
+       '}')
+
+if old in content:
+    content = content.replace(old, new, 1)
+    print("  core.c: init_task_stall_bits injected OK")
+elif new in content:
+    print("  core.c: init_task_stall_bits already present")
+else:
+    print("WARNING: could not locate injection point in kernel/sched/core.c",
+          file=sys.stderr)
+    sys.exit(1)
+
+with open(path, 'w') as f:
+    f.write(content)
+PYEOF
+    grep -q "init_task_stall_bits" "${CORE_C}" \
+      && ok "kernel/sched/core.c patched: init_task_stall_bits added" \
+      || die "core.c patch failed - init_task_stall_bits not found after patch"
+  else
+    info "kernel/sched/core.c already has init_task_stall_bits - skipping"
+  fi
+fi
+
 echo ""
 if [[ "${DRY_RUN}" == "1" ]]; then
   info "Dry run complete. Remove --dry-run to apply."
