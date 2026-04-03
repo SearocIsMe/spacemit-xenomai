@@ -128,14 +128,17 @@ PYEOF
 fi
 
 # ---------------------------------------------------------------------------
-# Patch kernel/sched/core.c: add init_task_stall_bits(p) to __sched_fork()
-# Required for EVL IRQ pipeline: every task (including idle) must start with
-# INBAND_STALL_BIT set so inband_irqs_disabled() is correct from the start.
+# Patch kernel/sched/core.c: add #include <linux/irqstage.h>
+# Required so EVL irqstage.h helpers (init_task_stall_bits etc.) are visible.
+# NOTE: init_task_stall_bits(p) is intentionally NOT called from __sched_fork()
+# because stall_bits is zero-initialized (INBAND_STALL_BIT=0 = IRQs enabled),
+# which is the correct default.  Calling it was a regression that caused a
+# boot hang (kernel froze at Bianbu splash) — reverted Apr 2026.
 # ---------------------------------------------------------------------------
 if [[ "${DRY_RUN}" != "1" ]]; then
   CORE_C="${KERNEL_DIR}/kernel/sched/core.c"
-  if ! grep -q "init_task_stall_bits" "${CORE_C}"; then
-    info "Patching kernel/sched/core.c (adding init_task_stall_bits for EVL)..."
+  if ! grep -q "irqstage.h" "${CORE_C}"; then
+    info "Patching kernel/sched/core.c (adding irqstage.h include for EVL)..."
     python3 - "${CORE_C}" <<'PYEOF'
 import sys
 
@@ -143,7 +146,7 @@ path = sys.argv[1]
 with open(path) as f:
     content = f.read()
 
-# 1. Add #include <linux/irqstage.h> at the top (before first #include)
+# Add #include <linux/irqstage.h> at the top (before first #include)
 irqstage_block = '#ifdef CONFIG_IRQ_PIPELINE\n#include <linux/irqstage.h>\n#endif\n'
 first_include = '#include <linux/highmem.h>'
 if irqstage_block not in content and first_include in content:
@@ -157,32 +160,14 @@ else:
           file=sys.stderr)
     sys.exit(1)
 
-# 2. Add init_task_stall_bits(p) at end of __sched_fork()
-old = '\tinit_sched_mm_cid(p);\n}'
-new = ('\tinit_sched_mm_cid(p);\n'
-       '#ifdef CONFIG_IRQ_PIPELINE\n'
-       '\tinit_task_stall_bits(p);\n'
-       '#endif\n'
-       '}')
-
-if old in content:
-    content = content.replace(old, new, 1)
-    print("  core.c: init_task_stall_bits injected OK")
-elif new in content:
-    print("  core.c: init_task_stall_bits already present")
-else:
-    print("WARNING: could not locate injection point in kernel/sched/core.c",
-          file=sys.stderr)
-    sys.exit(1)
-
 with open(path, 'w') as f:
     f.write(content)
 PYEOF
-    grep -q "init_task_stall_bits" "${CORE_C}" \
-      && ok "kernel/sched/core.c patched: init_task_stall_bits added" \
-      || die "core.c patch failed - init_task_stall_bits not found after patch"
+    grep -q "irqstage.h" "${CORE_C}" \
+      && ok "kernel/sched/core.c patched: irqstage.h include added" \
+      || die "core.c patch failed - irqstage.h not found after patch"
   else
-    info "kernel/sched/core.c already has init_task_stall_bits - skipping"
+    info "kernel/sched/core.c already has irqstage.h include - skipping"
   fi
 fi
 
