@@ -638,7 +638,12 @@ ssh root@<jupiter-ip> "evl check"
 
 ---
 
-## 11. Boot Hang at Bianbu Splash (2026-04-03) — `arch_steal_pipelined_tick` SR_IE Bug
+## 11. Boot Hang at Bianbu Splash (2026-04-03) — Attempt 1: `arch_steal_pipelined_tick` SR_IE Bug
+
+> **Note:** This fix was applied but proved **ineffective** because
+> `arch_steal_pipelined_tick` is **never called** anywhere in the kernel tree
+> (grep confirmed: only its definition exists).  The boot hang persisted.
+> See §12 for the actual root cause and working fix.
 
 ### 11.1 Symptom
 
@@ -646,7 +651,7 @@ ssh root@<jupiter-ip> "evl check"
 The display never advances to the loading spinner or login prompt.
 No kernel panic, no serial output stall — just a silent hang after the splash.
 
-### 11.2 Root Cause
+### 11.2 Root Cause (Incorrect)
 
 `arch_steal_pipelined_tick()` in `arch/riscv/include/asm/irq_pipeline.h`
 originally checked `regs->status & SR_IE`:
@@ -664,45 +669,154 @@ On RISC-V, the hardware performs these operations **atomically on every trap ent
 Therefore `regs->status & SR_IE` (= `SR_SIE`) is **always 0** in the trap frame,
 regardless of whether in-band IRQs were actually enabled before the trap fired.
 
-Consequence: `arch_steal_pipelined_tick` always returned `true` → the OOB
-stage stole **every** timer tick → Linux `jiffies` never advanced → all
-`schedule_timeout()` / `msleep()` calls in DRM, MMC, USB initialisation
-blocked forever → system appeared to freeze at the Bianbu splash.
+Analysis was correct but irrelevant — `arch_steal_pipelined_tick` is defined but
+**never called** anywhere in the kernel, so the fix had zero runtime effect.
 
-### 11.3 The ARM64 Difference
+### 11.3 Fix Applied (Ineffective)
 
-ARM64 does **not** clear `PSTATE.I` on exception entry (software EL change
-manages masking differently). So on ARM64 `regs->pstate & PSR_I_BIT` directly
-reflects the pre-exception state and checking it is correct. RISC-V behaves
-oppositely — we must read the **saved** pre-trap state from `SR_PIE`.
+Changed `arch_steal_pipelined_tick()` to check `SR_PIE` — correct logic but
+irrelevant since the function is unreachable.
 
-### 11.4 Fix
+---
 
-Change `arch_steal_pipelined_tick()` to check `SR_PIE` (= `SR_SPIE` in S-mode),
-the pre-trap copy of `SIE`:
+## 12. Boot Hang at Bianbu Splash (2026-04-03) — Actual Root Causes Fixed
+
+### 12.1 Symptom
+
+Same as §11.1. After applying the SR_PIE fix (§11), the board still freezes at
+the Bianbu icon.  The hang is a **silent deadlock** — no kernel oops, no panic.
+
+### 12.2 Root Cause 1: `arch_do_IRQ_pipelined` Uses Wrong RCU Entry API
+
+**File:** `arch/riscv/kernel/irq_pipeline.c`
+
+The original implementation:
 
 ```c
-/* CORRECT — SR_PIE holds the pre-trap SIE value */
-static inline bool arch_steal_pipelined_tick(struct pt_regs *regs)
+void arch_do_IRQ_pipelined(struct irq_desc *desc)
 {
-    /*
-     * SR_PIE == 0 → IRQs were disabled when the tick fired → steal (OOB owns it).
-     * SR_PIE == 1 → IRQs were enabled → deliver to in-band Linux.
-     */
-    return !(regs->status & SR_PIE);
+    struct pt_regs *regs = raw_cpu_ptr(&irq_pipeline.tick_regs);
+    struct pt_regs *old_regs = set_irq_regs(regs);
+
+    irq_enter();       /* WRONG */
+    handle_irq_desc(desc);
+    irq_exit();        /* WRONG */
+
+    set_irq_regs(old_regs);
 }
 ```
 
-Files changed:
-- `arch/riscv/include/asm/irq_pipeline.h` (in `~/work/linux-k1` **and** `kernel-overlay/`)
+`arch_do_IRQ_pipelined` is called from `do_inband_irq()` in
+`kernel/irq/pipeline.c`.  The comment in that function reads:
 
-### 11.5 Rebuild and Flash
+> **Entered with hardirqs on, inband stalled.**
+
+This is a **software replay** of a previously-logged inband IRQ — not a
+real hardware interrupt firing from idle/user context.  At this point, RCU
+is **already watching** (we are in task or softirq context).
+
+`irq_enter()` internally calls `ct_irq_enter()` → `rcu_irq_enter()`, which
+**notifies RCU that a new hardware interrupt just preempted idle/user context**.
+This is wrong:
+
+- It corrupts the RCU extended quiescent state (EQS) tracking
+- RCU assumes it needs to move from "dyntick-idle" → "in-interrupt" when it
+  is actually already in "in-kernel" mode
+- This causes **RCU stalls** or **lockup** on the next `rcu_read_lock()` /
+  timer callback that tries to use RCU
+
+The correct call pair is `irq_enter_rcu()` / `irq_exit_rcu()`, which
+increments `HARDIRQ_OFFSET` and sets up `irq_regs` **without** calling
+`rcu_irq_enter()` (because RCU is already watching).
+
+**Fix:**
+
+```c
+void arch_do_IRQ_pipelined(struct irq_desc *desc)
+{
+    struct pt_regs *regs = raw_cpu_ptr(&irq_pipeline.tick_regs);
+    struct pt_regs *old_regs = set_irq_regs(regs);
+
+    irq_enter_rcu();       /* correct: RCU already watching */
+    handle_irq_desc(desc);
+    irq_exit_rcu();        /* correct */
+
+    set_irq_regs(old_regs);
+}
+```
+
+### 12.3 Root Cause 2: `riscv_intc_chip` Missing `IRQCHIP_PIPELINE_SAFE`
+
+**File:** `drivers/irqchip/irq-riscv-intc.c`
+
+```c
+/* BEFORE — missing flag */
+static struct irq_chip riscv_intc_chip = {
+    .name     = "RISC-V INTC",
+    .irq_mask = riscv_intc_irq_mask,
+    .irq_unmask = riscv_intc_irq_unmask,
+    .irq_eoi  = riscv_intc_irq_eoi,
+};
+```
+
+`kernel/irq/chip.c:irq_set_chip()` contains:
+
+```c
+WARN_ONCE(irqs_pipelined() && chip &&
+          (chip->flags & IRQCHIP_PIPELINE_SAFE) == 0,
+          "irqchip %s is not pipeline-safe!", chip->name);
+```
+
+Every time the timer IRQ, IPI IRQ, or any INTC-backed IRQ is configured,
+this `WARN_ONCE` fires.  Beyond the warning, the EVL pipeline may treat
+chips without this flag as unsafe and refuse to handle OOB delivery through
+them — breaking the entire interrupt pipeline on RISC-V.
+
+**Fix:** Add `.flags = IRQCHIP_PIPELINE_SAFE` to both `riscv_intc_chip` and
+`andes_intc_chip`:
+
+```c
+/* AFTER — pipeline-safe */
+static struct irq_chip riscv_intc_chip = {
+    .name       = "RISC-V INTC",
+    .irq_mask   = riscv_intc_irq_mask,
+    .irq_unmask = riscv_intc_irq_unmask,
+    .irq_eoi    = riscv_intc_irq_eoi,
+    .flags      = IRQCHIP_PIPELINE_SAFE,
+};
+```
+
+### 12.4 Files Changed
+
+| File | Change |
+|------|--------|
+| `arch/riscv/kernel/irq_pipeline.c` | `irq_enter()` → `irq_enter_rcu()`, `irq_exit()` → `irq_exit_rcu()` |
+| `drivers/irqchip/irq-riscv-intc.c` | Added `.flags = IRQCHIP_PIPELINE_SAFE` to `riscv_intc_chip` and `andes_intc_chip` |
+| `kernel-overlay/arch/riscv/kernel/irq_pipeline.c` | Overlay copy of above |
+| `kernel-overlay/drivers/irqchip/irq-riscv-intc.c` | Overlay copy of above |
+
+### 12.5 Why `irq_enter()` vs `irq_enter_rcu()` Matters
+
+| Function | RCU notification | When to use |
+|----------|-----------------|-------------|
+| `irq_enter()` | Calls `ct_irq_enter()` → tells RCU we entered a HW IRQ from idle/user | Real hardware interrupt from CPU idle or user mode |
+| `irq_enter_rcu()` | No RCU notification | Soft IRQ replay, deferred work, or any context where RCU is already active |
+
+Using `irq_enter()` in the inband-replay context (`do_inband_irq`) tricks RCU
+into thinking the CPU was idle when it wasn't.  On the next timer callback,
+RCU's dyntick state machine detects the inconsistency and stalls — causing the
+silent boot hang at the Bianbu splash.
+
+### 12.6 Rebuild and Flash
 
 ```bash
-# Rebuild kernel (only irq_pipeline.h changed — incremental build is fast)
+# Deploy overlay (copies fixed files to linux-k1 tree)
+bash scripts/build/00b-deploy-overlay.sh
+
+# Rebuild kernel
 bash scripts/build/03-build-kernel.sh
 
-# Build new SD card image
+# Build SD card image
 sudo bash scripts/flash/make-full-sdcard-img.sh \
   ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
   ~/work/build-k1 \
@@ -714,4 +828,6 @@ sudo dd if=~/work/evl-sdcard-k1-$(date +%Y%m%d).img of=/dev/sdX bs=4M status=pro
 # After boot, verify via serial or SSH:
 dmesg | grep -i evl
 # Expected: EVL: core started, ABI 19
+evl check
+# Expected: OK
 ```
