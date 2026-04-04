@@ -6,35 +6,36 @@
 #   1. Copying a SpacemiT/buildroot base image (which contains U-Boot SPL,
 #      partition table, and rootfs) verbatim.
 #   2. Mounting the FAT32 boot partition (p1) from that copy via a loop device.
-#   3. Replacing the kernel Image, DTBs, and extlinux.conf with the freshly
-#      built EVL-patched versions.
+#   3. Replacing the kernel Image, DTBs, extlinux.conf, and env_k1-x.txt with
+#      the freshly built EVL-patched versions.
+#   4. Injecting EVL kernel modules into the rootfs (ext4) partition.
+#   5. Patching the rootfs for EVL compatibility (disable Weston, set passwords,
+#      add serial/HDMI getty).
 #
 # The result is a drop-in replacement for buildroot-k1_rt-sdcard.img — flash it
 # to an SD card with dd/Balena Etcher/Rufus and it will boot on Jupiter.
 #
 # Usage:
-#   bash scripts/flash/make-full-sdcard-img.sh <base_image> [build_dir] [output_dir]
-
+#   sudo bash scripts/flash/make-full-sdcard-img.sh <base_image> [build_dir] [output_dir]
+#
 #   bash scripts/flash/make-full-sdcard-img.sh \
 #    ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
-#    ~/work/build-k1
-#    /tmp
-
-# sudo ./scripts/flash/make-full-sdcard-img.sh ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img ~/work/build-k1 ~/work
-
-
+#    ~/work/build-k1 \
+#    ~/work
+#
 # Arguments:
 #   base_image   Full SpacemiT buildroot SD card image to use as the base.
 #                Download from:
 #                  https://www.spacemit.com/community/document/info?lang=zh
 #                    &nodepath=software/SDK/buildroot/k1_buildroot/source.md
 #                Example: ~/Downloads/buildroot-k1_rt-sdcard.img
-#                also can build it out as based
+#                Also obtainable by running scripts/build/04-build-sdk.sh
 #
 #   build_dir    Kernel build output directory (default: ~/work/build-k1)
 #                Must contain:
 #                  arch/riscv/boot/Image
 #                  arch/riscv/boot/dts/spacemit/*.dtb
+#                  modules_install/lib/modules/<version>/
 #
 #   output_dir   Where to write the finished image (default: /tmp)
 #
@@ -42,14 +43,13 @@
 #   evl-sdcard-k1-YYYYMMDD.img  — complete bootable SD card image
 #
 # Dependencies:
-#   util-linux  (losetup, lsblk)     — usually pre-installed
-#   mount/umount                     — standard
-#   sudo                             — required for loop mount
+#   util-linux  (losetup, lsblk, blkid, tune2fs)
+#   mount/umount, parted, e2fsck, resize2fs
+#   sudo  — required for loop/mount operations
 #
 # Flash the output image to an SD card:
-#   # Linux:
-#   sudo dd if=evl-sdcard-k1-*.img of=/dev/sdX bs=4M status=progress conv=fsync
-#   # Windows: use Balena Etcher or Rufus (write as raw disk image, NOT partition)
+#   Linux:   sudo dd if=evl-sdcard-k1-*.img of=/dev/sdX bs=4M status=progress conv=fsync
+#   Windows: use Balena Etcher or Rufus (write as raw disk image, NOT partition)
 # =============================================================================
 set -euo pipefail
 
@@ -68,6 +68,7 @@ info() { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
 ok()   { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn() { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()  { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
+sep()  { echo -e "\033[1;36m────────────────────────────────────────────────────\033[0m"; }
 
 # ---------------------------------------------------------------------------
 # Arguments
@@ -85,10 +86,6 @@ if [[ -z "${BASE_IMAGE}" ]]; then
   echo "  build_dir   EVL kernel build output dir (default: ~/work/build-k1)"
   echo "  output_dir  Where to write the finished image (default: /tmp)"
   echo ""
-  echo "Download the base image from:"
-  echo "  https://www.spacemit.com/community/document/info?lang=zh"
-  echo "    &nodepath=software/SDK/buildroot/k1_buildroot/source.md"
-  echo ""
   exit 1
 fi
 
@@ -99,13 +96,51 @@ fi
 
 KERNEL_IMAGE="${BUILD_DIR}/arch/riscv/boot/Image"
 DTB_DIR="${BUILD_DIR}/arch/riscv/boot/dts/spacemit"
-EXTLINUX_CONF="${REPO_ROOT}/configs/extlinux.conf"
+EXTLINUX_TMPL="${REPO_ROOT}/configs/extlinux.conf"
+MODULES_DIR="${BUILD_DIR}/modules_install"
 
-[[ -f "${KERNEL_IMAGE}" ]] || die "Kernel image not found: ${KERNEL_IMAGE}
+[[ -f "${KERNEL_IMAGE}" ]]  || die "Kernel image not found: ${KERNEL_IMAGE}
        Run scripts/build/03-build-kernel.sh first."
-[[ -d "${DTB_DIR}" ]]      || die "DTB directory not found: ${DTB_DIR}"
-[[ -f "${EXTLINUX_CONF}" ]] || die "extlinux.conf not found: ${EXTLINUX_CONF}"
-[[ -d "${OUTPUT_DIR}" ]]   || die "Output directory not found: ${OUTPUT_DIR}"
+[[ -d "${DTB_DIR}" ]]       || die "DTB directory not found: ${DTB_DIR}"
+[[ -f "${EXTLINUX_TMPL}" ]] || die "extlinux.conf template not found: ${EXTLINUX_TMPL}"
+[[ -d "${OUTPUT_DIR}" ]]    || die "Output directory not found: ${OUTPUT_DIR}"
+
+# ---------------------------------------------------------------------------
+# Verify the kernel version string has no trailing '+' before we start
+# ---------------------------------------------------------------------------
+sep
+ACTUAL_VER=$(strings "${KERNEL_IMAGE}" 2>/dev/null | \
+             grep "^Linux version" | head -1 | awk '{print $3}')
+info "Kernel image version: ${ACTUAL_VER}"
+if [[ "${ACTUAL_VER}" == *"+"* ]]; then
+  die "Kernel version has trailing '+': ${ACTUAL_VER}
+       The Bianbu initramfs expects lib/modules/${ACTUAL_VER%+*} (no + suffix).
+       Rebuild the kernel with: touch \${KERNEL_DIR}/.scmversion
+       Then re-run: bash scripts/build/03-build-kernel.sh"
+fi
+ok "Kernel version '${ACTUAL_VER}' has no '+' suffix — good."
+
+# ---------------------------------------------------------------------------
+# Verify module version matches kernel version
+# ---------------------------------------------------------------------------
+EVL_MOD_VER=$(ls "${MODULES_DIR}/lib/modules/" 2>/dev/null | head -1 || true)
+if [[ -z "${EVL_MOD_VER}" ]]; then
+  die "No modules found in ${MODULES_DIR}/lib/modules/
+       Run scripts/build/03-build-kernel.sh to build and install modules first.
+       Without correct modules, initramfs will fail to load kernel drivers
+       and the board will hang."
+fi
+if [[ "${EVL_MOD_VER}" != "${ACTUAL_VER}" ]]; then
+  die "MODULE VERSION MISMATCH:
+       Kernel image reports : ${ACTUAL_VER}
+       Modules directory    : ${EVL_MOD_VER}
+       The initramfs will look for lib/modules/${ACTUAL_VER} and FAIL.
+       Rebuild the kernel and modules:
+         bash scripts/build/03-build-kernel.sh
+       Then re-run this script."
+fi
+ok "Module version '${EVL_MOD_VER}' matches kernel version — good."
+sep
 
 IMG_NAME="evl-sdcard-k1-$(date +%Y%m%d).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
@@ -113,6 +148,7 @@ IMG="${OUTPUT_DIR}/${IMG_NAME}"
 info "Base image : ${BASE_IMAGE} ($(du -sh "${BASE_IMAGE}" | cut -f1))"
 info "Build dir  : ${BUILD_DIR}"
 info "Kernel     : ${KERNEL_IMAGE} ($(du -sh "${KERNEL_IMAGE}" | cut -f1))"
+info "Modules    : ${MODULES_DIR}/lib/modules/${EVL_MOD_VER}"
 info "Output     : ${IMG}"
 echo ""
 
@@ -145,16 +181,17 @@ sudo blkid "${LOOP}"p* 2>/dev/null || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 2c: Auto-detect the FAT32 boot partition (PARTLABEL=bootfs or vfat)
+# Step 2c: Auto-detect the FAT32 boot partition and ext4 rootfs partition.
 #          SpacemiT/Bianbu images have the layout:
 #            p1 fsbl  (raw)    p2 env (raw)  p3 opensbi (raw)  p4 uboot (raw)
 #            p5 bootfs (FAT32) p6 rootfs (ext4)
 #          buildroot images have:
 #            p1 boot (FAT32)   p2 rootfs (ext4)
-#          We auto-detect by scanning for the vfat partition.
+#          We auto-detect by scanning for the vfat/ext4 partition.
 # ---------------------------------------------------------------------------
 BOOT_PART=""
 ROOTFS_PART=""
+ROOTFS_UUID=""
 
 for part in "${LOOP}"p*; do
   [[ -b "${part}" ]] || continue
@@ -210,7 +247,7 @@ sudo mount "${BOOT_PART}" "${MOUNT_POINT}"
 ok "Boot partition mounted."
 
 # ---------------------------------------------------------------------------
-# Step 4: Read and display original extlinux.conf from base image
+# Step 4: Read and display original extlinux.conf from base image.
 #         Extract root= device and initrd path so we can preserve them.
 # ---------------------------------------------------------------------------
 ORIG_EXTLINUX=""
@@ -228,10 +265,10 @@ ORIG_INITRD=""
 ORIG_FDT=""
 
 if [[ -n "${ORIG_EXTLINUX}" ]]; then
-  info "─────────────────────────────────────────────────────"
-  info "Original extlinux.conf from base image:"
+  sep
+  info "Original extlinux.conf from base image (${ORIG_EXTLINUX}):"
   cat "${ORIG_EXTLINUX}"
-  info "─────────────────────────────────────────────────────"
+  sep
   echo ""
 
   # Extract root= value (take the first append line's root=...)
@@ -251,7 +288,8 @@ if [[ -n "${ORIG_EXTLINUX}" ]]; then
   [[ -n "${ORIG_FDT}" ]]    && info "Detected fdt         : ${ORIG_FDT}"
 else
   warn "No extlinux.conf found in base image boot partition."
-  warn "Will use configs/extlinux.conf from repo unchanged."
+  warn "Will generate extlinux.conf from template with default root=/dev/mmcblk0p2."
+  warn "This may need to be corrected if the rootfs UUID differs."
 fi
 echo ""
 
@@ -260,7 +298,7 @@ ls -lh "${MOUNT_POINT}/" 2>/dev/null | head -30 || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 5: Inject EVL kernel
+# Step 5: Inject EVL kernel Image
 # ---------------------------------------------------------------------------
 info "Copying EVL kernel Image ($(du -sh "${KERNEL_IMAGE}" | cut -f1)) ..."
 sudo cp "${KERNEL_IMAGE}" "${MOUNT_POINT}/Image"
@@ -302,41 +340,121 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7: Patch env_k1-x.txt for correct plain Image boot
+# Step 7: Generate and write extlinux.conf to bootfs
+#
+# We take configs/extlinux.conf from the repo as a template and:
+#   a) Replace ROOT_PLACEHOLDER with the actual root= device from the base image.
+#   b) Uncomment the initrd line if the base image has an initramfs.
+#   c) Write to all known extlinux.conf locations in the bootfs.
+#
+# This is critical: without this step the board boots with the original
+# Bianbu extlinux.conf which includes "quiet splash" and Plymouth, causing
+# the screen to freeze at the Bianbu logo.
+# ---------------------------------------------------------------------------
+sep
+info "Generating EVL extlinux.conf from template ..."
+
+# Determine the effective root= device for our image
+if [[ -n "${ORIG_ROOT}" ]]; then
+  EFFECTIVE_ROOT="${ORIG_ROOT}"
+  info "Using root device from base image: ${EFFECTIVE_ROOT}"
+elif [[ -n "${ROOTFS_UUID}" ]]; then
+  EFFECTIVE_ROOT="UUID=${ROOTFS_UUID}"
+  info "Using detected rootfs UUID: ${EFFECTIVE_ROOT}"
+else
+  EFFECTIVE_ROOT="/dev/mmcblk0p2"
+  warn "Could not detect root device — falling back to: ${EFFECTIVE_ROOT}"
+  warn "Edit /extlinux/extlinux.conf on the SD card if this is wrong."
+fi
+
+# Build the final extlinux.conf by patching the template
+TMP_EXTLINUX=$(mktemp /tmp/extlinux-XXXXXX.conf)
+cp "${EXTLINUX_TMPL}" "${TMP_EXTLINUX}"
+
+# Replace ROOT_PLACEHOLDER with the actual root= device
+sed -i "s|ROOT_PLACEHOLDER|${EFFECTIVE_ROOT}|g" "${TMP_EXTLINUX}"
+
+# If base image has an initrd, uncomment the initrd line and set its path.
+# If not (buildroot image), ensure the initrd line stays commented out.
+if [[ -n "${ORIG_INITRD}" ]]; then
+  # Uncomment any commented initrd line and set the correct path
+  if grep -qE '^\s*#\s*initrd' "${TMP_EXTLINUX}"; then
+    sed -i "s|^\s*#\s*initrd.*|    initrd ${ORIG_INITRD}|" "${TMP_EXTLINUX}"
+    info "Enabled initrd line: ${ORIG_INITRD}"
+  elif grep -qiE '^\s*initrd' "${TMP_EXTLINUX}"; then
+    sed -i "s|^\s*initrd.*|    initrd ${ORIG_INITRD}|i" "${TMP_EXTLINUX}"
+    info "Updated initrd line: ${ORIG_INITRD}"
+  else
+    # Append initrd after the fdt line
+    sed -i "/^\s*fdt\b/a\\    initrd ${ORIG_INITRD}" "${TMP_EXTLINUX}"
+    info "Appended initrd line: ${ORIG_INITRD}"
+  fi
+else
+  info "No initrd in base image — initrd line stays commented out."
+fi
+
+sep
+info "Final extlinux.conf to be written:"
+cat "${TMP_EXTLINUX}"
+sep
+echo ""
+
+# Write to all standard extlinux.conf locations in the bootfs
+EXTLINUX_WRITTEN=0
+for ext_dir in \
+    "${MOUNT_POINT}/extlinux" \
+    "${MOUNT_POINT}/boot/extlinux"; do
+  sudo mkdir -p "${ext_dir}"
+  sudo cp "${TMP_EXTLINUX}" "${ext_dir}/extlinux.conf"
+  ok "Written: ${ext_dir}/extlinux.conf"
+  EXTLINUX_WRITTEN=$(( EXTLINUX_WRITTEN + 1 ))
+done
+
+rm -f "${TMP_EXTLINUX}"
+ok "extlinux.conf written to ${EXTLINUX_WRITTEN} location(s) in bootfs."
+echo ""
+
+# ---------------------------------------------------------------------------
+# Step 8: Patch env_k1-x.txt for correct plain Image boot
 #
 # The Bianbu U-Boot environment text file (env_k1-x.txt) is loaded from the
 # FAT32 bootfs partition and merged into the running U-Boot environment via
 # "env import -t".  Variables here override the compiled-in defaults stored
 # in the env partition (p2).
 #
-# What we change and why:
+# What we ensure:
 #
 # knl_name=Image
-#   The p2 env default is knl_name=Image.itb (FIT image).  We replace the
-#   FIT image with a plain uncompressed Image, so we must override this.
-#   (The original env_k1-x.txt already sets knl_name=Image — we keep it.)
+#   U-Boot default is knl_name=Image.itb (FIT image).  We use a plain Image.
 #
-# kernel_addr_r=0x200000  (KEEP the original value)
-#   The original Bianbu env uses 0x200000.  Our 36MB EVL kernel loaded at
-#   0x200000 ends at ~0x2600000, well below the splash BMP at 0x11000000.
-#   No overlap.  We keep 0x200000 to match the working original image.
-#   NOTE: U-Boot's start_kernel uses "booti" for plain Image (not bootm),
-#   so the load address just needs to be in free RAM — 0x200000 is fine.
+# kernel_addr_r=0x200000
+#   Original Bianbu value. Our 36MB EVL kernel at 0x200000 ends at ~0x2600000,
+#   well below the splash BMP at 0x11000000. No overlap.
 #
-# console=tty0 console=ttyS0,115200
-#   console=tty0 routes kernel messages to the first virtual console
-#   (framebuffer), making boot log visible on HDMI even before the DRM
-#   driver fully initialises.  This is essential for diagnosing early
-#   boot panics without a serial cable.
-#   console=ttyS0,115200 is kept as a secondary console for serial access.
+# commonargs  (CRITICAL)
+#   We completely replace commonargs with a version that:
+#     - Removes: quiet splash plymouth.* rd.plymouth=* MESA_LOADER* splashimage
+#     - Adds:    nosplash plymouth.enable=0 rd.plymouth=0 loglevel=7
+#                initcall_debug earlyprintk clk_ignore_unused swiotlb=65536
+#   This is the key fix for the Bianbu-logo boot-hang — without this,
+#   Plymouth starts and holds the screen indefinitely.
+#
+# set_console
+#   Override U-Boot's set_console so both HDMI (tty0) and serial (ttyS0)
+#   show the kernel boot log.
+#
+# NOTE: lines without "=" in env_k1-x.txt are silently ignored by
+# "env import -t" — always use key=value format.
 # ---------------------------------------------------------------------------
 ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
 if [[ -f "${ENV_FILE}" ]]; then
+  sep
   info "Original env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
+  sep
   echo ""
 
-  # Ensure knl_name=Image (not Image.itb)
+  # 1. Ensure knl_name=Image (not Image.itb)
   if sudo grep -q 'knl_name=Image\.itb' "${ENV_FILE}" 2>/dev/null; then
     sudo sed -i 's|knl_name=Image\.itb|knl_name=Image|g' "${ENV_FILE}"
     ok "Fixed knl_name: Image.itb → Image"
@@ -344,8 +462,7 @@ if [[ -f "${ENV_FILE}" ]]; then
     ok "knl_name already set to Image — no change needed"
   fi
 
-  # Ensure kernel_addr_r=0x200000 (original value — do NOT change to 0x20000000)
-  # Our 36MB kernel at 0x200000 ends at ~0x2600000, safely below splash at 0x11000000.
+  # 2. Ensure kernel_addr_r=0x200000 (original value — do NOT change to 0x20000000)
   if ! sudo grep -q 'kernel_addr_r' "${ENV_FILE}" 2>/dev/null; then
     echo "kernel_addr_r=0x200000" | sudo tee -a "${ENV_FILE}" > /dev/null
     ok "Added kernel_addr_r=0x200000"
@@ -356,57 +473,177 @@ if [[ -f "${ENV_FILE}" ]]; then
     ok "kernel_addr_r already set — no change needed"
   fi
 
-  # Add console=tty0 for HDMI framebuffer boot log (essential for diagnosing
-  # early panics without a serial cable).
-  if ! sudo grep -q 'console=tty0' "${ENV_FILE}" 2>/dev/null; then
-    sudo sed -i 's|console=ttyS0|console=tty0 console=ttyS0|g' "${ENV_FILE}"
-    ok "Added console=tty0 to env_k1-x.txt (HDMI boot log)"
+  # 3. Completely replace (or add) commonargs — remove ALL splash/plymouth/quiet
+  #    The new value is a complete U-Boot setenv command.
+  CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk loglevel=7 initcall_debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
+  if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
+    # Replace existing commonargs line entirely
+    sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
+    ok "Replaced commonargs: removed quiet/splash/plymouth, added debug verbosity"
   else
-    ok "console=tty0 already present — no change needed"
+    printf '%s\n' "${CLEAN_COMMONARGS}" | sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added commonargs to env_k1-x.txt (no splash, full debug verbosity)"
   fi
 
-  # Add debug/nosplash kernel parameters so kernel messages are visible on
-  # HDMI and serial even during early boot (before DRM/fbcon is up).
-  # These are appended as a separate line (U-Boot "env import -t" merges all
-  # lines into the running env). They are idempotent — won't be added twice.
-  if ! sudo grep -q 'nosplash' "${ENV_FILE}" 2>/dev/null; then
-    printf 'debug ignore_loglevel nosplash no_console_suspend\n' | \
-      sudo tee -a "${ENV_FILE}" > /dev/null
-    ok "Added debug/nosplash params to env_k1-x.txt (verbose boot output)"
+  # 4. Strip splash/quiet/plymouth from any OTHER bootargs-related lines
+  #    Some images have bootargs= or extraargs= that also contain splash
+  for key_pattern in 'bootargs=' 'extraargs=' 'othbootargs='; do
+    if sudo grep -q "^${key_pattern}" "${ENV_FILE}" 2>/dev/null; then
+      sudo sed -i \
+        -e "s|\bquiet\b||g" \
+        -e "s|\bsplash\b||g" \
+        -e "s|\bnosplash\b||g" \
+        -e "s|plymouth\.[^ ]*||g" \
+        -e "s|rd\.plymouth=[^ ]*||g" \
+        -e "s|  *| |g" \
+        "${ENV_FILE}"
+      ok "Stripped splash/quiet/plymouth from ${key_pattern}* lines"
+    fi
+  done
+  # Re-add nosplash and plymouth.enable=0 to commonargs in case sed left it clean
+  # (the replacement above is idempotent but make sure our values are present)
+
+  # 5. Add set_console for HDMI + serial boot output.
+  #    "console=tty0" = active virtual console (framebuffer/HDMI).
+  #    "console=ttyS0,115200" = serial debug cable.
+  SET_CONSOLE='set_console=setenv bootargs ${bootargs} console=tty0 console=ttyS0,115200'
+  if ! sudo grep -q '^set_console=' "${ENV_FILE}" 2>/dev/null; then
+    printf '%s\n' "${SET_CONSOLE}" | sudo tee -a "${ENV_FILE}" > /dev/null
+    ok "Added set_console to env_k1-x.txt (HDMI tty0 + serial ttyS0)"
   else
-    ok "nosplash already present in env_k1-x.txt — no change needed"
+    # Replace existing set_console to ensure tty0 is present
+    sudo sed -i "s|^set_console=.*|${SET_CONSOLE}|" "${ENV_FILE}"
+    ok "Updated set_console in env_k1-x.txt"
   fi
 
+  sep
   info "Updated env_k1-x.txt:"
   sudo cat "${ENV_FILE}"
+  sep
   echo ""
 else
   warn "env_k1-x.txt not found in bootfs — cannot patch boot parameters."
-  warn "HDMI output may not be visible; use serial UART to debug."
+  warn "The board may boot with splash/quiet and hang at the Bianbu logo."
+  warn "Use a serial cable (UART0) to diagnose the boot if this happens."
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7b: initramfs — Bianbu uses initramfs-generic.img for rootfs mounting.
-#          We do NOT replace it; the existing one from the base image is kept.
-#          Note: if the EVL kernel has different module versions from the
-#          Bianbu initramfs, rootfs pivot may fail — see docs/porting-notes.md
+# Step 8b: Patch initramfs-generic.img — disable Plymouth premount hook
+#
+# The Bianbu initramfs has Plymouth baked in as a premount hook at:
+#   scripts/plymouth                    (Ubuntu initramfs-tools style)
+#   scripts/init-premount/plymouth      (alternative location)
+#
+# This hook starts the splash screen BEFORE the kernel processes cmdline
+# options like plymouth.enable=0 — so cmdline suppression is too late.
+# The only reliable fix is to replace the hook with a no-op inside the cpio.
+#
+# The initramfs is a gzip-compressed cpio archive.  We:
+#   1. Extract it to a temp dir
+#   2. Replace Plymouth hook scripts with no-ops (#!/bin/sh; exit 0)
+#   3. Repack as gzip+cpio
+#   4. Overwrite initramfs-generic.img in the bootfs
 # ---------------------------------------------------------------------------
-if [[ -f "${MOUNT_POINT}/initramfs-generic.img" ]]; then
-  INITRD_SIZE=$(du -sh "${MOUNT_POINT}/initramfs-generic.img" | cut -f1)
-  ok "initramfs-generic.img preserved from base image (${INITRD_SIZE}) — NOT replaced."
+INITRD_IMG="${MOUNT_POINT}/initramfs-generic.img"
+if [[ -f "${INITRD_IMG}" ]]; then
+  INITRD_SIZE=$(du -sh "${INITRD_IMG}" | cut -f1)
+  info "Patching initramfs-generic.img (${INITRD_SIZE}) to disable Plymouth ..."
+
+  INITRD_WORK=$(mktemp -d /tmp/evl-initrd-XXXXXX)
+  INITRD_PATCHED=$(mktemp /tmp/evl-initrd-patched-XXXXXX.img)
+  INITRD_PATCH_OK=0
+
+  # Detect compression format
+  INITRD_FMT=$(file "${INITRD_IMG}" | grep -oE 'gzip|XZ|lz4|bzip2|LZMA|Zstandard' | head -1 || true)
+  info "  initramfs compression: ${INITRD_FMT:-unknown — assuming gzip}"
+
+  # Extract the cpio archive into INITRD_WORK
+  (
+    cd "${INITRD_WORK}"
+    case "${INITRD_FMT}" in
+      XZ|LZMA)   sudo sh -c "xzcat  '${INITRD_IMG}' | cpio -id --quiet 2>/dev/null" ;;
+      lz4)       sudo sh -c "lz4cat '${INITRD_IMG}' | cpio -id --quiet 2>/dev/null" ;;
+      bzip2)     sudo sh -c "bzcat  '${INITRD_IMG}' | cpio -id --quiet 2>/dev/null" ;;
+      Zstandard) sudo sh -c "zstdcat '${INITRD_IMG}'| cpio -id --quiet 2>/dev/null" ;;
+      *)         sudo sh -c "gunzip -c '${INITRD_IMG}' | cpio -id --quiet 2>/dev/null" ;;
+    esac
+  ) && INITRD_PATCH_OK=1 || warn "  initramfs extraction failed — keeping original."
+
+  if [[ "${INITRD_PATCH_OK}" -eq 1 ]]; then
+    PLYMOUTH_DISABLED=0
+
+    # Replace Plymouth hook scripts with no-ops
+    for hook_path in \
+        "${INITRD_WORK}/scripts/plymouth" \
+        "${INITRD_WORK}/scripts/init-premount/plymouth" \
+        "${INITRD_WORK}/scripts/init-bottom/plymouth" \
+        "${INITRD_WORK}/usr/share/initramfs-tools/scripts/plymouth"; do
+      if [[ -f "${hook_path}" ]]; then
+        info "  Disabling Plymouth hook: ${hook_path#${INITRD_WORK}/}"
+        sudo bash -c "printf '#!/bin/sh\n# Plymouth disabled by EVL image builder\n[ \"\${1:-}\" = prereqs ] && echo \"\" && exit 0\nexit 0\n' > '${hook_path}'"
+        sudo chmod +x "${hook_path}"
+        PLYMOUTH_DISABLED=$(( PLYMOUTH_DISABLED + 1 ))
+      fi
+    done
+
+    # Replace Plymouth binaries with stubs (suppress any direct exec)
+    for plym_bin in \
+        "${INITRD_WORK}/bin/plymouth" \
+        "${INITRD_WORK}/usr/bin/plymouth" \
+        "${INITRD_WORK}/sbin/plymouthd" \
+        "${INITRD_WORK}/usr/sbin/plymouthd"; do
+      if [[ -f "${plym_bin}" ]] && [[ ! -L "${plym_bin}" ]]; then
+        info "  Replacing Plymouth binary with stub: ${plym_bin#${INITRD_WORK}/}"
+        sudo bash -c "printf '#!/bin/sh\nexit 0\n' > '${plym_bin}'"
+        sudo chmod +x "${plym_bin}"
+        PLYMOUTH_DISABLED=$(( PLYMOUTH_DISABLED + 1 ))
+      fi
+    done
+
+    if [[ "${PLYMOUTH_DISABLED}" -gt 0 ]]; then
+      ok "  ${PLYMOUTH_DISABLED} Plymouth component(s) disabled inside initramfs."
+    else
+      warn "  No Plymouth hooks/binaries found inside initramfs."
+      info "  Top-level initramfs dirs: $(ls "${INITRD_WORK}/" 2>/dev/null | tr '\n' ' ')"
+      if [[ -d "${INITRD_WORK}/scripts" ]]; then
+        info "  scripts/ contents: $(ls "${INITRD_WORK}/scripts/" 2>/dev/null | tr '\n' ' ')"
+      fi
+    fi
+
+    # Repack the cpio archive as gzip (always use gzip for widest U-Boot compat)
+    info "  Repacking initramfs (gzip+cpio) ..."
+    (
+      cd "${INITRD_WORK}"
+      sudo find . | sudo cpio -o -H newc --quiet 2>/dev/null | gzip -9 > "${INITRD_PATCHED}"
+    ) && ok "  Repacked: $(du -sh "${INITRD_PATCHED}" | cut -f1)" \
+      || { warn "  Repack failed — keeping original initramfs."; INITRD_PATCH_OK=0; }
+  fi
+
+  if [[ "${INITRD_PATCH_OK}" -eq 1 && -s "${INITRD_PATCHED}" ]]; then
+    sudo cp "${INITRD_PATCHED}" "${INITRD_IMG}"
+    ok "initramfs-generic.img replaced with Plymouth-disabled version ($(du -sh "${INITRD_IMG}" | cut -f1))."
+  else
+    ok "initramfs-generic.img kept from base image (${INITRD_SIZE}) — Plymouth patch skipped."
+  fi
+
+  # Cleanup temp work tree and patched image file
+  sudo rm -rf "${INITRD_WORK}" 2>/dev/null || true
+  rm -f "${INITRD_PATCHED}" 2>/dev/null || true
+
 else
   warn "initramfs-generic.img not found in bootfs — Bianbu rootfs mount may fail."
+  warn "Check the bootfs partition contents printed above."
 fi
 
 # ---------------------------------------------------------------------------
-# Step 8: Show final boot partition contents
+# Step 8c: Show final boot partition contents
 # ---------------------------------------------------------------------------
 info "Final boot partition contents:"
 ls -lh "${MOUNT_POINT}/" 2>/dev/null
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 9: Sync and unmount
+# Step 9: Sync and unmount bootfs
 # ---------------------------------------------------------------------------
 info "Syncing bootfs ..."
 sync
@@ -415,191 +652,182 @@ rmdir "${MOUNT_POINT}"
 ok "Bootfs unmounted."
 
 # ---------------------------------------------------------------------------
-# Step 10: Inject EVL kernel modules into rootfs (ext4 partition)
+# Step 10: Grow image and inject EVL kernel modules into rootfs (ext4)
 #
 # The Bianbu initramfs loads modules from lib/modules/<kernel-version>/
-# on the rootfs partition.  Our EVL kernel must have the same version string
-# as the modules directory name, otherwise module loading fails silently and
-# the boot hangs after initramfs pivot_root.
+# on the rootfs partition.  Our EVL kernel must have exactly the same version
+# string as the modules directory, otherwise module loading fails and the
+# boot hangs.
 #
-# IMPORTANT: The EVL kernel MUST be built with CONFIG_LOCALVERSION=""
-# (set in configs/k1_evl_defconfig) so its version is "6.6.63" not "6.6.63+".
+# The version match was already verified at the top of this script.
 # ---------------------------------------------------------------------------
-MODULES_DIR="${BUILD_DIR}/modules_install"
-
 if [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
-  if [[ -d "${MODULES_DIR}" ]]; then
 
-    # -------------------------------------------------------------------------
-    # Pre-flight: check how much space the new modules need vs what's available
-    # in the rootfs partition.  If there isn't enough room, grow the image file
-    # and resize the ext4 filesystem before mounting.
-    # -------------------------------------------------------------------------
-    EVL_MOD_VER=$(ls "${MODULES_DIR}/lib/modules/" 2>/dev/null | head -1)
-    if [[ -n "${EVL_MOD_VER}" ]]; then
-      NEW_MOD_KB=$(du -sk "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" | cut -f1)
-      # Get current free space on the rootfs partition (without mounting)
-      ROOTFS_FREE_KB=$(sudo tune2fs -l "${ROOTFS_PART}" 2>/dev/null \
-        | awk '/Free blocks/{fb=$3} /Block size/{bs=$3} END{printf "%d", fb*bs/1024}')
+  # -------------------------------------------------------------------------
+  # Pre-flight: check how much space the new modules need vs what's available
+  # in the rootfs partition.  If there isn't enough room, grow the image file
+  # and resize the ext4 filesystem before mounting.
+  # -------------------------------------------------------------------------
+  NEW_MOD_KB=$(du -sk "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" | cut -f1)
+  ROOTFS_FREE_KB=$(sudo tune2fs -l "${ROOTFS_PART}" 2>/dev/null \
+    | awk '/Free blocks/{fb=$3} /Block size/{bs=$3} END{printf "%d", fb*bs/1024}')
 
-      info "New modules size : $((NEW_MOD_KB / 1024)) MB"
-      info "Rootfs free space: $((ROOTFS_FREE_KB / 1024)) MB"
+  info "New modules size : $((NEW_MOD_KB / 1024)) MB"
+  info "Rootfs free space: $((ROOTFS_FREE_KB / 1024)) MB"
 
-      # We need at least NEW_MOD_KB + 64MB headroom
-      NEEDED_KB=$(( NEW_MOD_KB + 65536 ))
-      if [[ "${ROOTFS_FREE_KB}" -lt "${NEEDED_KB}" ]]; then
-        GROW_MB=$(( (NEEDED_KB - ROOTFS_FREE_KB) / 1024 + 256 ))
-        warn "Rootfs partition too small — growing image by ${GROW_MB} MB ..."
+  # We need at least NEW_MOD_KB + 64MB headroom
+  NEEDED_KB=$(( NEW_MOD_KB + 65536 ))
+  if [[ "${ROOTFS_FREE_KB}" -lt "${NEEDED_KB}" ]]; then
+    GROW_MB=$(( (NEEDED_KB - ROOTFS_FREE_KB) / 1024 + 256 ))
+    warn "Rootfs partition too small — growing image by ${GROW_MB} MB ..."
 
-        # 1. Detach loop device so we can resize the image file
-        sudo losetup -d "${LOOP}" 2>/dev/null || true
-        trap - EXIT
+    # 1. Detach loop device so we can resize the image file
+    sudo losetup -d "${LOOP}" 2>/dev/null || true
+    trap - EXIT
 
-        # 2. Extend the image file
-        dd if=/dev/zero bs=1M count="${GROW_MB}" >> "${IMG}" 2>/dev/null
-        ok "Image file extended by ${GROW_MB} MB."
+    # 2. Extend the image file
+    dd if=/dev/zero bs=1M count="${GROW_MB}" >> "${IMG}" 2>/dev/null
+    ok "Image file extended by ${GROW_MB} MB."
 
-        # 3. Re-attach loop device
-        LOOP=$(sudo losetup -Pf --show "${IMG}")
-        LOOP_REF="${LOOP}"
-        trap cleanup EXIT
-        sleep 1
+    # 3. Re-attach loop device
+    LOOP=$(sudo losetup -Pf --show "${IMG}")
+    LOOP_REF="${LOOP}"
+    trap cleanup EXIT
+    sleep 1
 
-        # Re-resolve partition device nodes after re-attach
-        ROOTFS_PART="${LOOP}p$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')"
-        info "Re-attached loop device: ${LOOP}, rootfs: ${ROOTFS_PART}"
+    # Re-resolve partition device nodes after re-attach
+    ROOTFS_PART="${LOOP}p$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')"
+    info "Re-attached loop device: ${LOOP}, rootfs: ${ROOTFS_PART}"
 
-        # 4. Grow the partition table entry to fill the new space
-        #    parted resizepart <partnum> 100%
-        ROOTFS_PARTNUM=$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')
-        sudo parted -s "${LOOP}" resizepart "${ROOTFS_PARTNUM}" 100% 2>/dev/null \
-          && ok "Partition ${ROOTFS_PARTNUM} extended to fill new space." \
-          || warn "parted resizepart failed — trying without (resize2fs may still work)."
-        sleep 1
+    # 4. Grow the partition table entry to fill the new space
+    ROOTFS_PARTNUM=$(echo "${ROOTFS_PART}" | grep -oE '[0-9]+$')
+    sudo parted -s "${LOOP}" resizepart "${ROOTFS_PARTNUM}" 100% 2>/dev/null \
+      && ok "Partition ${ROOTFS_PARTNUM} extended to fill new space." \
+      || warn "parted resizepart failed — resize2fs may still work."
+    sleep 1
 
-        # 5. Check and resize the ext4 filesystem
-        sudo e2fsck -f -y "${ROOTFS_PART}" 2>/dev/null || true
-        sudo resize2fs "${ROOTFS_PART}" 2>/dev/null \
-          && ok "ext4 filesystem resized to fill partition." \
-          || warn "resize2fs failed — proceeding anyway (may still have enough space)."
-      else
-        info "Rootfs has sufficient free space — no resize needed."
-      fi
-    fi
-
-    ROOTFS_MOUNT=$(mktemp -d /tmp/evl-rootfs-XXXXXX)
-
-    info "Mounting rootfs partition ${ROOTFS_PART} ..."
-    sudo mount "${ROOTFS_PART}" "${ROOTFS_MOUNT}"
-
-    # Detect the kernel version the modules were installed under
-    EVL_MOD_VER=$(ls "${MODULES_DIR}/lib/modules/" 2>/dev/null | head -1)
-    if [[ -n "${EVL_MOD_VER}" ]]; then
-      info "Injecting EVL modules for kernel ${EVL_MOD_VER} into rootfs ..."
-
-      # Remove existing modules directory for this version to free space first.
-      if [[ -d "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}" ]]; then
-        sudo rm -rf "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}"
-        info "  Removed old modules/${EVL_MOD_VER} to free space."
-      fi
-
-      sudo mkdir -p "${ROOTFS_MOUNT}/lib/modules"
-      sudo cp -a "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" \
-                 "${ROOTFS_MOUNT}/lib/modules/"
-      ok "EVL modules (${EVL_MOD_VER}) injected into rootfs."
-    else
-      warn "No modules found in ${MODULES_DIR}/lib/modules/ — skipping rootfs module injection."
-      warn "Run: make modules_install INSTALL_MOD_PATH=\${BUILD_DIR}/modules_install"
-    fi
-
-    # -------------------------------------------------------------------------
-    # Step 10b: Rootfs post-processing for EVL compatibility
-    #
-    # The Bianbu buildroot rootfs needs a few tweaks to work with our EVL
-    # kernel:
-    #
-    # 1. Disable Weston autostart
-    #    Weston uses MESA_LOADER_DRIVER_OVERRIDE=pvr (PowerVR GPU).  The
-    #    PowerVR kernel driver is not available in our EVL kernel build.
-    #    Weston crashes immediately on start, causing a display crash loop.
-    #    We disable it by removing the execute bit from S30weston-setup.sh.
-    #    Re-enable later with: chmod +x /etc/init.d/S30weston-setup.sh
-    #
-    # 2. Set root password to a known value
-    #    The original Bianbu image has an unknown root password.  We set it
-    #    to "root" so SSH access works for first-boot diagnosis.
-    #    Change it after first login: passwd root
-    #
-    # 3. Add ttyS0 getty for serial console access
-    #    Adds a login prompt on UART0 (115200 baud) so a serial cable can
-    #    be used for diagnosis if SSH is not available.
-    # -------------------------------------------------------------------------
-    info "Applying rootfs post-processing for EVL compatibility ..."
-
-    # 1. Disable Weston (PowerVR GPU not available with EVL kernel)
-    WESTON_INIT="${ROOTFS_MOUNT}/etc/init.d/S30weston-setup.sh"
-    if [[ -f "${WESTON_INIT}" ]]; then
-      sudo chmod -x "${WESTON_INIT}"
-      ok "Weston autostart disabled (S30weston-setup.sh — chmod -x)."
-      ok "  Re-enable after confirming EVL works: chmod +x /etc/init.d/S30weston-setup.sh"
-    else
-      info "S30weston-setup.sh not found — skipping Weston disable."
-    fi
-
-    # 2. Set root password to "root" for first-boot SSH access
-    SHADOW_FILE="${ROOTFS_MOUNT}/etc/shadow"
-    if [[ -f "${SHADOW_FILE}" ]]; then
-      # Generate SHA-512 hash for "root" using Python (available on most hosts)
-      ROOT_HASH=$(python3 -c \
-        "import crypt; print(crypt.crypt('root', crypt.mksalt(crypt.METHOD_SHA512)))" \
-        2>/dev/null || true)
-      if [[ -n "${ROOT_HASH}" ]]; then
-        sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${SHADOW_FILE}"
-        ok "Root password set to 'root' for first-boot SSH access."
-        ok "  Change after login: passwd root"
-      else
-        warn "Could not generate password hash (python3 not available) — root password unchanged."
-      fi
-    else
-      warn "/etc/shadow not found in rootfs — cannot set root password."
-    fi
-
-    # 3. Add ttyS0 getty for serial console access
-    INITTAB="${ROOTFS_MOUNT}/etc/inittab"
-    if [[ -f "${INITTAB}" ]]; then
-      if ! sudo grep -q 'ttyS0' "${INITTAB}" 2>/dev/null; then
-        echo "ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100" | \
-          sudo tee -a "${INITTAB}" > /dev/null
-        ok "Added ttyS0 getty to /etc/inittab (serial console at 115200 baud)."
-      else
-        ok "ttyS0 getty already present in /etc/inittab."
-      fi
-
-      # 4. Add tty1 getty for HDMI framebuffer login prompt
-      #    Without this, the HDMI screen shows a blinking cursor but no login.
-      #    BusyBox getty on tty1 provides the HDMI login prompt.
-      if ! sudo grep -q 'tty1' "${INITTAB}" 2>/dev/null; then
-        echo "tty1::respawn:/sbin/getty 38400 tty1" | \
-          sudo tee -a "${INITTAB}" > /dev/null
-        ok "Added tty1 getty to /etc/inittab (HDMI login prompt)."
-      else
-        ok "tty1 getty already present in /etc/inittab."
-      fi
-    else
-      warn "/etc/inittab not found in rootfs — cannot add ttyS0/tty1 getty."
-    fi
-
-    sync
-    sudo umount "${ROOTFS_MOUNT}"
-    rmdir "${ROOTFS_MOUNT}"
-    ok "Rootfs unmounted."
+    # 5. Check and resize the ext4 filesystem
+    sudo e2fsck -f -y "${ROOTFS_PART}" 2>/dev/null || true
+    sudo resize2fs "${ROOTFS_PART}" 2>/dev/null \
+      && ok "ext4 filesystem resized to fill partition." \
+      || warn "resize2fs failed — proceeding anyway (may still have enough space)."
   else
-    warn "Modules directory not found: ${MODULES_DIR}"
-    warn "Run scripts/build/03-build-kernel.sh to build and install modules first."
-    warn "Without correct modules, initramfs may fail to load kernel drivers."
+    info "Rootfs has sufficient free space — no resize needed."
   fi
+
+  ROOTFS_MOUNT=$(mktemp -d /tmp/evl-rootfs-XXXXXX)
+
+  info "Mounting rootfs partition ${ROOTFS_PART} ..."
+  sudo mount "${ROOTFS_PART}" "${ROOTFS_MOUNT}"
+
+  # -------------------------------------------------------------------------
+  # Inject EVL modules
+  # -------------------------------------------------------------------------
+  info "Injecting EVL modules for kernel ${EVL_MOD_VER} into rootfs ..."
+
+  # Remove existing modules directory for this version to free space first.
+  if [[ -d "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}" ]]; then
+    sudo rm -rf "${ROOTFS_MOUNT}/lib/modules/${EVL_MOD_VER}"
+    info "  Removed old modules/${EVL_MOD_VER} to free space."
+  fi
+
+  sudo mkdir -p "${ROOTFS_MOUNT}/lib/modules"
+  sudo cp -a "${MODULES_DIR}/lib/modules/${EVL_MOD_VER}" \
+             "${ROOTFS_MOUNT}/lib/modules/"
+  ok "EVL modules (${EVL_MOD_VER}) injected into rootfs."
+
+  # -------------------------------------------------------------------------
+  # Step 10b: Rootfs post-processing for EVL compatibility
+  #
+  # 1. Disable Weston autostart
+  #    Weston uses MESA_LOADER_DRIVER_OVERRIDE=pvr (PowerVR GPU) which is not
+  #    available in our EVL kernel.  Weston crashes immediately, causing a
+  #    display crash loop.  Disable the execute bit on its init script.
+  #
+  # 2. Set root password to "root" for first-boot SSH/HDMI access.
+  #
+  # 3. Add ttyS0 getty for serial console at 115200 baud.
+  #
+  # 4. Add tty1 getty for HDMI framebuffer login prompt.
+  #    Without this, the HDMI screen shows a blinking cursor but no login.
+  # -------------------------------------------------------------------------
+  info "Applying rootfs post-processing for EVL compatibility ..."
+
+  # 1. Disable Weston (PowerVR GPU not available with EVL kernel)
+  WESTON_INIT="${ROOTFS_MOUNT}/etc/init.d/S30weston-setup.sh"
+  if [[ -f "${WESTON_INIT}" ]]; then
+    sudo chmod -x "${WESTON_INIT}"
+    ok "Weston autostart disabled (S30weston-setup.sh — chmod -x)."
+    ok "  Re-enable later: chmod +x /etc/init.d/S30weston-setup.sh"
+  else
+    info "S30weston-setup.sh not found — skipping Weston disable."
+  fi
+
+  # Also disable any other Weston-related init scripts
+  for weston_script in \
+      "${ROOTFS_MOUNT}/etc/init.d/"*weston* \
+      "${ROOTFS_MOUNT}/etc/init.d/"*wayland*; do
+    [[ -f "${weston_script}" ]] || continue
+    sudo chmod -x "${weston_script}"
+    ok "Disabled: $(basename "${weston_script}")"
+  done
+
+  # Disable Plymouth init script if present (SysV-style init)
+  for plymouth_script in \
+      "${ROOTFS_MOUNT}/etc/init.d/"*plymouth* \
+      "${ROOTFS_MOUNT}/etc/init.d/"*splash*; do
+    [[ -f "${plymouth_script}" ]] || continue
+    sudo chmod -x "${plymouth_script}"
+    ok "Disabled Plymouth/splash init script: $(basename "${plymouth_script}")"
+  done
+
+  # 2. Set root password to "root" for first-boot SSH access
+  SHADOW_FILE="${ROOTFS_MOUNT}/etc/shadow"
+  if [[ -f "${SHADOW_FILE}" ]]; then
+    ROOT_HASH=$(python3 -c \
+      "import crypt; print(crypt.crypt('root', crypt.mksalt(crypt.METHOD_SHA512)))" \
+      2>/dev/null || true)
+    if [[ -n "${ROOT_HASH}" ]]; then
+      sudo sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "${SHADOW_FILE}"
+      ok "Root password set to 'root' for first-boot access. Change with: passwd root"
+    else
+      warn "Could not generate password hash — root password unchanged."
+    fi
+  else
+    warn "/etc/shadow not found in rootfs — cannot set root password."
+  fi
+
+  # 3 & 4. Add ttyS0 and tty1 getty for serial console and HDMI login prompt
+  INITTAB="${ROOTFS_MOUNT}/etc/inittab"
+  if [[ -f "${INITTAB}" ]]; then
+    # Serial console (ttyS0 at 115200 baud)
+    if ! sudo grep -q 'ttyS0' "${INITTAB}" 2>/dev/null; then
+      echo "ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100" | \
+        sudo tee -a "${INITTAB}" > /dev/null
+      ok "Added ttyS0 getty to /etc/inittab (serial console at 115200 baud)."
+    else
+      ok "ttyS0 getty already present in /etc/inittab."
+    fi
+
+    # HDMI framebuffer login prompt (tty1)
+    if ! sudo grep -q 'tty1' "${INITTAB}" 2>/dev/null; then
+      echo "tty1::respawn:/sbin/getty 38400 tty1" | \
+        sudo tee -a "${INITTAB}" > /dev/null
+      ok "Added tty1 getty to /etc/inittab (HDMI login prompt)."
+    else
+      ok "tty1 getty already present in /etc/inittab."
+    fi
+  else
+    warn "/etc/inittab not found in rootfs — cannot add ttyS0/tty1 getty."
+  fi
+
+  sync
+  sudo umount "${ROOTFS_MOUNT}"
+  rmdir "${ROOTFS_MOUNT}"
+  ok "Rootfs unmounted."
 else
   warn "No ext4 rootfs partition detected — skipping module injection."
+  warn "This is expected for minimal buildroot images without a separate rootfs partition."
 fi
 
 # ---------------------------------------------------------------------------
@@ -612,16 +840,17 @@ ok "Image finalised."
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
+sep
 echo ""
-echo "============================================================"
 echo "  Output image : ${IMG}"
 echo "  Size         : $(du -sh "${IMG}" | cut -f1)"
+echo "  Kernel       : ${ACTUAL_VER}"
+echo "  Modules      : ${EVL_MOD_VER}"
 echo ""
-echo "  IMPORTANT: Before flashing, verify the kernel version:"
-echo "    strings ${BUILD_DIR}/arch/riscv/boot/Image | grep '^Linux version'"
-echo "  It must report '6.6.63' (no + suffix) to match the Bianbu initramfs."
-echo "  If it shows '6.6.63+', rebuild the kernel — CONFIG_LOCALVERSION=\"\""
-echo "  is now set in configs/k1_evl_defconfig."
+echo "  Boot parameters written to bootfs:"
+echo "    /extlinux/extlinux.conf      (loglevel=7 initcall_debug nosplash)"
+echo "    /boot/extlinux/extlinux.conf (same)"
+echo "    /env_k1-x.txt               (commonargs without splash/quiet)"
 echo ""
 echo "  Flash to SD card (Linux):"
 echo "    sudo dd if=\"${IMG}\" of=/dev/sdX bs=4M status=progress conv=fsync"
@@ -631,5 +860,9 @@ echo "  Flash to SD card (Windows):"
 echo "    Use Balena Etcher or Rufus — write as raw disk image."
 echo "    Do NOT write as partition image."
 echo ""
-echo "  Insert SD card into Milk-V Jupiter and power on."
-echo "============================================================"
+echo "  What to expect on first boot:"
+echo "    - HDMI screen shows kernel boot log (not Bianbu splash)"
+echo "    - Module loading progress visible on screen"
+echo "    - Login prompt appears on both HDMI (tty1) and serial (ttyS0)"
+echo "    - Login: root / root  (change password after first login)"
+sep
