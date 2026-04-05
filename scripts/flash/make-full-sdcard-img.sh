@@ -86,6 +86,7 @@ BASE_IMAGE="${1:-}"
 BUILD_DIR="${2:-${HOME}/work/build-k1}"
 OUTPUT_DIR="${3:-/tmp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUILD_ENV_FILE="${REPO_ROOT}/scripts/build/env.sh"
 TEST_PROFILE="${TEST_PROFILE:-kernel-only}"
 PRESERVE_BOOTFLOW="${PRESERVE_BOOTFLOW:-1}"
 PATCH_ROOTFS="${PATCH_ROOTFS:-0}"
@@ -256,6 +257,7 @@ echo ""
 BOOT_PART=""
 ROOTFS_PART=""
 ROOTFS_UUID=""
+ENV_PART=""
 
 for part in "${LOOP}"p*; do
   [[ -b "${part}" ]] || continue
@@ -278,6 +280,16 @@ for part in "${LOOP}"p*; do
   fi
 done
 
+# Detect the raw U-Boot environment partition in Bianbu images.
+# The official SpacemiT layout is:
+#   p1 fsbl, p2 env, p3 opensbi, p4 uboot, p5 bootfs, p6 rootfs
+# We only touch it when the FAT boot partition is not p1, which avoids
+# treating simple two-partition images as if they had a raw env slot.
+if [[ -b "${LOOP}p2" && "${BOOT_PART}" != "${LOOP}p1" ]]; then
+  ENV_PART="${LOOP}p2"
+  info "  Detected raw U-Boot env partition: ${ENV_PART}"
+fi
+
 if [[ -z "${BOOT_PART}" ]]; then
   sudo losetup -d "${LOOP}" 2>/dev/null || true
   die "No FAT32 (vfat) boot partition found in ${IMG}.
@@ -287,6 +299,7 @@ fi
 
 ok "Boot partition : ${BOOT_PART}"
 [[ -n "${ROOTFS_PART}" ]] && ok "Rootfs partition: ${ROOTFS_PART} (UUID=${ROOTFS_UUID:-unknown})"
+[[ -n "${ENV_PART}" ]] && ok "Env partition   : ${ENV_PART}"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -473,6 +486,99 @@ else
   ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
   if [[ "${PATCH_ENV}" != "1" ]]; then
     info "Preserving base image env_k1-x.txt"
+  elif [[ -n "${ENV_PART}" ]]; then
+    ENV_SIZE=$(sudo blockdev --getsize64 "${ENV_PART}")
+    ENV_TXT=$(mktemp /tmp/uboot-env-XXXXXX.txt)
+    ENV_BIN=$(mktemp /tmp/uboot-env-XXXXXX.bin)
+    MKENVIMAGE=""
+
+    if [[ -f "${BUILD_ENV_FILE}" ]]; then
+      # shellcheck disable=SC1090
+      source "${BUILD_ENV_FILE}"
+      if [[ -n "${WORK_DIR:-}" && -x "${WORK_DIR}/jupiter-linux/output/k1_v2/build/uboot-custom/tools/mkenvimage" ]]; then
+        MKENVIMAGE="${WORK_DIR}/jupiter-linux/output/k1_v2/build/uboot-custom/tools/mkenvimage"
+      fi
+    fi
+
+    if [[ -z "${MKENVIMAGE}" ]]; then
+      for candidate in \
+        "/home/${SUDO_USER:-}/work/jupiter-linux/output/k1_v2/build/uboot-custom/tools/mkenvimage" \
+        "/home/${USER}/work/jupiter-linux/output/k1_v2/build/uboot-custom/tools/mkenvimage"; do
+        if [[ -x "${candidate}" ]]; then
+          MKENVIMAGE="${candidate}"
+          break
+        fi
+      done
+    fi
+
+    if [[ -z "${MKENVIMAGE}" ]] && command -v mkenvimage >/dev/null 2>&1; then
+      MKENVIMAGE="$(command -v mkenvimage)"
+    fi
+
+    [[ -n "${MKENVIMAGE}" && -x "${MKENVIMAGE}" ]] || \
+      die "mkenvimage not found. Checked ${WORK_DIR:-unset}/jupiter-linux/... and PATH."
+
+    info "Extracting active U-Boot env from ${ENV_PART} ..."
+    sudo dd if="${ENV_PART}" bs=1 count="${ENV_SIZE}" status=none | \
+      tail -c +5 | tr '\000' '\n' | sed -e '/^\s*$/d' > "${ENV_TXT}"
+
+    sep
+    info "Original U-Boot env (from raw env partition):"
+    sed -n '1,120p' "${ENV_TXT}"
+    sep
+    echo ""
+
+    if grep -q '^knl_name=Image\.itb$' "${ENV_TXT}"; then
+      sed -i 's|^knl_name=Image\.itb$|knl_name=Image|g' "${ENV_TXT}"
+      ok "Fixed knl_name in raw env: Image.itb -> Image"
+    else
+      ok "knl_name already set to Image in raw env"
+    fi
+
+    if ! grep -q '^kernel_addr_r=' "${ENV_TXT}"; then
+      printf '%s\n' 'kernel_addr_r=0x200000' >> "${ENV_TXT}"
+      ok "Added kernel_addr_r=0x200000 to raw env"
+    elif grep -q '^kernel_addr_r=0x20000000$\|^kernel_addr_r=0x10000000$' "${ENV_TXT}"; then
+      sed -i 's|^kernel_addr_r=0x[0-9a-fA-F]*$|kernel_addr_r=0x200000|g' "${ENV_TXT}"
+      ok "Restored kernel_addr_r to 0x200000 in raw env"
+    else
+      ok "kernel_addr_r already set in raw env"
+    fi
+
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 vt.global_cursor_default=0 systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    if grep -q '^commonargs=' "${ENV_TXT}"; then
+      sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_TXT}"
+      ok "Replaced commonargs in raw env"
+    else
+      printf '%s\n' "${CLEAN_COMMONARGS}" >> "${ENV_TXT}"
+      ok "Added commonargs to raw env"
+    fi
+
+    SET_CONSOLE='set_console=setenv bootargs ${bootargs} console=tty0 console=ttyS0,115200'
+    if grep -q '^set_console=' "${ENV_TXT}"; then
+      sed -i "s|^set_console=.*|${SET_CONSOLE}|" "${ENV_TXT}"
+      ok "Updated set_console in raw env"
+    else
+      printf '%s\n' "${SET_CONSOLE}" >> "${ENV_TXT}"
+      ok "Added set_console to raw env"
+    fi
+
+    "${MKENVIMAGE}" -s "${ENV_SIZE}" -o "${ENV_BIN}" "${ENV_TXT}"
+    sudo dd if="${ENV_BIN}" of="${ENV_PART}" conv=fsync,notrunc status=none
+    ok "Patched raw U-Boot env partition: ${ENV_PART}"
+
+    sep
+    info "Updated U-Boot env (text form):"
+    sed -n '1,120p' "${ENV_TXT}"
+    sep
+    echo ""
+
+    rm -f "${ENV_TXT}" "${ENV_BIN}"
+
+    if [[ -f "${ENV_FILE}" ]]; then
+      info "Also mirroring debug bootargs into bootfs/env_k1-x.txt for consistency"
+      sudo sed -i 's|knl_name=Image\.itb|knl_name=Image|g' "${ENV_FILE}" 2>/dev/null || true
+    fi
   elif [[ -f "${ENV_FILE}" ]]; then
     sep
     info "Original env_k1-x.txt:"
@@ -497,7 +603,7 @@ else
       ok "kernel_addr_r already set — no change needed"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk loglevel=7 initcall_debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 vt.global_cursor_default=0 systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
     if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
       sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
       ok "Replaced commonargs: removed quiet/splash/plymouth, added debug verbosity"
