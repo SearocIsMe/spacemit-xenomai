@@ -53,7 +53,7 @@ rootfs*
 *.tar.bz2
 *.zip
 *.7z
-
+*.codex
 # ----- Toolchains -------------------------------------------
 toolchain/
 cross-compile/
