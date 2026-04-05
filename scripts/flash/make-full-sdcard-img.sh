@@ -23,6 +23,14 @@
 #    ~/work/build-k1 \
 #    ~/work
 #
+# Environment knobs:
+#   TEST_PROFILE   Preset for staged boot testing. One of:
+#                  kernel-only  (default)
+#                  env-debug
+#                  boot-debug
+#                  full-evl
+#   IMAGE_TAG      Optional extra suffix in output filename.
+#
 # Arguments:
 #   base_image   Full SpacemiT buildroot SD card image to use as the base.
 #                Download from:
@@ -78,9 +86,52 @@ BASE_IMAGE="${1:-}"
 BUILD_DIR="${2:-${HOME}/work/build-k1}"
 OUTPUT_DIR="${3:-/tmp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TEST_PROFILE="${TEST_PROFILE:-kernel-only}"
 PRESERVE_BOOTFLOW="${PRESERVE_BOOTFLOW:-1}"
 PATCH_ROOTFS="${PATCH_ROOTFS:-0}"
 INJECT_MODULES="${INJECT_MODULES:-0}"
+PATCH_EXTLINUX="${PATCH_EXTLINUX:-0}"
+PATCH_ENV="${PATCH_ENV:-0}"
+PATCH_INITRD="${PATCH_INITRD:-0}"
+IMAGE_TAG="${IMAGE_TAG:-}"
+
+case "${TEST_PROFILE}" in
+  kernel-only)
+    PRESERVE_BOOTFLOW=1
+    PATCH_EXTLINUX=0
+    PATCH_ENV=0
+    PATCH_INITRD=0
+    INJECT_MODULES=0
+    PATCH_ROOTFS=0
+    ;;
+  env-debug)
+    PRESERVE_BOOTFLOW=0
+    PATCH_EXTLINUX=0
+    PATCH_ENV=1
+    PATCH_INITRD=0
+    INJECT_MODULES=0
+    PATCH_ROOTFS=0
+    ;;
+  boot-debug)
+    PRESERVE_BOOTFLOW=0
+    PATCH_EXTLINUX=1
+    PATCH_ENV=1
+    PATCH_INITRD=1
+    INJECT_MODULES=0
+    PATCH_ROOTFS=0
+    ;;
+  full-evl)
+    PRESERVE_BOOTFLOW=0
+    PATCH_EXTLINUX=1
+    PATCH_ENV=1
+    PATCH_INITRD=1
+    INJECT_MODULES=1
+    PATCH_ROOTFS=1
+    ;;
+  *)
+    die "Unknown TEST_PROFILE='${TEST_PROFILE}'. Use: kernel-only, env-debug, boot-debug, full-evl"
+    ;;
+esac
 
 if [[ -z "${BASE_IMAGE}" ]]; then
   echo ""
@@ -146,7 +197,11 @@ fi
 ok "Module version '${EVL_MOD_VER}' matches kernel version — good."
 sep
 
-IMG_NAME="evl-sdcard-k1-$(date +%Y%m%d).img"
+IMG_SUFFIX="${TEST_PROFILE}"
+if [[ -n "${IMAGE_TAG}" ]]; then
+  IMG_SUFFIX="${IMG_SUFFIX}-${IMAGE_TAG}"
+fi
+IMG_NAME="evl-sdcard-k1-${IMG_SUFFIX}-$(date +%Y%m%d).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
 
 info "Base image : ${BASE_IMAGE} ($(du -sh "${BASE_IMAGE}" | cut -f1))"
@@ -154,9 +209,11 @@ info "Build dir  : ${BUILD_DIR}"
 info "Kernel     : ${KERNEL_IMAGE} ($(du -sh "${KERNEL_IMAGE}" | cut -f1))"
 info "Modules    : ${MODULES_DIR}/lib/modules/${EVL_MOD_VER}"
 info "Output     : ${IMG}"
+info "Profile    : ${TEST_PROFILE}"
 info "Bootflow   : $([[ "${PRESERVE_BOOTFLOW}" == "1" ]] && echo 'preserve base image boot config' || echo 'rewrite boot config')"
 info "Rootfs mods : $([[ "${PATCH_ROOTFS}" == "1" ]] && echo 'enabled' || echo 'disabled')"
 info "Modules    : $([[ "${INJECT_MODULES}" == "1" ]] && echo 'inject into rootfs' || echo 'preserve base rootfs modules')"
+info "Boot files : extlinux=$([[ "${PATCH_EXTLINUX}" == "1" ]] && echo on || echo off) env=$([[ "${PATCH_ENV}" == "1" ]] && echo on || echo off) initrd=$([[ "${PATCH_INITRD}" == "1" ]] && echo on || echo off)"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -349,68 +406,74 @@ fi
 if [[ "${PRESERVE_BOOTFLOW}" == "1" ]]; then
   info "Preserving base image bootflow files: extlinux.conf, env_k1-x.txt, initramfs-generic.img"
 else
-  # -------------------------------------------------------------------------
-  # Step 7: Generate and write extlinux.conf to bootfs
-  # -------------------------------------------------------------------------
-  sep
-  info "Generating EVL extlinux.conf from template ..."
+  if [[ "${PATCH_EXTLINUX}" == "1" ]]; then
+    # -----------------------------------------------------------------------
+    # Step 7: Generate and write extlinux.conf to bootfs
+    # -----------------------------------------------------------------------
+    sep
+    info "Generating EVL extlinux.conf from template ..."
 
-  if [[ -n "${ORIG_ROOT}" ]]; then
-    EFFECTIVE_ROOT="${ORIG_ROOT}"
-    info "Using root device from base image: ${EFFECTIVE_ROOT}"
-  elif [[ -n "${ROOTFS_UUID}" ]]; then
-    EFFECTIVE_ROOT="UUID=${ROOTFS_UUID}"
-    info "Using detected rootfs UUID: ${EFFECTIVE_ROOT}"
-  else
-    EFFECTIVE_ROOT="/dev/mmcblk0p2"
-    warn "Could not detect root device — falling back to: ${EFFECTIVE_ROOT}"
-    warn "Edit /extlinux/extlinux.conf on the SD card if this is wrong."
-  fi
-
-  TMP_EXTLINUX=$(mktemp /tmp/extlinux-XXXXXX.conf)
-  cp "${EXTLINUX_TMPL}" "${TMP_EXTLINUX}"
-  sed -i "s|ROOT_PLACEHOLDER|${EFFECTIVE_ROOT}|g" "${TMP_EXTLINUX}"
-
-  if [[ -n "${ORIG_INITRD}" ]]; then
-    if grep -qE '^\s*#\s*initrd' "${TMP_EXTLINUX}"; then
-      sed -i "s|^\s*#\s*initrd.*|    initrd ${ORIG_INITRD}|" "${TMP_EXTLINUX}"
-      info "Enabled initrd line: ${ORIG_INITRD}"
-    elif grep -qiE '^\s*initrd' "${TMP_EXTLINUX}"; then
-      sed -i "s|^\s*initrd.*|    initrd ${ORIG_INITRD}|i" "${TMP_EXTLINUX}"
-      info "Updated initrd line: ${ORIG_INITRD}"
+    if [[ -n "${ORIG_ROOT}" ]]; then
+      EFFECTIVE_ROOT="${ORIG_ROOT}"
+      info "Using root device from base image: ${EFFECTIVE_ROOT}"
+    elif [[ -n "${ROOTFS_UUID}" ]]; then
+      EFFECTIVE_ROOT="UUID=${ROOTFS_UUID}"
+      info "Using detected rootfs UUID: ${EFFECTIVE_ROOT}"
     else
-      sed -i "/^\s*fdt\b/a\\    initrd ${ORIG_INITRD}" "${TMP_EXTLINUX}"
-      info "Appended initrd line: ${ORIG_INITRD}"
+      EFFECTIVE_ROOT="/dev/mmcblk0p2"
+      warn "Could not detect root device — falling back to: ${EFFECTIVE_ROOT}"
+      warn "Edit /extlinux/extlinux.conf on the SD card if this is wrong."
     fi
+
+    TMP_EXTLINUX=$(mktemp /tmp/extlinux-XXXXXX.conf)
+    cp "${EXTLINUX_TMPL}" "${TMP_EXTLINUX}"
+    sed -i "s|ROOT_PLACEHOLDER|${EFFECTIVE_ROOT}|g" "${TMP_EXTLINUX}"
+
+    if [[ -n "${ORIG_INITRD}" ]]; then
+      if grep -qE '^\s*#\s*initrd' "${TMP_EXTLINUX}"; then
+        sed -i "s|^\s*#\s*initrd.*|    initrd ${ORIG_INITRD}|" "${TMP_EXTLINUX}"
+        info "Enabled initrd line: ${ORIG_INITRD}"
+      elif grep -qiE '^\s*initrd' "${TMP_EXTLINUX}"; then
+        sed -i "s|^\s*initrd.*|    initrd ${ORIG_INITRD}|i" "${TMP_EXTLINUX}"
+        info "Updated initrd line: ${ORIG_INITRD}"
+      else
+        sed -i "/^\s*fdt\b/a\\    initrd ${ORIG_INITRD}" "${TMP_EXTLINUX}"
+        info "Appended initrd line: ${ORIG_INITRD}"
+      fi
+    else
+      info "No initrd in base image — initrd line stays commented out."
+    fi
+
+    sep
+    info "Final extlinux.conf to be written:"
+    cat "${TMP_EXTLINUX}"
+    sep
+    echo ""
+
+    EXTLINUX_WRITTEN=0
+    for ext_dir in \
+        "${MOUNT_POINT}/extlinux" \
+        "${MOUNT_POINT}/boot/extlinux"; do
+      sudo mkdir -p "${ext_dir}"
+      sudo cp "${TMP_EXTLINUX}" "${ext_dir}/extlinux.conf"
+      ok "Written: ${ext_dir}/extlinux.conf"
+      EXTLINUX_WRITTEN=$(( EXTLINUX_WRITTEN + 1 ))
+    done
+
+    rm -f "${TMP_EXTLINUX}"
+    ok "extlinux.conf written to ${EXTLINUX_WRITTEN} location(s) in bootfs."
+    echo ""
   else
-    info "No initrd in base image — initrd line stays commented out."
+    info "Preserving base image extlinux.conf"
   fi
-
-  sep
-  info "Final extlinux.conf to be written:"
-  cat "${TMP_EXTLINUX}"
-  sep
-  echo ""
-
-  EXTLINUX_WRITTEN=0
-  for ext_dir in \
-      "${MOUNT_POINT}/extlinux" \
-      "${MOUNT_POINT}/boot/extlinux"; do
-    sudo mkdir -p "${ext_dir}"
-    sudo cp "${TMP_EXTLINUX}" "${ext_dir}/extlinux.conf"
-    ok "Written: ${ext_dir}/extlinux.conf"
-    EXTLINUX_WRITTEN=$(( EXTLINUX_WRITTEN + 1 ))
-  done
-
-  rm -f "${TMP_EXTLINUX}"
-  ok "extlinux.conf written to ${EXTLINUX_WRITTEN} location(s) in bootfs."
-  echo ""
 
   # -------------------------------------------------------------------------
   # Step 8: Patch env_k1-x.txt for plain Image boot
   # -------------------------------------------------------------------------
   ENV_FILE="${MOUNT_POINT}/env_k1-x.txt"
-  if [[ -f "${ENV_FILE}" ]]; then
+  if [[ "${PATCH_ENV}" != "1" ]]; then
+    info "Preserving base image env_k1-x.txt"
+  elif [[ -f "${ENV_FILE}" ]]; then
     sep
     info "Original env_k1-x.txt:"
     sudo cat "${ENV_FILE}"
@@ -479,7 +542,9 @@ else
   # Step 8b: Patch initramfs-generic.img
   # -------------------------------------------------------------------------
   INITRD_IMG="${MOUNT_POINT}/initramfs-generic.img"
-  if [[ -f "${INITRD_IMG}" ]]; then
+  if [[ "${PATCH_INITRD}" != "1" ]]; then
+    info "Preserving base image initramfs-generic.img"
+  elif [[ -f "${INITRD_IMG}" ]]; then
     INITRD_SIZE=$(du -sh "${INITRD_IMG}" | cut -f1)
     info "Patching initramfs-generic.img (${INITRD_SIZE}) to disable Plymouth ..."
 
@@ -783,6 +848,8 @@ echo "  Size         : $(du -sh "${IMG}" | cut -f1)"
 echo "  Kernel       : ${ACTUAL_VER}"
 echo "  Modules      : ${EVL_MOD_VER}"
 echo ""
+echo "  Test profile : ${TEST_PROFILE}"
+echo ""
 if [[ "${INJECT_MODULES}" == "1" ]]; then
   echo "  Rootfs modules:"
   echo "    Injected EVL modules into the image rootfs"
@@ -795,10 +862,10 @@ if [[ "${PRESERVE_BOOTFLOW}" == "1" ]]; then
   echo "  Bootflow:"
   echo "    Preserved from base image (env_k1-x.txt / extlinux.conf / initramfs unchanged)"
 else
-  echo "  Boot parameters written to bootfs:"
-  echo "    /extlinux/extlinux.conf      (loglevel=7 initcall_debug nosplash)"
-  echo "    /boot/extlinux/extlinux.conf (same)"
-  echo "    /env_k1-x.txt               (commonargs without splash/quiet)"
+  echo "  Bootflow overrides:"
+  echo "    extlinux.conf      : $([[ "${PATCH_EXTLINUX}" == "1" ]] && echo patched || echo preserved)"
+  echo "    env_k1-x.txt       : $([[ "${PATCH_ENV}" == "1" ]] && echo patched || echo preserved)"
+  echo "    initramfs-generic  : $([[ "${PATCH_INITRD}" == "1" ]] && echo patched || echo preserved)"
 fi
 echo ""
 echo "  Flash to SD card (Linux):"
