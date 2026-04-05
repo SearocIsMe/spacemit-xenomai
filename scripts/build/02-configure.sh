@@ -39,14 +39,15 @@ ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 
-EVL_FRAGMENT="${REPO_ROOT}/configs/k1_evl_defconfig"
+CONFIG_FRAGMENT="${CONFIG_FRAGMENT:-${REPO_ROOT}/configs/k1_evl_defconfig}"
 OPEN_MENUCONFIG="${OPEN_MENUCONFIG:-0}"   # set to 1 to open menuconfig
+BUILD_DIR="${BUILD_DIR_OVERRIDE:-${BUILD_DIR}}"
 
 # ---------------------------------------------------------------------------
 # Verify prerequisites
 # ---------------------------------------------------------------------------
 [[ -d "${KERNEL_DIR}/.git" ]] || die "Kernel not found at ${KERNEL_DIR}."
-[[ -f "${EVL_FRAGMENT}" ]]    || die "EVL config fragment not found at ${EVL_FRAGMENT}."
+[[ -f "${CONFIG_FRAGMENT}" ]] || die "Kernel config fragment not found at ${CONFIG_FRAGMENT}."
 
 cd "${KERNEL_DIR}"
 
@@ -67,7 +68,7 @@ ok "Base defconfig applied."
 # ---------------------------------------------------------------------------
 # Step 2: Merge EVL config fragment
 # ---------------------------------------------------------------------------
-info "Merging EVL config fragment: ${EVL_FRAGMENT} ..."
+info "Merging kernel config fragment: ${CONFIG_FRAGMENT} ..."
 
 # Use kernel's merge_config.sh script
 MERGE_SCRIPT="${KERNEL_DIR}/scripts/kconfig/merge_config.sh"
@@ -78,7 +79,7 @@ if [[ -f "${MERGE_SCRIPT}" ]]; then
     bash "${MERGE_SCRIPT}" \
       -m \
       "${BUILD_DIR}/.config" \
-      "${EVL_FRAGMENT}"
+      "${CONFIG_FRAGMENT}"
   # Resolve any new symbols introduced by the fragment
   make \
     ARCH="${ARCH}" \
@@ -88,7 +89,7 @@ if [[ -f "${MERGE_SCRIPT}" ]]; then
   ok "EVL fragment merged."
 else
   warn "merge_config.sh not found — appending fragment manually."
-  cat "${EVL_FRAGMENT}" >> "${BUILD_DIR}/.config"
+  cat "${CONFIG_FRAGMENT}" >> "${BUILD_DIR}/.config"
   make \
     ARCH="${ARCH}" \
     CROSS_COMPILE="${CROSS_COMPILE}" \
@@ -126,12 +127,24 @@ check_config() {
   fi
 }
 
-check_config "CONFIG_EVL"          "y"
-check_config "CONFIG_DOVETAIL"          "y"
-check_config "CONFIG_IRQ_PIPELINE"      "y"
-check_config "CONFIG_HIGH_RES_TIMERS"   "y"
-check_config "CONFIG_HZ_1000"           "y"
-check_config "CONFIG_PREEMPT"           "y"
+if grep -q '^CONFIG_EVL=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_EVL" "y"
+fi
+if grep -q '^CONFIG_DOVETAIL=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_DOVETAIL" "y"
+fi
+if grep -q '^CONFIG_IRQ_PIPELINE=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_IRQ_PIPELINE" "y"
+fi
+if grep -q '^CONFIG_HIGH_RES_TIMERS=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_HIGH_RES_TIMERS" "y"
+fi
+if grep -q '^CONFIG_HZ_1000=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_HZ_1000" "y"
+fi
+if grep -q '^CONFIG_PREEMPT=y' "${CONFIG_FRAGMENT}"; then
+  check_config "CONFIG_PREEMPT" "y"
+fi
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
   warn "The following required options are not set correctly:"

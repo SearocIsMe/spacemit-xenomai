@@ -1,0 +1,21 @@
+# =============================================================================
+# k1_dovetail_only_defconfig
+# Enable only the Dovetail/IRQ pipeline layer without EVL core.
+# This isolates early boot issues caused by the interrupt pipeline itself.
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+CONFIG_DOVETAIL=y
+CONFIG_IRQ_PIPELINE=y
+# CONFIG_EVL is not set
+
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set

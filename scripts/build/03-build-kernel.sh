@@ -29,6 +29,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 source "${ENV_FILE}"
+BUILD_DIR="${BUILD_DIR_OVERRIDE:-${BUILD_DIR}}"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -44,7 +45,7 @@ die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 # Number of parallel jobs — default to nproc, cap at 16 for WSL2 stability
 NPROC=$(nproc)
 JOBS="${JOBS:-$((NPROC > 16 ? 16 : NPROC))}"
-MODULES_INSTALL_DIR="${BUILD_DIR}/modules_install"
+MODULES_INSTALL_DIR="${MODULES_INSTALL_DIR_OVERRIDE:-${BUILD_DIR}/modules_install}"
 
 # LOCALVERSION must be passed on the make command line (not just via config).
 # scripts/setlocalversion independently appends '+' when git tree is dirty,

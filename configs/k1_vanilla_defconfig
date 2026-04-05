@@ -1,0 +1,23 @@
+# =============================================================================
+# k1_vanilla_defconfig
+# Keep the SpacemiT K1 base kernel as close to stock as possible.
+# Used to validate whether a locally-built non-EVL kernel still boots.
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# Match the baseline Jupiter/Bianbu behaviour as closely as practical.
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Explicitly keep EVL/Dovetail disabled in the bisect baseline.
+# CONFIG_DOVETAIL is not set
+# CONFIG_IRQ_PIPELINE is not set
+# CONFIG_EVL is not set
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set
