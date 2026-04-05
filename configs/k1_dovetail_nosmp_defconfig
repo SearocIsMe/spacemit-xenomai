@@ -1,0 +1,39 @@
+# =============================================================================
+# k1_dovetail_nosmp_defconfig
+# Dovetail/IRQ pipeline enabled, but disable SMP and related cross-CPU/tick
+# broadcast paths to isolate early boot issues around IPIs and broadcast ticks.
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+CONFIG_DOVETAIL=y
+CONFIG_IRQ_PIPELINE=y
+# CONFIG_EVL is not set
+
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Keep this bisect variant out of the platform suspend path: once
+# CPU_IDLE is disabled, RISC-V stops providing CPU_PM helpers that
+# SpacemiT's PM objects expect at link time.
+# CONFIG_PM is not set
+# CONFIG_SUSPEND is not set
+# CONFIG_PM_SLEEP is not set
+# CONFIG_SPACEMIT_LID_CONTROL is not set
+# CONFIG_SPACEMIT_WATCHDOG is not set
+
+# Collapse the platform to a single CPU to avoid OOB IPI/SMP paths.
+# CONFIG_SMP is not set
+# CONFIG_HOTPLUG_CPU is not set
+
+# Remove tick/idle paths that interact with broadcast IPIs in early boot.
+# CONFIG_CPU_IDLE is not set
+# CONFIG_NO_HZ_IDLE is not set
+# CONFIG_GENERIC_CLOCKEVENTS_BROADCAST is not set
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set

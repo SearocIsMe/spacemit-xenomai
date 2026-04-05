@@ -29,6 +29,8 @@ TARGET="${1:-all}"
 
 variants=(
   "vanilla-k1:${REPO_ROOT}/configs/k1_vanilla_defconfig:${WORK_DIR}/build-k1-vanilla"
+  "dovetail-nosmp:${REPO_ROOT}/configs/k1_dovetail_nosmp_defconfig:${WORK_DIR}/build-k1-dovetail-nosmp"
+  "dovetail-noidle:${REPO_ROOT}/configs/k1_dovetail_noidle_defconfig:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${REPO_ROOT}/configs/k1_dovetail_only_defconfig:${WORK_DIR}/build-k1-dovetail"
   "evl-off:${REPO_ROOT}/configs/k1_evl_off_defconfig:${WORK_DIR}/build-k1-evl-off"
   "full-evl:${REPO_ROOT}/configs/k1_evl_defconfig:${WORK_DIR}/build-k1-evl"
@@ -66,7 +68,7 @@ done
 
 if [[ "${matched}" != "1" ]]; then
   echo "ERROR: Unknown variant '${TARGET}'."
-  echo "Valid values: all, vanilla-k1, dovetail-only, evl-off, full-evl"
+  echo "Valid values: all, vanilla-k1, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
   exit 1
 fi
 
