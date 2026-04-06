@@ -71,6 +71,8 @@ spacemit-xenomai/
 ├── docs/
 │   ├── architecture.md            ← EVL dual-kernel architecture notes
 │   ├── porting-notes.md           ← RISC-V specific porting details
+│   ├── riscv-upstream-patch-map.md← Public RISC-V EVL/Dovetail status → local file map
+│   ├── riscv-overlay-audit.md     ← File-by-file risk audit for arch/riscv overlay
 │   └── testing.md                 ← Latency test procedures & results
 │
 ├── configs/
@@ -130,6 +132,8 @@ spacemit-xenomai/
         ├── flash-sdcard.sh        ← Write image to SD card (Linux host)
         ├── flash-windows.ps1      ← Write image using Win32DiskImager
         ├── make-boot-img.sh       ← Create minimal boot FAT image
+        ├── make-baseline-sdcard-img.sh ← Safe first-boot image (kernel-only)
+        ├── make-kernel-modules-sdcard-img.sh ← Bootflow-preserving image + matching modules
         ├── make-full-sdcard-img.sh← Inject EVL kernel into bianbu-linux base image
         └── readme.md
 ```
@@ -202,6 +206,10 @@ As of early 2026, **EVL/Dovetail RISC-V support is not yet upstream** but is act
 - `syscall_get_arg0` for RISC-V (`regs->orig_a0`)
 - `stall_bits` in `task_struct` for per-task IRQ pipeline stall state
 - EVL-enabled kernel Image built successfully: **33 MB**
+
+For a more current reading of the public upstream situation, including the
+late-2024 and 2025 RISC-V patch series and how they map onto this repository,
+see [docs/riscv-upstream-patch-map.md](/home/lindows/spacemit-xenomai/docs/riscv-upstream-patch-map.md).
 
 ### 3.4 Key Porting Challenges
 
@@ -334,7 +342,7 @@ bash scripts/build/00b-deploy-overlay.sh
 
 This script does two things:
 
-**a) rsync all overlay files into `~/work/linux-k1/`:**
+**a) rsync all overlay files into `<repo>/.build/linux-k1/`:**
 
 ```
 kernel-overlay/arch/riscv/Kconfig                        → arch/riscv/Kconfig
@@ -380,11 +388,11 @@ This merges the SpacemiT base defconfig with the EVL config fragment:
 
 ```bash
 # Internally runs:
-make ARCH=riscv O=~/work/build-k1 k1_defconfig
-./scripts/kconfig/merge_config.sh -m -O ~/work/build-k1 \
-    ~/work/build-k1/.config \
+make ARCH=riscv O=<repo>/.build/build-k1 k1_defconfig
+./scripts/kconfig/merge_config.sh -m -O <repo>/.build/build-k1 \
+    <repo>/.build/build-k1/.config \
     configs/k1_evl_defconfig
-make ARCH=riscv O=~/work/build-k1 olddefconfig
+make ARCH=riscv O=<repo>/.build/build-k1 olddefconfig
 ```
 
 Key EVL options enabled by `configs/k1_evl_defconfig`:
@@ -400,7 +408,7 @@ CONFIG_HZ_1000=y
 
 Verify after configure:
 ```bash
-grep -E "CONFIG_(DOVETAIL|EVL|IRQ_PIPELINE)" ~/work/build-k1/.config
+grep -E "CONFIG_(DOVETAIL|EVL|IRQ_PIPELINE)" <repo>/.build/build-k1/.config
 # CONFIG_IRQ_PIPELINE=y
 # CONFIG_DOVETAIL=y
 # CONFIG_EVL=y
@@ -414,9 +422,9 @@ grep -E "CONFIG_(DOVETAIL|EVL|IRQ_PIPELINE)" ~/work/build-k1/.config
 bash scripts/build/03-build-kernel.sh
 # or directly (recommended: parallel Image/dtbs, single-thread modules):
 make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- \
-     LOCALVERSION= O=~/work/build-k1 -j$(nproc) Image dtbs
+     LOCALVERSION= O=<repo>/.build/build-k1 -j$(nproc) Image dtbs
 make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- \
-     LOCALVERSION= O=~/work/build-k1 -j1 modules
+     LOCALVERSION= O=<repo>/.build/build-k1 -j1 modules
 ```
 
 > **Important:** Do **not** pipe through `head -N` — this causes SIGPIPE to kill `make` during the linker stage (LD vmlinux). Use `tail -5` or `tee` only.
@@ -431,36 +439,49 @@ Expected output on success:
   Kernel: arch/riscv/boot/Image is ready
 ```
 
-Output artefacts in `~/work/build-k1/`:
+Output artefacts in `<repo>/.build/build-k1/`:
 - `arch/riscv/boot/Image` — kernel image (33 MB)
 - `arch/riscv/boot/dts/spacemit/k1-x_milkv-jupiter.dtb` — Jupiter device tree
 - `**/*.ko` — kernel modules
 
 ---
 
-### Step 3: Create bootable SD card image
+### Step 3: Create a bootable baseline SD card image
 
-The `make-full-sdcard-img.sh` script injects the EVL kernel into a base Bianbu Linux image (SpacemiT's official rootfs):
+The safest first-board test is a baseline image that only replaces `Image` and
+DTBs while preserving the base image boot flow and rootfs. Use:
 
 ```bash
-sudo bash scripts/flash/make-full-sdcard-img.sh \
-    --kernel  ~/work/build-k1/arch/riscv/boot/Image \
-    --dtb     ~/work/build-k1/arch/riscv/boot/dts/spacemit/k1-x_milkv-jupiter.dtb \
-    --modules ~/work/build-k1 \
-    --output  ~/work/evl-sdcard-k1-$(date +%Y%m%d).img
+bash scripts/flash/make-baseline-sdcard-img.sh \
+    <base_image>.img \
+    <repo>/.build/build-k1 \
+    <repo>/.build/images
 ```
 
-> The script downloads a base Bianbu Linux image (~1.4 GB) if not already cached, then:
-> 1. Mounts the base image partitions via `kpartx`
-> 2. Replaces `bootfs/Image` with the EVL kernel
-> 3. Updates `bootfs/*.dtb` with the new Jupiter DTB
-> 4. Installs EVL modules into `rootfs/lib/modules/6.6.63/`
-> 5. Configures serial console (`ttyS0`) and HDMI console (`tty1`) gettys
-> 6. Sets root password to `root`
-> 7. Disables Weston autostart
-> 8. Writes the final image
+This baseline path is intentionally conservative:
+1. Copies the full SpacemiT base image
+2. Replaces only `Image` and DTBs
+3. Preserves the original boot configuration
+4. Preserves the original rootfs and module set
 
-Output: `~/work/evl-sdcard-k1-YYYYMMDD.img` (~1.4 GB)
+Output: `<repo>/.build/images/evl-sdcard-k1-kernel-only-baseline-YYYYMMDD.img`
+
+Once the baseline image boots, we can promote to the more aggressive staged
+profiles:
+
+```bash
+# keep bootflow, but inject matching modules
+TEST_PROFILE=kernel-modules bash scripts/flash/make-full-sdcard-img.sh <base_image>.img
+
+# verbose env only
+TEST_PROFILE=env-debug bash scripts/flash/make-full-sdcard-img.sh <base_image>.img
+
+# patched extlinux + env + initrd
+TEST_PROFILE=boot-debug bash scripts/flash/make-full-sdcard-img.sh <base_image>.img
+
+# full EVL integration
+TEST_PROFILE=full-evl bash scripts/flash/make-full-sdcard-img.sh <base_image>.img
+```
 
 ---
 
@@ -471,7 +492,7 @@ Output: `~/work/evl-sdcard-k1-YYYYMMDD.img` (~1.4 GB)
 lsblk
 
 # Flash the image (replace /dev/sdX with your actual device — DOUBLE CHECK!)
-sudo dd if=~/work/evl-sdcard-k1-$(date +%Y%m%d).img \
+sudo dd if=<repo>/.build/images/evl-sdcard-k1-kernel-only-baseline-YYYYMMDD.img \
         of=/dev/sdX \
         bs=4M status=progress conv=fsync
 
@@ -507,9 +528,14 @@ Exit criteria:
 ### Stage B: First Boot With Instrumented Kernel
 
 Goal:
-- boot the new kernel on Jupiter
+- boot the baseline image on Jupiter
 - confirm the board still reaches userspace or at least a reliable serial console
 - collect boot evidence before tuning latency
+
+If `kernel-only` hangs at the Bianbu logo while the original base image still
+boots, the next staged image should be `kernel-modules`: preserve the base
+boot flow, but inject the freshly built module tree so the running kernel does
+not depend on the vendor module set.
 
 Board-side checks:
 ```bash
@@ -594,7 +620,7 @@ See [`docs/testing.md`](docs/testing.md) for detailed test procedures and result
 
 ### 8.1 kernel-overlay/ file map
 
-The complete set of files that must be deployed to `~/work/linux-k1/` to enable EVL/Dovetail on RISC-V:
+The complete set of files that must be deployed to `<repo>/.build/linux-k1/` to enable EVL/Dovetail on RISC-V:
 
 | File in kernel-overlay/ | Change type | Purpose |
 |---|---|---|
@@ -759,7 +785,7 @@ Both files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed 
 | RISC-V Dovetail not upstream | Open | Use `kernel-overlay/` in this repo |
 | Hardware EVL boot test pending | Pending | Flash `evl-sdcard-k1-*.img` and test |
 | Vector extension in OOB context | Not supported | Disable V-ext in EVL threads |
-| WSL2 `/mnt/c/` build failures | Known | Always build in `~/work/` (WSL2 native FS) |
+| WSL2 `/mnt/c/` build failures | Known | Always build in `<repo>/.build/` on the WSL2 native filesystem |
 | `head -N` pipe kills `make LD vmlinux` | Fixed | Do not pipe build output through `head` |
 
 ---

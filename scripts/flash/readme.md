@@ -39,17 +39,52 @@ must come from the SpacemiT buildroot base image.
   bash scripts/build/02-configure.sh
   bash scripts/build/03-build-kernel.sh
   ```
-  Output: `~/work/build-k1/arch/riscv/boot/Image` + DTBs
+  Output: `<repo>/.build/build-k1/arch/riscv/boot/Image` + DTBs
 
 ---
 
-### Step 1 — Build the complete EVL SD card image (Linux / WSL2)
+### Step 1 — Build the baseline SD card image first (Linux / WSL2)
+
+For the first board boot, use the safest profile: replace only `Image` and
+DTBs while preserving the base image boot flow and rootfs.
+
+```bash
+bash scripts/flash/make-baseline-sdcard-img.sh \
+    <repo>/.build/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+    <repo>/.build/build-k1 \
+    <repo>/.build/images
+```
+
+This produces a baseline image like:
+
+```text
+<repo>/.build/images/evl-sdcard-k1-kernel-only-baseline-YYYYMMDD.img
+```
+
+Use this image first when UART is unavailable.
+
+If the board hangs at the Bianbu logo with `kernel-only`, the next staged image
+should inject matching modules while still preserving the base boot flow:
+
+```bash
+bash scripts/flash/make-kernel-modules-sdcard-img.sh \
+    <repo>/.build/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+    <repo>/.build/build-k1 \
+    <repo>/.build/images
+```
+
+This keeps the original boot configuration but replaces the rootfs module tree
+for the running kernel version.
+
+---
+
+### Step 2 — Build the complete EVL SD card image only after baseline boot
 
 ```bash
 bash scripts/flash/make-full-sdcard-img.sh \
-    ~/Downloads/buildroot-k1_rt-sdcard.img \
-    ~/work/build-k1 \
-    /tmp
+    <repo>/.build/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+    <repo>/.build/build-k1 \
+    <repo>/.build/images
 ```
 
 This:
@@ -61,14 +96,14 @@ This:
 > To put the output somewhere Windows can reach:
 > ```bash
 > bash scripts/flash/make-full-sdcard-img.sh \
->     ~/Downloads/buildroot-k1_rt-sdcard.img \
->     ~/work/build-k1 \
+>     <repo>/.build/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+>     <repo>/.build/build-k1 \
 >     /mnt/c/Users/<you>/Downloads
 > ```
 
 ---
 
-### Step 2A — Flash from Linux
+### Step 3A — Flash from Linux
 
 ```bash
 # Find your SD card device
@@ -85,7 +120,7 @@ sudo dd if=/tmp/evl-sdcard-k1-*.img of=/dev/sdX bs=4M status=progress conv=fsync
 
 ---
 
-### Step 2B — Flash from Windows
+### Step 3B — Flash from Windows
 
 The WSL2 default kernel does **not** include `CONFIG_USB_STORAGE`, so USB SD
 card readers are not accessible as block devices from WSL2.  Flash from
@@ -120,7 +155,7 @@ kernel and DTBs without re-flashing the entire image.
 
 ```bash
 # SD card already inserted and recognised as /dev/sdb
-bash scripts/flash/flash-sdcard.sh /dev/sdb ~/work/build-k1
+bash scripts/flash/flash-sdcard.sh /dev/sdb <repo>/.build/build-k1
 ```
 
 ### From Windows (PowerShell, no Admin required)

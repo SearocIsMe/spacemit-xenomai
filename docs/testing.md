@@ -2,14 +2,16 @@
 
 ## Overview
 
-This document describes the procedure for flashing the EVL-enabled kernel to an SD card, booting the Milk-V Jupiter, and running latency tests to verify real-time performance.
+This document describes the staged procedure for validating the Jupiter boot
+path first, then validating EVL on top of that bootable baseline.
 
-> **⚠️ Current Status (2026-04-01):** The SD card image `evl-sdcard-k1-20260331.img`
-> boots successfully on Jupiter (Bianbu desktop loads, terminal works), but
-> **EVL / Dovetail is NOT present** in this image. The kernel is a plain SpacemiT
-> kernel. See [§0 Pre-flight Check](#0-pre-flight-check) and
-> `docs/porting-notes.md §8` for the root-cause analysis and required next steps
-> before EVL testing is possible.
+> **Current Status (2026-04-06):**
+> - A repo-local build now produces `Image`, DTBs, and installed modules under
+>   `<repo>/.build/build-k1/`.
+> - The recommended first-board image is the `kernel-only` baseline profile,
+>   which preserves the base image boot flow and rootfs.
+> - EVL runtime on Jupiter is still under bring-up, so boot success and EVL
+>   success should be treated as separate checkpoints.
 
 ---
 
@@ -161,19 +163,45 @@ sudo dd if=bianbu-latest-jupiter.img of=/dev/sdX bs=4M status=progress conv=fsyn
 sync
 ```
 
-### 2.3 Replace Kernel with EVL Build
+### 2.3 Build a Bootable Baseline Image
 
-After flashing the base image, replace the kernel using our flash script:
+Instead of patching an SD card in place for the first test, build a complete
+baseline SD image that only swaps `Image` and DTBs:
 
 ```bash
-bash scripts/flash/flash-sdcard.sh /dev/sdX ~/work/build-k1
+bash scripts/flash/make-baseline-sdcard-img.sh \
+  <base_image>.img \
+  <repo>/.build/build-k1 \
+  <repo>/.build/images
 ```
 
-This script:
-1. Mounts the boot partition (`/dev/sdX1`)
-2. Replaces `Image` with the EVL kernel
-3. Copies updated DTBs
-4. Optionally installs kernel modules to rootfs
+Then flash the generated image:
+
+```bash
+sudo dd if=<repo>/.build/images/evl-sdcard-k1-kernel-only-baseline-YYYYMMDD.img \
+  of=/dev/sdX bs=4M status=progress conv=fsync
+sync
+```
+
+This baseline image:
+1. Preserves the original bootloader and partition layout
+2. Preserves the original rootfs
+3. Preserves the original boot configuration
+4. Replaces only `Image` and DTBs
+
+If this image hangs at the Bianbu logo, the next diagnostic step is a
+bootflow-preserving image with matching modules:
+
+```bash
+bash scripts/flash/make-kernel-modules-sdcard-img.sh \
+  <base_image>.img \
+  <repo>/.build/build-k1 \
+  <repo>/.build/images
+```
+
+This narrows the problem to either:
+1. module ABI mismatch between the new kernel and the vendor rootfs
+2. a deeper EVL/Dovetail runtime problem in the kernel itself
 
 ---
 

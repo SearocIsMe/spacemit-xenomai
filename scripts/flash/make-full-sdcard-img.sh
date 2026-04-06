@@ -26,6 +26,7 @@
 # Environment knobs:
 #   TEST_PROFILE   Preset for staged boot testing. One of:
 #                  kernel-only  (default)
+#                  kernel-modules
 #                  env-debug
 #                  boot-debug
 #                  full-evl
@@ -105,6 +106,14 @@ case "${TEST_PROFILE}" in
     INJECT_MODULES=0
     PATCH_ROOTFS=0
     ;;
+  kernel-modules)
+    PRESERVE_BOOTFLOW=1
+    PATCH_EXTLINUX=0
+    PATCH_ENV=0
+    PATCH_INITRD=0
+    INJECT_MODULES=1
+    PATCH_ROOTFS=0
+    ;;
   env-debug)
     PRESERVE_BOOTFLOW=0
     PATCH_EXTLINUX=0
@@ -130,7 +139,7 @@ case "${TEST_PROFILE}" in
     PATCH_ROOTFS=1
     ;;
   *)
-    die "Unknown TEST_PROFILE='${TEST_PROFILE}'. Use: kernel-only, env-debug, boot-debug, full-evl"
+    die "Unknown TEST_PROFILE='${TEST_PROFILE}'. Use: kernel-only, kernel-modules, env-debug, boot-debug, full-evl"
     ;;
 esac
 

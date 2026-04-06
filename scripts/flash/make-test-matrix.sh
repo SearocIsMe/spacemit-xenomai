@@ -6,9 +6,10 @@
 # without UART:
 #
 #   1. kernel-only  - Replace only Image + DTBs
-#   2. env-debug    - kernel-only + patch env_k1-x.txt for verbose bootargs
-#   3. boot-debug   - env-debug + patch extlinux/initramfs
-#   4. full-evl     - boot-debug + inject modules + rootfs compatibility edits
+#   2. kernel-modules - kernel-only + inject matching kernel modules
+#   3. env-debug    - kernel-modules + patch env_k1-x.txt for verbose bootargs
+#   4. boot-debug   - env-debug + patch extlinux/initramfs
+#   5. full-evl     - boot-debug + rootfs compatibility edits
 #
 # Usage:
 #   sudo bash scripts/flash/make-test-matrix.sh <base_image> [build_dir] [output_dir]
@@ -28,6 +29,7 @@ fi
 
 profiles=(
   "kernel-only"
+  "kernel-modules"
   "env-debug"
   "boot-debug"
   "full-evl"
