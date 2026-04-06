@@ -47,6 +47,12 @@ ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 
+require_overlay_file() {
+  local path="$1"
+  [[ -e "${OVERLAY_DIR}/${path}" ]] || die \
+    "Overlay is incomplete: missing ${path} in ${OVERLAY_DIR}. Refusing to deploy a partial EVL tree."
+}
+
 # ---------------------------------------------------------------------------
 # Load kernel dir from env.sh, or use default
 # ---------------------------------------------------------------------------
@@ -63,6 +69,17 @@ DRY_RUN=0
 # ---------------------------------------------------------------------------
 [[ -d "${OVERLAY_DIR}" ]] || die "Overlay directory not found: ${OVERLAY_DIR}"
 [[ -d "${KERNEL_DIR}" ]]  || die "Kernel source not found: ${KERNEL_DIR}"
+
+# A partial EVL overlay is worse than no overlay at all: it can leave the
+# kernel tree in a state where Kconfig references EVL menus that do not exist.
+# Validate a few must-have files before we touch the target tree.
+require_overlay_file "arch/riscv/include/asm/irq_pipeline.h"
+require_overlay_file "include/dovetail/irq.h"
+require_overlay_file "include/evl/thread.h"
+require_overlay_file "include/uapi/evl/thread-abi.h"
+require_overlay_file "kernel/Kconfig.evl"
+require_overlay_file "kernel/Kconfig.dovetail"
+require_overlay_file "kernel/evl/Kconfig"
 
 FILE_COUNT=$(find "${OVERLAY_DIR}" -type f | wc -l)
 info "Deploying ${FILE_COUNT} overlay files → ${KERNEL_DIR}"

@@ -39,6 +39,47 @@ ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 
+ensure_writable_build_dir() {
+  if mkdir -p "${BUILD_DIR}" 2>/dev/null && [[ -w "${BUILD_DIR}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${BUILD_DIR_OVERRIDE:-}" ]]; then
+    die "Build directory is not writable: ${BUILD_DIR}"
+  fi
+
+  local fallback="${REPO_ROOT}/.build/build-k1"
+  warn "Build directory is not writable: ${BUILD_DIR}"
+  warn "Falling back to a repo-local build directory: ${fallback}"
+  mkdir -p "${fallback}" || die "Cannot create fallback build directory: ${fallback}"
+  BUILD_DIR="${fallback}"
+}
+
+verify_kernel_tree_state() {
+  local top_kconfig="${KERNEL_DIR}/Kconfig"
+
+  if grep -q 'source "kernel/evl/Kconfig"' "${top_kconfig}" 2>/dev/null &&
+     [[ ! -f "${KERNEL_DIR}/kernel/evl/Kconfig" ]]; then
+    die "$(cat <<EOF
+Kernel tree is in a partial EVL overlay state.
+
+Detected:
+  - ${top_kconfig} references kernel/evl/Kconfig
+  - ${KERNEL_DIR}/kernel/evl/Kconfig does not exist
+
+This means the kernel source was modified by an incomplete overlay, so Kconfig
+cannot even load the base defconfig.
+
+Next step:
+  1. Fix the overlay content first (kernel/Kconfig.evl, kernel/Kconfig.dovetail,
+     kernel/evl/, and related EVL core files must exist).
+  2. Re-deploy the overlay.
+  3. Re-run this script.
+EOF
+)"
+  fi
+}
+
 CONFIG_FRAGMENT="${CONFIG_FRAGMENT:-${REPO_ROOT}/configs/k1_evl_defconfig}"
 OPEN_MENUCONFIG="${OPEN_MENUCONFIG:-0}"   # set to 1 to open menuconfig
 BUILD_DIR="${BUILD_DIR_OVERRIDE:-${BUILD_DIR}}"
@@ -48,6 +89,9 @@ BUILD_DIR="${BUILD_DIR_OVERRIDE:-${BUILD_DIR}}"
 # ---------------------------------------------------------------------------
 [[ -d "${KERNEL_DIR}/.git" ]] || die "Kernel not found at ${KERNEL_DIR}."
 [[ -f "${CONFIG_FRAGMENT}" ]] || die "Kernel config fragment not found at ${CONFIG_FRAGMENT}."
+
+ensure_writable_build_dir
+verify_kernel_tree_state
 
 cd "${KERNEL_DIR}"
 
