@@ -53,6 +53,18 @@ require_overlay_file() {
     "Overlay is incomplete: missing ${path} in ${OVERLAY_DIR}. Refusing to deploy a partial EVL tree."
 }
 
+require_overlay_any() {
+  local paths=("$@")
+  local path
+  for path in "${paths[@]}"; do
+    if [[ -e "${OVERLAY_DIR}/${path}" ]]; then
+      return 0
+    fi
+  done
+
+  die "Overlay is incomplete: missing one of [${paths[*]}] in ${OVERLAY_DIR}. Refusing to deploy a partial EVL tree."
+}
+
 # ---------------------------------------------------------------------------
 # Load kernel dir from env.sh, or use default
 # ---------------------------------------------------------------------------
@@ -77,9 +89,9 @@ require_overlay_file "arch/riscv/include/asm/irq_pipeline.h"
 require_overlay_file "include/dovetail/irq.h"
 require_overlay_file "include/evl/thread.h"
 require_overlay_file "include/uapi/evl/thread-abi.h"
-require_overlay_file "kernel/Kconfig.evl"
-require_overlay_file "kernel/Kconfig.dovetail"
 require_overlay_file "kernel/evl/Kconfig"
+require_overlay_any "kernel/Kconfig.evl" "kernel/evl/Kconfig"
+require_overlay_any "kernel/Kconfig.dovetail" "kernel/evl/Kconfig"
 
 FILE_COUNT=$(find "${OVERLAY_DIR}" -type f | wc -l)
 info "Deploying ${FILE_COUNT} overlay files → ${KERNEL_DIR}"
