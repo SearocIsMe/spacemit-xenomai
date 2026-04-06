@@ -1,0 +1,39 @@
+# =============================================================================
+# k1_irq_pipeline_nosmp_defconfig
+# IRQ pipeline enabled, but keep Dovetail/EVL disabled and collapse the
+# platform to a single CPU. This isolates whether the first blocker is in
+# SMP/IPI handling rather than the basic single-core interrupt pipeline.
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+CONFIG_IRQ_PIPELINE=y
+# CONFIG_DOVETAIL is not set
+# CONFIG_EVL is not set
+
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Keep this variant out of suspend/idle interactions while we narrow the
+# first IRQ-pipeline blocker.
+# CONFIG_PM is not set
+# CONFIG_SUSPEND is not set
+# CONFIG_PM_SLEEP is not set
+# CONFIG_SPACEMIT_LID_CONTROL is not set
+# CONFIG_SPACEMIT_WATCHDOG is not set
+
+# Collapse to one CPU so no IPI/OOB cross-CPU path can trigger.
+# CONFIG_SMP is not set
+# CONFIG_HOTPLUG_CPU is not set
+
+# Disable idle/broadcast interactions for the first single-core check.
+# CONFIG_CPU_IDLE is not set
+# CONFIG_NO_HZ_IDLE is not set
+# CONFIG_GENERIC_CLOCKEVENTS_BROADCAST is not set
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set

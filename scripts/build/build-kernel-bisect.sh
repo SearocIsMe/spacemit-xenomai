@@ -12,6 +12,11 @@
 # Usage:
 #   bash scripts/build/build-kernel-bisect.sh [variant]
 #   bash scripts/build/build-kernel-bisect.sh all
+#
+# Environment:
+#   JOBS         Parallel jobs for Image/dtbs builds (forwarded to 03-build-kernel.sh)
+#   MODULE_JOBS  Parallel jobs for modules build/install (default remains whatever
+#                03-build-kernel.sh chooses; recommend 1 unless testing races)
 # =============================================================================
 set -euo pipefail
 
@@ -27,10 +32,14 @@ source "${ENV_FILE}"
 
 TARGET="${1:-all}"
 CLEAN_BUILD="${CLEAN_BUILD:-1}"
+JOBS="${JOBS:-}"
+MODULE_JOBS="${MODULE_JOBS:-}"
 
 variants=(
   "vanilla-k1:${REPO_ROOT}/configs/k1_vanilla_defconfig:${WORK_DIR}/build-k1-vanilla"
   "irq-pipeline-only:${REPO_ROOT}/configs/k1_irq_pipeline_only_defconfig:${WORK_DIR}/build-k1-irq-pipeline"
+  "irq-pipeline-nosmp:${REPO_ROOT}/configs/k1_irq_pipeline_nosmp_defconfig:${WORK_DIR}/build-k1-irq-pipeline-nosmp"
+  "irq-pipeline-noidle:${REPO_ROOT}/configs/k1_irq_pipeline_noidle_defconfig:${WORK_DIR}/build-k1-irq-pipeline-noidle"
   "dovetail-nosmp:${REPO_ROOT}/configs/k1_dovetail_nosmp_defconfig:${WORK_DIR}/build-k1-dovetail-nosmp"
   "dovetail-noidle:${REPO_ROOT}/configs/k1_dovetail_noidle_defconfig:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${REPO_ROOT}/configs/k1_dovetail_only_defconfig:${WORK_DIR}/build-k1-dovetail"
@@ -61,6 +70,8 @@ run_variant() {
 
   BUILD_DIR_OVERRIDE="${outdir}" \
   MODULES_INSTALL_DIR_OVERRIDE="${outdir}/modules_install" \
+  JOBS="${JOBS}" \
+  MODULE_JOBS="${MODULE_JOBS}" \
     bash "${SCRIPT_DIR}/03-build-kernel.sh"
 }
 
@@ -75,7 +86,7 @@ done
 
 if [[ "${matched}" != "1" ]]; then
   echo "ERROR: Unknown variant '${TARGET}'."
-  echo "Valid values: all, vanilla-k1, irq-pipeline-only, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
+  echo "Valid values: all, vanilla-k1, irq-pipeline-only, irq-pipeline-nosmp, irq-pipeline-noidle, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
   exit 1
 fi
 

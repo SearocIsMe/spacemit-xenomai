@@ -1,0 +1,37 @@
+# =============================================================================
+# k1_irq_pipeline_noidle_defconfig
+# IRQ pipeline enabled, Dovetail/EVL disabled, SMP kept on, but disable idle
+# and broadcast tick machinery. This separates "basic IRQ pipeline works"
+# from "idle/tick-broadcast path breaks boot".
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+CONFIG_IRQ_PIPELINE=y
+# CONFIG_DOVETAIL is not set
+# CONFIG_EVL is not set
+
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Keep suspend/PM out of this diagnostic slice.
+# CONFIG_PM is not set
+# CONFIG_SUSPEND is not set
+# CONFIG_PM_SLEEP is not set
+# CONFIG_SPACEMIT_LID_CONTROL is not set
+# CONFIG_SPACEMIT_WATCHDOG is not set
+
+CONFIG_SMP=y
+CONFIG_HOTPLUG_CPU=y
+
+# Remove idle/tick-broadcast interactions first.
+# CONFIG_CPU_IDLE is not set
+# CONFIG_NO_HZ_IDLE is not set
+# CONFIG_GENERIC_CLOCKEVENTS_BROADCAST is not set
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set
