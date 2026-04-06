@@ -545,7 +545,7 @@ else
       ok "kernel_addr_r already set in raw env"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 vt.global_cursor_default=0 systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk keep_bootcon ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 fbcon=nodefer vt.global_cursor_default=0 logo.nologo systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if grep -q '^commonargs=' "${ENV_TXT}"; then
       sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_TXT}"
       ok "Replaced commonargs in raw env"
@@ -562,6 +562,23 @@ else
       printf '%s\n' "${SET_CONSOLE}" >> "${ENV_TXT}"
       ok "Added set_console to raw env"
     fi
+
+    for stream_var in stdout stderr; do
+      if grep -q "^${stream_var}=" "${ENV_TXT}"; then
+        sed -i "s|^${stream_var}=.*|${stream_var}=serial,vidconsole|" "${ENV_TXT}"
+        ok "Updated ${stream_var} to serial,vidconsole in raw env"
+      else
+        printf '%s\n' "${stream_var}=serial,vidconsole" >> "${ENV_TXT}"
+        ok "Added ${stream_var}=serial,vidconsole to raw env"
+      fi
+    done
+
+    for splash_var in splashimage splashsource splashfile silent; do
+      if grep -q "^${splash_var}=" "${ENV_TXT}"; then
+        sed -i "/^${splash_var}=/d" "${ENV_TXT}"
+        ok "Removed ${splash_var} from raw env to unmute HDMI/U-Boot console"
+      fi
+    done
 
     "${MKENVIMAGE}" -s "${ENV_SIZE}" -o "${ENV_BIN}" "${ENV_TXT}"
     sudo dd if="${ENV_BIN}" of="${ENV_PART}" conv=fsync,notrunc status=none
@@ -603,7 +620,7 @@ else
       ok "kernel_addr_r already set — no change needed"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 vt.global_cursor_default=0 systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk keep_bootcon ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 fbcon=nodefer vt.global_cursor_default=0 logo.nologo systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
     if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
       sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
       ok "Replaced commonargs: removed quiet/splash/plymouth, added debug verbosity"
@@ -634,6 +651,23 @@ else
       sudo sed -i "s|^set_console=.*|${SET_CONSOLE}|" "${ENV_FILE}"
       ok "Updated set_console in env_k1-x.txt"
     fi
+
+    for stream_var in stdout stderr; do
+      if ! sudo grep -q "^${stream_var}=" "${ENV_FILE}" 2>/dev/null; then
+        printf '%s\n' "${stream_var}=serial,vidconsole" | sudo tee -a "${ENV_FILE}" > /dev/null
+        ok "Added ${stream_var}=serial,vidconsole to env_k1-x.txt"
+      else
+        sudo sed -i "s|^${stream_var}=.*|${stream_var}=serial,vidconsole|" "${ENV_FILE}"
+        ok "Updated ${stream_var} to serial,vidconsole in env_k1-x.txt"
+      fi
+    done
+
+    for splash_var in splashimage splashsource splashfile silent; do
+      if sudo grep -q "^${splash_var}=" "${ENV_FILE}" 2>/dev/null; then
+        sudo sed -i "/^${splash_var}=/d" "${ENV_FILE}"
+        ok "Removed ${splash_var} from env_k1-x.txt"
+      fi
+    done
 
     sep
     info "Updated env_k1-x.txt:"

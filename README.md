@@ -90,7 +90,7 @@ spacemit-xenomai/
 │   │   │   ├── irq_pipeline.h     ← NEW: IRQ pipeline core header
 │   │   │   ├── irqstage.h         ← NEW: IRQ stage definitions
 │   │   │   ├── dmaengine.h        ← MODIFIED: adds #include <linux/dovetail.h>
-│   │   │   ├── sched.h            ← PATCHED via 00b-deploy-overlay.sh (stall_bits)
+│   │   │   ├── sched.h            ← MODIFIED: adds stall_bits to task_struct
 │   │   │   └── sched/coredump.h   ← MODIFIED: adds MMF_DOVETAILED 31
 │   │   ├── asm-generic/
 │   │   │   ├── irq_pipeline.h
@@ -101,6 +101,7 @@ spacemit-xenomai/
 │   └── kernel/
 │       ├── Makefile               ← MODIFIED: adds obj-$(CONFIG_DOVETAIL) += dovetail.o
 │       ├── dovetail.c             ← NEW: Dovetail core (from linux-evl)
+│       ├── sched/core.c           ← MODIFIED: adds irqstage.h include for EVL
 │       ├── smp.c                  ← MODIFIED: adds OOB IPI flush support
 │       ├── irq/
 │       │   ├── Kconfig            ← MODIFIED: adds IRQ_PIPELINE config
@@ -111,7 +112,7 @@ spacemit-xenomai/
 └── scripts/
     ├── build/
     │   ├── 00-setup-env.sh        ← Clone kernel + EVL, set toolchain
-    │   ├── 00b-deploy-overlay.sh  ← Deploy kernel-overlay/ + patch sched.h
+    │   ├── 00b-deploy-overlay.sh  ← Deploy kernel-overlay/ into linux-k1
     │   ├── 02-configure.sh        ← Merge SpacemiT defconfig + EVL fragment
     │   ├── 03-build-kernel.sh     ← Cross-compile kernel + modules
     │   └── 04-build-sdk.sh        ← Build libevl SDK (optional)
@@ -341,6 +342,7 @@ kernel-overlay/include/linux/dovetail.h                  → include/linux/dovet
 kernel-overlay/include/linux/irq_pipeline.h              → include/linux/irq_pipeline.h
 kernel-overlay/include/linux/irqstage.h                  → include/linux/irqstage.h
 kernel-overlay/include/linux/dmaengine.h                 → include/linux/dmaengine.h
+kernel-overlay/include/linux/sched.h                     → include/linux/sched.h
 kernel-overlay/include/linux/sched/coredump.h            → include/linux/sched/coredump.h
 kernel-overlay/include/asm-generic/irq_pipeline.h        → include/asm-generic/irq_pipeline.h
 kernel-overlay/include/asm-generic/evl/                  → include/asm-generic/evl/
@@ -349,22 +351,12 @@ kernel-overlay/include/evl/                              → include/evl/
 kernel-overlay/include/uapi/evl/                         → include/uapi/evl/
 kernel-overlay/kernel/Makefile                           → kernel/Makefile
 kernel-overlay/kernel/dovetail.c                         → kernel/dovetail.c
+kernel-overlay/kernel/sched/core.c                       → kernel/sched/core.c
 kernel-overlay/kernel/smp.c                              → kernel/smp.c
 kernel-overlay/kernel/irq/                               → kernel/irq/
 kernel-overlay/kernel/evl/                               → kernel/evl/
 kernel-overlay/Kconfig                                   → Kconfig
 ```
-
-**b) Patch `include/linux/sched.h` in-place** — adds `stall_bits` to `task_struct`:
-
-```c
-// Inserted after softirq_disable_cnt in struct task_struct:
-#ifdef CONFIG_IRQ_PIPELINE
-    unsigned long   stall_bits;
-#endif
-```
-
-This is done as a targeted in-place injection rather than a full file replacement, since `sched.h` is a large base-kernel file that changes frequently.
 
 ---
 
@@ -540,7 +532,8 @@ The complete set of files that must be deployed to `~/work/linux-k1/` to enable 
 | `kernel/irq/Kconfig` | Modified | Adds `IRQ_PIPELINE` and `DOVETAIL` config symbols |
 | `kernel/irq/Makefile` | Modified | Adds pipeline-aware IRQ chip objects |
 | `kernel/irq/chip.c` | Modified | Pipeline-aware IRQ chip operations |
-| `include/linux/sched.h` | **Patched in-place** | Adds `stall_bits` to `struct task_struct` |
+| `include/linux/sched.h` | Modified | Adds `stall_bits` to `struct task_struct` |
+| `kernel/sched/core.c` | Modified | Adds `#include <linux/irqstage.h>` for EVL helpers |
 
 ### 8.2 Fixes applied to SpacemiT linux-k1
 
@@ -577,7 +570,7 @@ static inline unsigned long syscall_get_arg0(struct task_struct *task,
 #### Fix 4: `stall_bits` missing from `task_struct`
 EVL's IRQ pipeline requires `stall_bits` per task for pipeline stall state tracking.
 ```c
-// include/linux/sched.h — injected by 00b-deploy-overlay.sh:
+// kernel-overlay/include/linux/sched.h:
 #ifdef CONFIG_IRQ_PIPELINE
     unsigned long   stall_bits;
 #endif
@@ -587,10 +580,10 @@ EVL's IRQ pipeline requires `stall_bits` per task for pipeline stall state track
 #### Fix 5: `#include <linux/irqstage.h>` missing from `kernel/sched/core.c`
 
 `linux-k1`'s `core.c` does not include `irq_pipeline.h` or `dovetail.h` transitively, unlike the EVL
-reference tree. The header is injected by `00b-deploy-overlay.sh`:
+reference tree. The fix is now kept directly in `kernel-overlay/kernel/sched/core.c`:
 
 ```c
-// kernel/sched/core.c — added just before #include <linux/highmem.h>:
+// kernel-overlay/kernel/sched/core.c — added just before #include <linux/highmem.h>:
 #ifdef CONFIG_IRQ_PIPELINE
 #include <linux/irqstage.h>
 #endif
@@ -618,8 +611,7 @@ the zero-initialized value is intentional.
 **Proof:** The Apr 1 kernel build (without this call) booted successfully on Milk-V Jupiter;
 the Apr 3 kernel build (with this call) hung at the Bianbu splash.
 
-**Fix:** Reverted Apr 2026 — `init_task_stall_bits(p)` removed from `__sched_fork()` and
-removed from the `00b-deploy-overlay.sh` injector.
+**Fix:** Reverted Apr 2026 — `init_task_stall_bits(p)` removed from `kernel-overlay/kernel/sched/core.c`.
 
 ---
 
