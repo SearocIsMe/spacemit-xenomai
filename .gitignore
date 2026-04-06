@@ -8,9 +8,13 @@
 # ----- Kernel source trees (cloned externally) --------------
 linux-*/
 linux/
+!kernel-overlay/include/linux/
+!kernel-overlay/include/linux/**
 kernel/
 !kernel-overlay/kernel/
 !kernel-overlay/kernel/**
+!kernel-overlay/arch/riscv/kernel/
+!kernel-overlay/arch/riscv/kernel/**
 evl-src/
 xenomai-*/
 
@@ -59,7 +63,7 @@ rootfs*
 # ----- Toolchains -------------------------------------------
 toolchain/
 cross-compile/
-riscv*/
+/riscv*/
 gcc-*/
 llvm-*/
 
