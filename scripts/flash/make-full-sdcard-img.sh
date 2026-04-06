@@ -29,6 +29,7 @@
 #                  kernel-modules
 #                  env-debug
 #                  boot-debug
+#                  boot-debug-modules
 #                  full-evl
 #   IMAGE_TAG      Optional extra suffix in output filename.
 #
@@ -130,6 +131,14 @@ case "${TEST_PROFILE}" in
     INJECT_MODULES=0
     PATCH_ROOTFS=0
     ;;
+  boot-debug-modules)
+    PRESERVE_BOOTFLOW=0
+    PATCH_EXTLINUX=1
+    PATCH_ENV=1
+    PATCH_INITRD=1
+    INJECT_MODULES=1
+    PATCH_ROOTFS=0
+    ;;
   full-evl)
     PRESERVE_BOOTFLOW=0
     PATCH_EXTLINUX=1
@@ -139,7 +148,7 @@ case "${TEST_PROFILE}" in
     PATCH_ROOTFS=1
     ;;
   *)
-    die "Unknown TEST_PROFILE='${TEST_PROFILE}'. Use: kernel-only, kernel-modules, env-debug, boot-debug, full-evl"
+    die "Unknown TEST_PROFILE='${TEST_PROFILE}'. Use: kernel-only, kernel-modules, env-debug, boot-debug, boot-debug-modules, full-evl"
     ;;
 esac
 

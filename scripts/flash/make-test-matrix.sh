@@ -9,7 +9,8 @@
 #   2. kernel-modules - kernel-only + inject matching kernel modules
 #   3. env-debug    - kernel-modules + patch env_k1-x.txt for verbose bootargs
 #   4. boot-debug   - env-debug + patch extlinux/initramfs
-#   5. full-evl     - boot-debug + rootfs compatibility edits
+#   5. boot-debug-modules - boot-debug + inject matching modules
+#   6. full-evl     - boot-debug-modules + rootfs compatibility edits
 #
 # Usage:
 #   sudo bash scripts/flash/make-test-matrix.sh <base_image> [build_dir] [output_dir]
@@ -32,6 +33,7 @@ profiles=(
   "kernel-modules"
   "env-debug"
   "boot-debug"
+  "boot-debug-modules"
   "full-evl"
 )
 
