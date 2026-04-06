@@ -86,9 +86,11 @@ DRY_RUN=0
 # kernel tree in a state where Kconfig references EVL menus that do not exist.
 # Validate a few must-have files before we touch the target tree.
 require_overlay_file "arch/riscv/include/asm/irq_pipeline.h"
+require_overlay_file "include/linux/irq.h"
 require_overlay_file "include/dovetail/irq.h"
 require_overlay_file "include/evl/thread.h"
 require_overlay_file "include/uapi/evl/thread-abi.h"
+require_overlay_file "kernel/irq/settings.h"
 require_overlay_file "kernel/evl/Kconfig"
 require_overlay_any "kernel/Kconfig.evl" "kernel/evl/Kconfig"
 require_overlay_any "kernel/Kconfig.dovetail" "kernel/evl/Kconfig"

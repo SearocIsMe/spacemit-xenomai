@@ -39,6 +39,33 @@ ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 
+verify_irq_pipeline_overlay_state() {
+  local irq_header="${KERNEL_DIR}/include/linux/irq.h"
+  local irq_settings="${KERNEL_DIR}/kernel/irq/settings.h"
+
+  [[ -f "${irq_header}" ]] || die "Missing kernel header: ${irq_header}"
+  [[ -f "${irq_settings}" ]] || die "Missing IRQ settings header: ${irq_settings}"
+
+  if grep -q 'IRQ_OOB' "${irq_settings}" 2>/dev/null; then
+    grep -q 'IRQ_OOB' "${irq_header}" 2>/dev/null || die "$(cat <<EOF
+Kernel tree is missing IRQ pipeline flag definitions in ${irq_header}.
+
+Detected:
+  - ${irq_settings} references IRQ_OOB / IRQ_CHAINED
+  - ${irq_header} does not define them
+
+This usually means the EVL overlay was only partially deployed, or the source
+tree was updated after overlay deployment.
+
+Next step:
+  1. Re-run bash scripts/build/00b-deploy-overlay.sh
+  2. Verify ${irq_header} contains IRQ_OOB and IRQ_CHAINED
+  3. Re-run this build script
+EOF
+)"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -61,6 +88,8 @@ LOCALVERSION=""
 [[ -f "${BUILD_DIR}/.config" ]]    || die ".config not found. Run 02-configure.sh first."
 command -v "${CROSS_COMPILE}gcc" &>/dev/null || \
   die "Cross-compiler not found: ${CROSS_COMPILE}gcc"
+
+verify_irq_pipeline_overlay_state
 
 cd "${KERNEL_DIR}"
 
