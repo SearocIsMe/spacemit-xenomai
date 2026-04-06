@@ -1,31 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
-# Xenomai 4 / EVL real-time co-kernel Kconfig
-# Sourced from top-level Kconfig
-
-# Dovetail interrupt pipeline glue
-config HAVE_DOVETAIL
-bool
-
-config DOVETAIL
-bool "Dovetail interrupt pipeline interface"
-depends on HAVE_DOVETAIL
-select IRQ_PIPELINE
-default n
-help
-  Enable the Dovetail interface between the Linux kernel and a
-  real-time companion core (e.g. Xenomai 4 / EVL).
-
-# EVL real-time co-kernel
-config EVL
-bool "EVL real-time core (Xenomai 4)"
-depends on DOVETAIL
-depends on HIGH_RES_TIMERS
-default n
-help
-  Enable the EVL (Xenomai 4) real-time co-kernel.
-
-if EVL
-
 
 config EVL_SCHED_QUOTA
 	bool "Enable quota-based scheduling"
@@ -328,5 +300,3 @@ config EVL_WATCHDOG_TIMEOUT
 	  Watchdog timeout value (in seconds).
 
 endif # EVL_DEBUG
-
-endif # EVL

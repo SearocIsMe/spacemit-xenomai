@@ -31,4 +31,5 @@ source "lib/Kconfig.debug"
 
 source "Documentation/Kconfig"
 
-source "kernel/evl/Kconfig"
+source "kernel/Kconfig.evl"
+source "kernel/Kconfig.dovetail"

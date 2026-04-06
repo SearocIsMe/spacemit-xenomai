@@ -19,6 +19,7 @@
 #include <evl/stat.h>
 #include <evl/init.h>
 #include <evl/timer.h>
+#include <evl/wait.h>
 #include <evl/sched/param.h>
 #include <evl/factory.h>
 #include <evl/assert.h>
@@ -49,7 +50,6 @@ struct evl_thread;
 struct evl_rq;
 struct evl_sched_class;
 struct evl_poll_watchpoint;
-struct evl_wait_channel;
 struct evl_observable;
 struct file;
 

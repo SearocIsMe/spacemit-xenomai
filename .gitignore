@@ -19,6 +19,8 @@ kernel/
 !kernel-overlay/arch/riscv/kernel/**
 evl-src/
 xenomai-*/
+.build/
+.tmp-build/
 
 # ----- Build output & intermediate artefacts ----------------
 # Note: 'build/' would also match scripts/build/ — use more specific paths instead
