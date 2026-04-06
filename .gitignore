@@ -10,6 +10,8 @@ linux-*/
 linux/
 !kernel-overlay/include/linux/
 !kernel-overlay/include/linux/**
+!kernel-overlay/include/uapi/linux/
+!kernel-overlay/include/uapi/linux/**
 kernel/
 !kernel-overlay/kernel/
 !kernel-overlay/kernel/**
