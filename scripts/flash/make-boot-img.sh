@@ -26,8 +26,8 @@
 #
 #   bash scripts/flash/make-full-sdcard-img.sh \
 #       ~/Downloads/buildroot-k1_rt-sdcard.img \
-#       ~/work/build-k1 \
-#       ~/Downloads
+#       <repo>/.build/build-k1 \
+#       <repo>/.build/images
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # WHEN IS THIS SCRIPT STILL USEFUL?
@@ -58,9 +58,9 @@ die()  { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-BUILD_DIR="${1:-${HOME}/work/build-k1}"
-OUTPUT_DIR="${2:-/tmp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BUILD_DIR="${1:-${REPO_ROOT}/.build/build-k1}"
+OUTPUT_DIR="${2:-${REPO_ROOT}/.build/images}"
 
 IMG_NAME="evl-boot-k1-$(date +%Y%m%d).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
@@ -82,6 +82,7 @@ fi
 # ---------------------------------------------------------------------------
 [[ -f "${KERNEL_IMAGE}" ]] || die "Kernel image not found: ${KERNEL_IMAGE}"
 [[ -d "${DTB_DIR}" ]]      || die "DTB directory not found: ${DTB_DIR}"
+mkdir -p "${OUTPUT_DIR}"
 [[ -d "${OUTPUT_DIR}" ]]   || die "Output directory not found: ${OUTPUT_DIR}"
 
 info "Build dir  : ${BUILD_DIR}"

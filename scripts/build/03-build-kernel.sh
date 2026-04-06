@@ -39,6 +39,24 @@ ok()    { echo -e "\033[1;32m[ OK ]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
 die()   { echo -e "\033[1;31m[FAIL]\033[0m  $*"; exit 1; }
 
+ensure_writable_build_dir() {
+  if mkdir -p "${BUILD_DIR}" 2>/dev/null && [[ -w "${BUILD_DIR}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${BUILD_DIR_OVERRIDE:-}" ]]; then
+    die "Build directory is not writable: ${BUILD_DIR}"
+  fi
+
+  local fallback
+  fallback="$(cd "${SCRIPT_DIR}/../.." && pwd)/.build/build-k1"
+  warn "Build directory is not writable: ${BUILD_DIR}"
+  warn "Falling back to a repo-local build directory: ${fallback}"
+  mkdir -p "${fallback}" || die "Cannot create fallback build directory: ${fallback}"
+  BUILD_DIR="${fallback}"
+  MODULES_INSTALL_DIR="${BUILD_DIR}/modules_install"
+}
+
 verify_irq_pipeline_overlay_state() {
   local irq_header="${KERNEL_DIR}/include/linux/irq.h"
   local irq_settings="${KERNEL_DIR}/kernel/irq/settings.h"
@@ -72,6 +90,7 @@ EOF
 # Number of parallel jobs — default to nproc, cap at 16 for WSL2 stability
 NPROC=$(nproc)
 JOBS="${JOBS:-$((NPROC > 16 ? 16 : NPROC))}"
+MODULE_JOBS="${MODULE_JOBS:-1}"
 MODULES_INSTALL_DIR="${MODULES_INSTALL_DIR_OVERRIDE:-${BUILD_DIR}/modules_install}"
 
 # LOCALVERSION must be passed on the make command line (not just via config).
@@ -85,9 +104,11 @@ LOCALVERSION=""
 # Verify prerequisites
 # ---------------------------------------------------------------------------
 [[ -d "${KERNEL_DIR}/.git" ]]      || die "Kernel not found at ${KERNEL_DIR}."
-[[ -f "${BUILD_DIR}/.config" ]]    || die ".config not found. Run 02-configure.sh first."
 command -v "${CROSS_COMPILE}gcc" &>/dev/null || \
   die "Cross-compiler not found: ${CROSS_COMPILE}gcc"
+
+ensure_writable_build_dir
+[[ -f "${BUILD_DIR}/.config" ]]    || die ".config not found. Run 02-configure.sh first."
 
 verify_irq_pipeline_overlay_state
 
@@ -133,6 +154,7 @@ echo "  Build output  : ${BUILD_DIR}"
 echo "  ARCH          : ${ARCH}"
 echo "  CROSS_COMPILE : ${CROSS_COMPILE}"
 echo "  Jobs          : ${JOBS}"
+echo "  Module jobs   : ${MODULE_JOBS}"
 echo "============================================================"
 echo ""
 
@@ -181,14 +203,19 @@ ok "DTBs built → ${BUILD_DIR}/arch/riscv/boot/dts/"
 
 # ---------------------------------------------------------------------------
 # Step 3: Build kernel modules
+# NOTE:
+#   This tree sporadically hits fixdep races under parallel O= module builds
+#   ("error opening file ... .*.o.d: No such file or directory"). Building
+#   modules single-threaded is slower, but reliably avoids those transient
+#   dependency-file failures.
 # ---------------------------------------------------------------------------
-info "Building kernel modules ..."
+info "Building kernel modules (${MODULE_JOBS} job(s)) ..."
 make \
   ARCH="${ARCH}" \
   CROSS_COMPILE="${CROSS_COMPILE}" \
   LOCALVERSION="${LOCALVERSION}" \
   O="${BUILD_DIR}" \
-  -j"${JOBS}" \
+  -j"${MODULE_JOBS}" \
   modules
 ok "Modules built."
 

@@ -17,8 +17,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_IMAGE="${1:-}"
-BUILD_DIR="${2:-${HOME}/work/build-k1}"
-OUTPUT_DIR="${3:-/tmp}"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+BUILD_DIR="${2:-${REPO_ROOT}/.build/build-k1}"
+OUTPUT_DIR="${3:-${REPO_ROOT}/.build/images}"
 
 if [[ -z "${BASE_IMAGE}" ]]; then
   echo "Usage: $0 <base_image> [build_dir] [output_dir]"

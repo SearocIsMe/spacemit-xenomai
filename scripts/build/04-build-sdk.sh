@@ -29,13 +29,13 @@
 # Usage:
 #   bash scripts/build/04-build-sdk.sh [work_dir]
 #
-#   work_dir  Where to clone the SDK (default: ~/work/jupiter-linux)
+#   work_dir  Where to clone the SDK (default: .build/jupiter-linux under repo)
 #             Must be on a native Linux filesystem (not /mnt/c/...)
 #
 # After this script completes, run:
 #   bash scripts/flash/make-full-sdcard-img.sh \
-#     ~/work/jupiter-linux/output/k1_v2/images/sdcard.img \
-#     ~/work/build-k1 \
+#     <repo>/.build/jupiter-linux/output/k1_v2/images/sdcard.img \
+#     <repo>/.build/build-k1 \
 #     /mnt/c/Users/haipeng/Downloads
 # =============================================================================
 set -euo pipefail
@@ -56,13 +56,14 @@ step() { echo -e "\n\033[1;35m════════════════�
 # ---------------------------------------------------------------------------
 _work_arg="${1:-}"
 if [[ "${_work_arg}" == /mnt/* ]] || [[ "$PWD" == /mnt/* ]]; then
-  die "Running from Windows-mounted path. Use a WSL2 native path like ~/work/jupiter-linux"
+  die "Running from Windows-mounted path. Use a native path like <repo>/.build/jupiter-linux"
 fi
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SDK_DIR="${_work_arg:-${HOME}/work/jupiter-linux}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SDK_DIR="${_work_arg:-${REPO_ROOT}/.build/jupiter-linux}"
 
 MANIFEST_URL="https://github.com/milkv-jupiter/manifests.git"
 MANIFEST_BRANCH="main"

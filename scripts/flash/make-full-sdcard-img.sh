@@ -19,9 +19,9 @@
 #   sudo bash scripts/flash/make-full-sdcard-img.sh <base_image> [build_dir] [output_dir]
 #
 #   bash scripts/flash/make-full-sdcard-img.sh \
-#    ~/work/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
-#    ~/work/build-k1 \
-#    ~/work
+#    <repo>/.build/jupiter-linux/output/k1_v2/images/bianbu-linux-k1_v2-sdcard.img \
+#    <repo>/.build/build-k1 \
+#    <repo>/.build/images
 #
 # Environment knobs:
 #   TEST_PROFILE   Preset for staged boot testing. One of:
@@ -39,7 +39,7 @@
 #                Example: ~/Downloads/buildroot-k1_rt-sdcard.img
 #                Also obtainable by running scripts/build/04-build-sdk.sh
 #
-#   build_dir    Kernel build output directory (default: ~/work/build-k1)
+#   build_dir    Kernel build output directory (default: <repo>/.build/build-k1)
 #                Must contain:
 #                  arch/riscv/boot/Image
 #                  arch/riscv/boot/dts/spacemit/*.dtb
@@ -82,10 +82,10 @@ sep()  { echo -e "\033[1;36m─────────────────�
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-BASE_IMAGE="${1:-}"
-BUILD_DIR="${2:-${HOME}/work/build-k1}"
-OUTPUT_DIR="${3:-/tmp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BASE_IMAGE="${1:-}"
+BUILD_DIR="${2:-${REPO_ROOT}/.build/build-k1}"
+OUTPUT_DIR="${3:-${REPO_ROOT}/.build/images}"
 BUILD_ENV_FILE="${REPO_ROOT}/scripts/build/env.sh"
 TEST_PROFILE="${TEST_PROFILE:-kernel-only}"
 PRESERVE_BOOTFLOW="${PRESERVE_BOOTFLOW:-1}"
@@ -139,8 +139,8 @@ if [[ -z "${BASE_IMAGE}" ]]; then
   echo "Usage: $0 <base_image> [build_dir] [output_dir]"
   echo ""
   echo "  base_image  SpacemiT buildroot full disk image (e.g. buildroot-k1_rt-sdcard.img)"
-  echo "  build_dir   EVL kernel build output dir (default: ~/work/build-k1)"
-  echo "  output_dir  Where to write the finished image (default: /tmp)"
+  echo "  build_dir   EVL kernel build output dir (default: <repo>/.build/build-k1)"
+  echo "  output_dir  Where to write the finished image (default: <repo>/.build/images)"
   echo ""
   exit 1
 fi
@@ -159,6 +159,7 @@ MODULES_DIR="${BUILD_DIR}/modules_install"
        Run scripts/build/03-build-kernel.sh first."
 [[ -d "${DTB_DIR}" ]]       || die "DTB directory not found: ${DTB_DIR}"
 [[ -f "${EXTLINUX_TMPL}" ]] || die "extlinux.conf template not found: ${EXTLINUX_TMPL}"
+mkdir -p "${OUTPUT_DIR}"
 [[ -d "${OUTPUT_DIR}" ]]    || die "Output directory not found: ${OUTPUT_DIR}"
 
 # ---------------------------------------------------------------------------

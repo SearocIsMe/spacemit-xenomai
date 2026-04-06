@@ -66,9 +66,9 @@ require_overlay_any() {
 }
 
 # ---------------------------------------------------------------------------
-# Load kernel dir from env.sh, or use default
+# Load kernel dir from env.sh, or use repo-local default
 # ---------------------------------------------------------------------------
-KERNEL_DIR="${HOME}/work/linux-k1"
+KERNEL_DIR="${REPO_ROOT}/.build/linux-k1"
 if [[ -f "${ENV_FILE}" ]]; then
   source "${ENV_FILE}"
 fi

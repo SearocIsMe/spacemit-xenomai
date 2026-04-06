@@ -1,10 +1,11 @@
 # Xenomai 4 (EVL) on Milk-V Jupiter / SpacemiT K1 (RISC-V)
 
-> **Status:** First successful build achieved — EVL kernel boots on Milk-V Jupiter (pending hardware validation).  
+> **Status:** EVL-enabled kernel tree now configures cleanly and builds `Image`/`dtbs` successfully; on-board boot and EVL runtime validation are the next milestones.  
 > **Target board:** Milk-V Jupiter (SpacemiT K1, RISC-V RV64GCV)  
 > **Kernel base:** `linux-6.6` — SpacemiT fork [`v6.6.63`](https://gitee.com/spacemit-buildroot/linux-6.6-v2.1.y/tree/v6.6.63/)  
 > **Real-time layer:** Xenomai 4 / EVL (Eclipse Versatile Linux)  
-> **Build result:** `Kernel: arch/riscv/boot/Image is ready` (33 MB) ✅
+> **Build result:** `Kernel: arch/riscv/boot/Image is ready` ✅  
+> **Current caveat:** `modules` should be built with `MODULE_JOBS=1` to avoid transient `fixdep` races in parallel O= builds.
 
 ---
 
@@ -30,15 +31,24 @@
 8. [RISC-V Porting Details](#8-risc-v-porting-details)
    - 8.1 [kernel-overlay/ file map](#81-kernel-overlay-file-map)
    - 8.2 [Fixes applied to SpacemiT linux-k1](#82-fixes-applied-to-spacemit-linux-k1)
-9. [s-aiotm Integration Targets](#9-s-aiotm-integration-targets)
-10. [Known Issues & Workarounds](#10-known-issues--workarounds)
-11. [References](#11-references)
+10. [s-aiotm Integration Targets](#10-s-aiotm-integration-targets)
+11. [Known Issues & Workarounds](#11-known-issues--workarounds)
+12. [References](#12-references)
 
 ---
 
 ## 1. Project Purpose
 
 This repository contains **only our own scripts, configs, overlay files, and documentation** for porting Xenomai 4 (EVL) to the Milk-V Jupiter development board.
+
+The project is currently in the **kernel bring-up** phase:
+
+- `kernel-overlay/` is now complete enough to deploy EVL/Dovetail sources into the SpacemiT `linux-k1` tree
+- `scripts/build/02-configure.sh` successfully produces an EVL-enabled `.config`
+- `scripts/build/03-build-kernel.sh` successfully builds `Image` and `dtbs`
+- the next work items are: stable module packaging, SD image integration, first Jupiter boot, and then EVL runtime validation on hardware
+
+All local sources, toolchains, build outputs, and generated images now default to the repo-local `.build/` directory.
 
 The goal is to enable the following **s-aiotm** atomic capabilities on a RISC-V edge node:
 
@@ -215,7 +225,7 @@ The Dovetail pipeline needs arch-specific hooks in the RISC-V interrupt entry pa
 #### Challenge 4: WSL2 Build Environment
 Building on Windows WSL2 with the kernel source on a Windows filesystem (`/mnt/c/...`) causes slow I/O and `make` failures.
 
-**Mitigation:** Always clone and build inside the WSL2 native filesystem (`~/work/`). Build scripts enforce this.
+**Mitigation:** Always clone and build inside the WSL2 native filesystem. This repo now defaults all local work directories to `<repo>/.build/`.
 
 ### 3.5 Overlay Strategy
 
@@ -224,13 +234,13 @@ All EVL/Dovetail modifications are maintained in `kernel-overlay/` — a directo
 ```
 kernel-overlay/           (tracked in git)
     ↓ rsync by 00b-deploy-overlay.sh
-~/work/linux-k1/          (not tracked, SpacemiT kernel tree)
+<repo>/.build/linux-k1/          (not tracked, SpacemiT kernel tree)
     ↓ 02-configure.sh
-~/work/build-k1/.config   (EVL + K1 merged config)
+<repo>/.build/build-k1/.config   (EVL + K1 merged config)
     ↓ 03-build-kernel.sh
-~/work/build-k1/arch/riscv/boot/Image  (33 MB EVL kernel)
+<repo>/.build/build-k1/arch/riscv/boot/Image  (33 MB EVL kernel)
     ↓ make-full-sdcard-img.sh
-~/work/evl-sdcard-k1-YYYYMMDD.img      (1.4 GB bootable SD image)
+<repo>/.build/images/evl-sdcard-k1-YYYYMMDD.img      (1.4 GB bootable SD image)
 ```
 
 ---
@@ -273,7 +283,7 @@ Always work in the WSL2 native filesystem:
 
 ```bash
 # Good ✓
-cd ~/work && git clone ...
+cd ~ && git clone ...
 
 # Bad ✗ — will cause mysterious build failures
 cd /mnt/c/Users/... && git clone ...
@@ -288,11 +298,11 @@ This section documents the **exact steps** used to produce a working EVL-enabled
 ### Directory layout assumed
 
 ```
-~/work/
+<repo>/.build/
 ├── linux-k1/          ← SpacemiT kernel source (cloned by 00-setup-env.sh)
 ├── linux-evl/         ← EVL reference kernel (cloned by 00-setup-env.sh)
 ├── build-k1/          ← Out-of-tree build directory
-└── evl-sdcard-k1-YYYYMMDD.img   ← Output SD card image
+└── images/            ← Output SD card images
 ```
 
 ---
@@ -300,7 +310,7 @@ This section documents the **exact steps** used to produce a working EVL-enabled
 ### Step 0: Clone repos and set up environment
 
 ```bash
-cd ~/work
+cd ~
 git clone <this-repo-url> spacemit-xenomai
 cd spacemit-xenomai
 
@@ -309,8 +319,8 @@ bash scripts/build/00-setup-env.sh
 ```
 
 This script clones:
-- `~/work/linux-k1` — SpacemiT linux-6.6 v6.6.63
-- `~/work/linux-evl` — EVL upstream reference (for header comparison)
+- `<repo>/.build/linux-k1` — SpacemiT linux-6.6 v6.6.63
+- `<repo>/.build/linux-evl` — EVL upstream reference (for header comparison)
 
 ---
 
@@ -370,8 +380,8 @@ This merges the SpacemiT base defconfig with the EVL config fragment:
 
 ```bash
 # Internally runs:
-make ARCH=riscv O=~/work/build-k1 spacemit_k1_v2_defconfig
-./scripts/kconfig/merge_config.sh -m \
+make ARCH=riscv O=~/work/build-k1 k1_defconfig
+./scripts/kconfig/merge_config.sh -m -O ~/work/build-k1 \
     ~/work/build-k1/.config \
     configs/k1_evl_defconfig
 make ARCH=riscv O=~/work/build-k1 olddefconfig
@@ -402,13 +412,15 @@ grep -E "CONFIG_(DOVETAIL|EVL|IRQ_PIPELINE)" ~/work/build-k1/.config
 
 ```bash
 bash scripts/build/03-build-kernel.sh
-# or directly:
+# or directly (recommended: parallel Image/dtbs, single-thread modules):
 make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- \
-     LOCALVERSION= O=~/work/build-k1 -j$(nproc) Image modules dtbs \
-     2>&1 | tee /tmp/k1_build.log
+     LOCALVERSION= O=~/work/build-k1 -j$(nproc) Image dtbs
+make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- \
+     LOCALVERSION= O=~/work/build-k1 -j1 modules
 ```
 
 > **Important:** Do **not** pipe through `head -N` — this causes SIGPIPE to kill `make` during the linker stage (LD vmlinux). Use `tail -5` or `tee` only.
+> **Important:** On this tree, parallel module builds may fail with transient `fixdep` / missing `.o.d` races. Use `MODULE_JOBS=1` unless you are intentionally stress-testing build parallelism.
 
 Expected output on success:
 ```
@@ -477,12 +489,85 @@ Or use [balenaEtcher](https://etcher.balena.io/) / [Win32DiskImager](https://win
 
 ---
 
-## 7. Testing EVL on the Board
+## 7. Implementation Plan
+
+The safest path for this port is **not** "patch everything, build a full image, and hope it boots". We proceed in four validation stages, promoting only after the previous stage is stable.
+
+### Stage A: Kernel Build Proven
+
+Goal:
+- `00b-deploy-overlay.sh` deploys cleanly
+- `02-configure.sh` generates an EVL-enabled `.config`
+- `03-build-kernel.sh` produces `Image` and `dtbs`
+
+Exit criteria:
+- `arch/riscv/boot/Image` exists
+- `grep -E "CONFIG_(IRQ_PIPELINE|DOVETAIL|EVL)=" .config` shows all `=y`
+
+### Stage B: First Boot With Instrumented Kernel
+
+Goal:
+- boot the new kernel on Jupiter
+- confirm the board still reaches userspace or at least a reliable serial console
+- collect boot evidence before tuning latency
+
+Board-side checks:
+```bash
+uname -r
+dmesg | grep -i "dovetail\|evl\|oob\|irq pipeline"
+zcat /proc/config.gz | grep -E "CONFIG_DOVETAIL|CONFIG_EVL|CONFIG_IRQ_PIPELINE"
+```
+
+Exit criteria:
+- board boots reproducibly
+- kernel version is `6.6.63`
+- boot log contains Dovetail/EVL-related messages, or at minimum shows the EVL config really made it into the running kernel
+
+### Stage C: EVL Runtime Bring-up
+
+Goal:
+- install `libevl` and the `evl` userspace tools on the target rootfs
+- verify that EVL creates its expected interfaces
+
+Board-side checks:
+```bash
+ls /sys/devices/virtual/evl/
+cat /proc/evl/version 2>/dev/null || true
+which evl
+evl check
+```
+
+Exit criteria:
+- EVL sysfs/proc interfaces exist
+- `evl check` starts successfully
+
+### Stage D: Latency and Functional Tests
+
+Goal:
+- verify that the system is not only booting, but behaving like an RT-capable EVL target
+
+Suggested order:
+1. `evl check`
+2. `evl test latmus -t irq`
+3. periodic wakeup test
+4. CPU affinity / isolation tuning
+5. only then evaluate fieldbus / real workload integration
+
+Exit criteria:
+- no lockups under repeated EVL tests
+- bounded IRQ/timer latency on Jupiter
+
+---
+
+## 8. Testing EVL on the Board
 
 Insert the SD card and boot the Milk-V Jupiter. Connect serial console on `/dev/ttyUSB0` at 115200 baud.
 
 ```bash
-# On the board — check EVL initialised
+# On the board — first check whether the new kernel really booted
+uname -r
+
+# Then check Dovetail / EVL initialisation
 dmesg | grep -i "evl\|dovetail\|oob"
 
 # Expected output includes:
@@ -505,7 +590,7 @@ See [`docs/testing.md`](docs/testing.md) for detailed test procedures and result
 
 ---
 
-## 8. RISC-V Porting Details
+## 9. RISC-V Porting Details
 
 ### 8.1 kernel-overlay/ file map
 
@@ -656,7 +741,7 @@ Both files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed 
 
 ---
 
-## 9. s-aiotm Integration Targets
+## 10. s-aiotm Integration Targets
 
 | Capability | Implementation Plan | EVL Primitive |
 |-----------|--------------------|--------------------|
@@ -667,7 +752,7 @@ Both files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed 
 
 ---
 
-## 10. Known Issues & Workarounds
+## 11. Known Issues & Workarounds
 
 | Issue | Status | Workaround |
 |-------|--------|-----------|
@@ -679,7 +764,7 @@ Both files are tracked in `kernel-overlay/arch/riscv/include/asm/` and deployed 
 
 ---
 
-## 11. References
+## 12. References
 
 ### EVL / Xenomai 4
 - [EVL Project Homepage](https://evlproject.org/)

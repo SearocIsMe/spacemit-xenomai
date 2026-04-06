@@ -12,7 +12,7 @@
 #   # Step 1 — build the complete image (once per base-image update)
 #   bash scripts/flash/make-full-sdcard-img.sh \
 #       ~/Downloads/buildroot-k1_rt-sdcard.img \
-#       ~/work/build-k1 \
+#       <repo>/.build/build-k1 \
 #       /tmp
 #
 #   # Step 2 — flash to SD card
@@ -24,7 +24,7 @@
 # If the SD card already has a working SpacemiT/buildroot OS on it, you can
 # replace only the kernel/DTBs/extlinux.conf without re-flashing everything:
 #
-#   bash scripts/flash/flash-sdcard.sh /dev/sdX ~/work/build-k1
+#   bash scripts/flash/flash-sdcard.sh /dev/sdX <repo>/.build/build-k1
 #
 # WARNING: Mode B ONLY works if partition 1 already contains a valid U-Boot
 # and the SD card already boots the Jupiter board.  A blank or unpartitioned
@@ -60,7 +60,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="inject"       # default: Mode B (inject into existing SD card)
 DISK_IMAGE=""
 DEVICE=""
-BUILD_DIR="${HOME}/work/build-k1"
+BUILD_DIR="${REPO_ROOT}/.build/build-k1"
 
 usage() {
   cat <<EOF
@@ -78,7 +78,7 @@ Arguments (Mode A):
 
 Arguments (Mode B):
   <device>        SD card block device (e.g. /dev/sdb)
-  [build_dir]     Kernel build output dir (default: ~/work/build-k1)
+  [build_dir]     Kernel build output dir (default: <repo>/.build/build-k1)
                   Must contain arch/riscv/boot/Image and dts/spacemit/*.dtb
 
 NOTE: Mode B ONLY works if the SD card already has a valid bootloader (U-Boot SPL)
@@ -97,7 +97,7 @@ if [[ "${1:-}" == "--image" ]]; then
   [[ -n "${DISK_IMAGE}" && -n "${DEVICE}" ]] || usage
 else
   DEVICE="${1:-}"
-  BUILD_DIR="${2:-${HOME}/work/build-k1}"
+  BUILD_DIR="${2:-${REPO_ROOT}/.build/build-k1}"
   [[ -n "${DEVICE}" ]] || usage
 fi
 

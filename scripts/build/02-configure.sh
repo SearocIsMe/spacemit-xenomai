@@ -117,13 +117,17 @@ info "Merging kernel config fragment: ${CONFIG_FRAGMENT} ..."
 # Use kernel's merge_config.sh script
 MERGE_SCRIPT="${KERNEL_DIR}/scripts/kconfig/merge_config.sh"
 if [[ -f "${MERGE_SCRIPT}" ]]; then
-  ARCH="${ARCH}" \
-  CROSS_COMPILE="${CROSS_COMPILE}" \
-  KCONFIG_CONFIG="${BUILD_DIR}/.config" \
-    bash "${MERGE_SCRIPT}" \
-      -m \
-      "${BUILD_DIR}/.config" \
-      "${CONFIG_FRAGMENT}"
+  (
+    cd "${BUILD_DIR}"
+    ARCH="${ARCH}" \
+    CROSS_COMPILE="${CROSS_COMPILE}" \
+    KCONFIG_CONFIG="${BUILD_DIR}/.config" \
+      bash "${MERGE_SCRIPT}" \
+        -m \
+        -O "${BUILD_DIR}" \
+        "${BUILD_DIR}/.config" \
+        "${CONFIG_FRAGMENT}"
+  )
   # Resolve any new symbols introduced by the fragment
   make \
     ARCH="${ARCH}" \
