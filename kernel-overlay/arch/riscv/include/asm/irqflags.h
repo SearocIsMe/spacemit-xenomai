@@ -43,7 +43,13 @@
 
 static inline unsigned long native_save_flags(void)
 {
-	return csr_read(CSR_STATUS);
+	/*
+	 * Dovetail only needs the hardware interrupt-enable state here.
+	 * Keeping unrelated sstatus bits out of the saved flags matches the
+	 * upstream RISC-V bring-up direction and avoids feeding mixed flag
+	 * values back into irq-pipeline state helpers.
+	 */
+	return csr_read(CSR_STATUS) & SR_IE;
 }
 
 static inline void native_irq_enable(void)
@@ -58,7 +64,7 @@ static inline void native_irq_disable(void)
 
 static inline unsigned long native_irq_save(void)
 {
-	return csr_read_clear(CSR_STATUS, SR_IE);
+	return csr_read_clear(CSR_STATUS, SR_IE) & SR_IE;
 }
 
 static inline int native_irqs_disabled_flags(unsigned long flags)
@@ -73,13 +79,23 @@ static inline int native_irqs_disabled(void)
 
 static inline void native_irq_restore(unsigned long flags)
 {
-	csr_set(CSR_STATUS, flags & SR_IE);
+	if (flags & SR_IE)
+		csr_set(CSR_STATUS, SR_IE);
+	else
+		csr_clear(CSR_STATUS, SR_IE);
 }
 
 static inline void native_irq_sync(void)
 {
+	unsigned long flags = native_irq_save();
+
+	/*
+	 * Create a short hard-IRQ window, then restore the exact previous
+	 * hardware IRQ state instead of unconditionally leaving interrupts
+	 * disabled.
+	 */
 	native_irq_enable();
-	native_irq_disable();
+	native_irq_restore(flags);
 }
 
 /*
