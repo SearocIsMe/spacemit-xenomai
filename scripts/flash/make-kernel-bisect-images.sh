@@ -33,6 +33,7 @@ fi
 
 variants=(
   "vanilla-k1:${WORK_DIR}/build-k1-vanilla"
+  "irq-pipeline-only:${WORK_DIR}/build-k1-irq-pipeline"
   "dovetail-nosmp:${WORK_DIR}/build-k1-dovetail-nosmp"
   "dovetail-noidle:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${WORK_DIR}/build-k1-dovetail"

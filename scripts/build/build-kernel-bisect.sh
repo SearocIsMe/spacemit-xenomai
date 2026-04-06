@@ -26,9 +26,11 @@ fi
 source "${ENV_FILE}"
 
 TARGET="${1:-all}"
+CLEAN_BUILD="${CLEAN_BUILD:-1}"
 
 variants=(
   "vanilla-k1:${REPO_ROOT}/configs/k1_vanilla_defconfig:${WORK_DIR}/build-k1-vanilla"
+  "irq-pipeline-only:${REPO_ROOT}/configs/k1_irq_pipeline_only_defconfig:${WORK_DIR}/build-k1-irq-pipeline"
   "dovetail-nosmp:${REPO_ROOT}/configs/k1_dovetail_nosmp_defconfig:${WORK_DIR}/build-k1-dovetail-nosmp"
   "dovetail-noidle:${REPO_ROOT}/configs/k1_dovetail_noidle_defconfig:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${REPO_ROOT}/configs/k1_dovetail_only_defconfig:${WORK_DIR}/build-k1-dovetail"
@@ -47,6 +49,11 @@ run_variant() {
   echo "  fragment : ${fragment}"
   echo "  outdir   : ${outdir}"
   echo "============================================================"
+
+  if [[ "${CLEAN_BUILD}" == "1" && -d "${outdir}" ]]; then
+    echo "Cleaning previous build dir: ${outdir}"
+    rm -rf "${outdir}"
+  fi
 
   BUILD_DIR_OVERRIDE="${outdir}" \
   CONFIG_FRAGMENT="${fragment}" \
@@ -68,7 +75,7 @@ done
 
 if [[ "${matched}" != "1" ]]; then
   echo "ERROR: Unknown variant '${TARGET}'."
-  echo "Valid values: all, vanilla-k1, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
+  echo "Valid values: all, vanilla-k1, irq-pipeline-only, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
   exit 1
 fi
 

@@ -9,6 +9,8 @@
 linux-*/
 linux/
 kernel/
+!kernel-overlay/kernel/
+!kernel-overlay/kernel/**
 evl-src/
 xenomai-*/
 

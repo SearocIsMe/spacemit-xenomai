@@ -1,0 +1,23 @@
+# =============================================================================
+# k1_irq_pipeline_only_defconfig
+# Enable the generic IRQ pipeline on RISC-V, but keep Dovetail and EVL off.
+# This isolates whether the boot failure is caused by IRQ_PIPELINE itself,
+# or by the extra Dovetail glue layered on top of it.
+# =============================================================================
+
+CONFIG_LOCALVERSION=""
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# Critical bisect point:
+CONFIG_IRQ_PIPELINE=y
+# CONFIG_DOVETAIL is not set
+# CONFIG_EVL is not set
+
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_HZ=1000
+CONFIG_PREEMPT=y
+
+# Disable known-broken vendor Wi-Fi modules for current toolchains.
+# CONFIG_BCMDHD is not set
+# CONFIG_RTL8852BS is not set
