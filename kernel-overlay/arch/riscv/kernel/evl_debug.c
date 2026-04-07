@@ -6,12 +6,21 @@
 
 bool riscv_evl_early_debug_enabled;
 
+#ifndef SBI_EXT_0_1_CONSOLE_PUTCHAR
+#define SBI_EXT_0_1_CONSOLE_PUTCHAR 0x1
+#endif
+
 static int __init setup_riscv_evl_early_debug(char *arg)
 {
 	riscv_evl_early_debug_enabled = true;
 	return 0;
 }
 early_param("evl_debug", setup_riscv_evl_early_debug);
+
+static __always_inline void riscv_evl_sbi_putchar(int ch)
+{
+	sbi_ecall(SBI_EXT_0_1_CONSOLE_PUTCHAR, 0, ch, 0, 0, 0, 0, 0);
+}
 
 void riscv_evl_early_puts(const char *s)
 {
@@ -20,8 +29,8 @@ void riscv_evl_early_puts(const char *s)
 
 	while (*s) {
 		if (*s == '\n')
-			sbi_console_putchar('\r');
-		sbi_console_putchar(*s++);
+			riscv_evl_sbi_putchar('\r');
+		riscv_evl_sbi_putchar(*s++);
 	}
 }
 
@@ -39,5 +48,5 @@ void riscv_evl_early_puthex_ulong(unsigned long value)
 	}
 
 	for (i = 0; i < (int)sizeof(buf); i++)
-		sbi_console_putchar(buf[i]);
+		riscv_evl_sbi_putchar(buf[i]);
 }

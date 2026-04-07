@@ -20,6 +20,7 @@
 #   QEMU_NET=1                        Enable user-mode networking
 #   QEMU_NO_REBOOT=1                  Exit on guest reset instead of looping
 #   QEMU_DEBUG_LOG=path               Write QEMU debug log to this file
+#   QEMU_STDOUT_LOG=path              Mirror guest console/stdout to this file
 #   QEMU_DEBUG_FLAGS=guest_errors,cpu_reset
 #   QEMU_BIN=qemu-system-riscv64      Override QEMU binary
 # =============================================================================
@@ -32,6 +33,7 @@ QEMU_MEM="${QEMU_MEM:-2048}"
 QEMU_NET="${QEMU_NET:-0}"
 QEMU_NO_REBOOT="${QEMU_NO_REBOOT:-0}"
 QEMU_DEBUG_LOG="${QEMU_DEBUG_LOG:-}"
+QEMU_STDOUT_LOG="${QEMU_STDOUT_LOG:-}"
 QEMU_DEBUG_FLAGS="${QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
 APPEND="${APPEND:-}"
 INITRD="${INITRD:-}"
@@ -114,4 +116,11 @@ fi
 cmd+=(-append "${kernel_args[*]}")
 
 echo "Running: ${cmd[*]}"
+
+if [[ -n "${QEMU_STDOUT_LOG}" ]]; then
+  mkdir -p "$(dirname "${QEMU_STDOUT_LOG}")"
+  "${cmd[@]}" 2>&1 | tee "${QEMU_STDOUT_LOG}"
+  exit "${PIPESTATUS[0]}"
+fi
+
 exec "${cmd[@]}"

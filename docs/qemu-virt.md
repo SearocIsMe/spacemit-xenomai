@@ -151,6 +151,17 @@ APPEND="evl_debug" \
 bash scripts/qemu/run-riscv64-virt.sh .build/qemu-virt/irq-pipeline
 ```
 
+`QEMU_DEBUG_LOG` only stores QEMU's internal debug trace. To capture the guest
+console itself, including `EVLDBG`, mirror stdout to a second file:
+
+```bash
+QEMU_NO_REBOOT=1 \
+QEMU_DEBUG_LOG=.build/qemu-virt/irq-pipeline.evl_debug.qemu.log \
+QEMU_STDOUT_LOG=.build/qemu-virt/output.log \
+APPEND="evl_debug" \
+bash scripts/qemu/run-riscv64-virt.sh .build/qemu-virt/irq-pipeline
+```
+
 Current markers are intentionally one-shot and focus on the shortest suspect
 path:
 

@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
+#include <asm/evl_debug.h>
 #include <dovetail/irq.h>
 #include <trace/events/irq.h>
 #include "internals.h"
@@ -1147,6 +1148,12 @@ int generic_pipeline_irq_desc(struct irq_desc *desc)
 struct irq_stage_data *handle_irq_pipelined_prepare(struct pt_regs *regs)
 {
 	struct irq_stage_data *prevd;
+	static bool trace_prepare_seen;
+
+	if (!trace_prepare_seen) {
+		trace_prepare_seen = true;
+		riscv_evl_trace("EVLDBG handle_irq_pipelined_prepare\n");
+	}
 
 	/*
 	 * Running with the oob stage stalled implies hardirqs off.
@@ -1204,6 +1211,8 @@ struct irq_stage_data *handle_irq_pipelined_prepare(struct pt_regs *regs)
 int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				struct pt_regs *regs)
 {
+	static bool trace_finish_seen;
+
 	/*
 	 * Leave the (pseudo-)NMI entry for RCU before the out-of-band
 	 * core might reschedule in irq_exit_pipeline(), and
@@ -1237,6 +1246,11 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	 * interrupt to happen from the in-band stage.
 	 */
 	synchronize_pipeline_on_irq();
+
+	if (!trace_finish_seen) {
+		trace_finish_seen = true;
+		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish\n");
+	}
 
 #ifdef CONFIG_DOVETAIL
 	/*

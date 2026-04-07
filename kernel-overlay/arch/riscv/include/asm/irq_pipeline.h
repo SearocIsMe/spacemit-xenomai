@@ -37,6 +37,7 @@
 #ifdef CONFIG_IRQ_PIPELINE
 
 #include <asm/csr.h>
+#include <asm/evl_debug.h>
 #include <asm/irqflags.h>
 
 /*
@@ -149,7 +150,22 @@ extern void (*handle_arch_irq)(struct pt_regs *);
 
 static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 {
+	static bool trace_arch_irq_seen;
+	static bool trace_arch_irq_returned;
+
+	if (!trace_arch_irq_seen) {
+		trace_arch_irq_seen = true;
+		riscv_evl_trace("EVLDBG arch_handle_irq_pipelined entry\n");
+		riscv_evl_trace_ulong("EVLDBG arch_handle_irq_pipelined fn=",
+				      (unsigned long)handle_arch_irq);
+	}
+
 	handle_arch_irq(regs);
+
+	if (!trace_arch_irq_returned) {
+		trace_arch_irq_returned = true;
+		riscv_evl_trace("EVLDBG arch_handle_irq_pipelined return\n");
+	}
 }
 
 #define arch_kentry_get_irqstate(__regs)	0
