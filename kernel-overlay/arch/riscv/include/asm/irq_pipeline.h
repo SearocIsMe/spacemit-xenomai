@@ -153,9 +153,11 @@ static inline int arch_enable_oob_stage(void)
 }
 
 extern void (*handle_arch_irq)(struct pt_regs *);
+extern int riscv_intc_dispatch_irq(unsigned long cause);
 
 static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 {
+	unsigned long cause = regs->cause & ~CAUSE_IRQ_FLAG;
 	static bool trace_arch_irq_seen;
 	static bool trace_arch_irq_returned;
 
@@ -166,7 +168,14 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 				      (unsigned long)handle_arch_irq);
 	}
 
-	handle_arch_irq(regs);
+	/*
+	 * Keep the pipelined path on top of the generic IRQ domain flow for
+	 * RISC-V local interrupts instead of bouncing through the low-level
+	 * arch hook directly. This matches the Dovetail direction of avoiding
+	 * direct irqchip hook invocation from pipelined entry code.
+	 */
+	if (riscv_intc_dispatch_irq(cause))
+		handle_arch_irq(regs);
 
 	if (!trace_arch_irq_returned) {
 		trace_arch_irq_returned = true;

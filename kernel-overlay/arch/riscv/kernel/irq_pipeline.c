@@ -5,6 +5,7 @@
  */
 #include <linux/cpuidle.h>
 #include <linux/irq.h>
+#include <linux/irqdesc.h>
 #include <linux/irq_pipeline.h>
 
 /*
@@ -27,9 +28,15 @@ void arch_do_IRQ_pipelined(struct irq_desc *desc)
 {
 	struct pt_regs *regs = raw_cpu_ptr(&irq_pipeline.tick_regs);
 	struct pt_regs *old_regs = set_irq_regs(regs);
+	unsigned int irq = irq_desc_get_irq(desc);
 
 	irq_enter_rcu();
-	handle_irq_desc(desc);
+	/*
+	 * Replay deferred in-band IRQs through the generic IRQ entry point
+	 * rather than invoking the descriptor handler directly, keeping the
+	 * dispatch on the generic irq core path.
+	 */
+	generic_handle_irq(irq);
 	irq_exit_rcu();
 
 	set_irq_regs(old_regs);
