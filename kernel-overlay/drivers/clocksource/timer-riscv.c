@@ -51,8 +51,6 @@ static int riscv_clock_next_event(unsigned long delta,
 				      (unsigned long)ce->event_handler);
 	}
 #endif
-	csr_set(CSR_IE, IE_TIE);
-
 	if (static_branch_likely(&riscv_sstc_available)) {
 #if defined(CONFIG_32BIT)
 		csr_write(CSR_STIMECMP, next_tval & 0xFFFFFFFF);
@@ -62,6 +60,16 @@ static int riscv_clock_next_event(unsigned long delta,
 #endif
 	} else
 		sbi_set_timer(next_tval);
+
+	/*
+	 * Program the next deadline before re-enabling the local timer IRQ.
+	 *
+	 * In the pipelined replay path the timer event may be serviced later
+	 * than in the non-pipelined case, so re-enabling IE_TIE before the new
+	 * compare value becomes visible can immediately retrigger the old
+	 * expired event and trap us in an early timer loop.
+	 */
+	csr_set(CSR_IE, IE_TIE);
 
 	return 0;
 }
@@ -89,8 +97,6 @@ static int riscv_set_state_oneshot(struct clock_event_device *ce)
 {
 	u64 next_tval = 0xffffffffffffffff;
 
-	csr_set(CSR_IE, IE_TIE);
-
 	if (static_branch_likely(&riscv_sstc_available)) {
 #if defined(CONFIG_32BIT)
 		csr_write(CSR_STIMECMP, next_tval & 0xFFFFFFFF);
@@ -100,6 +106,8 @@ static int riscv_set_state_oneshot(struct clock_event_device *ce)
 #endif
 	} else
 		sbi_set_timer(next_tval);
+
+	csr_set(CSR_IE, IE_TIE);
 
 	return 0;
 }
@@ -227,9 +235,11 @@ static int __init riscv_timer_init_common(void)
 
 	sched_clock_register(riscv_sched_clock, 64, riscv_timebase);
 
-	error = request_percpu_irq(riscv_clock_event_irq,
-				    riscv_timer_interrupt,
-				    "riscv-timer", &riscv_clock_event);
+	error = __request_percpu_irq(riscv_clock_event_irq,
+				     riscv_timer_interrupt,
+				     IRQF_TIMER,
+				     "riscv-timer",
+				     &riscv_clock_event);
 	if (error) {
 		pr_err("registering percpu irq failed [%d]\n", error);
 		return error;

@@ -1297,9 +1297,16 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 		 * irqchip handlers assume that hard irqs are off,
 		 * which is not the case on replay of unserialized
 		 * percpu irqs: fix this up.
+		 *
+		 * Keep the generic replay path from re-unmasking local timer
+		 * interrupts: the RISC-V timer driver owns IE_TIE directly and
+		 * re-enables it after programming the next deadline. Doing an
+		 * extra irq_unmask() here re-opens the old expired event window
+		 * and feeds the early timer loop seen on QEMU virt.
 		 */
 		flags = hard_cond_local_irq_save();
-		if (chip->irq_unmask)
+		if (chip->irq_unmask &&
+		    !(action && (action->flags & __IRQF_TIMER)))
 			chip->irq_unmask(&desc->irq_data);
 		hard_cond_local_irq_restore(flags);
 	} else if (chip->irq_eoi) {

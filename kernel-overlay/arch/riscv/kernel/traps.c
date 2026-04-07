@@ -20,6 +20,7 @@
 #include <linux/irq.h>
 #include <linux/kexec.h>
 #include <linux/entry-common.h>
+#include <linux/dovetail.h>
 #include <linux/irq_pipeline.h>
 
 #include <asm/asm-prototypes.h>
@@ -30,6 +31,7 @@
 #include <asm/ptrace.h>
 #include <asm/syscall.h>
 #include <asm/thread_info.h>
+#include <asm/dovetail.h>
 #include <asm/vector.h>
 #include <asm/evl_debug.h>
 #include <asm/irq_stack.h>
@@ -48,6 +50,27 @@ static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
 	riscv_evl_trace(tag);
 }
 #endif
+
+static __always_inline bool riscv_trap_enter(unsigned int trapnr,
+					     struct pt_regs *regs,
+					     bool *notify_exit)
+{
+	*notify_exit = false;
+
+	if (!mark_cond_trap_entry(trapnr, regs))
+		return false;
+
+	*notify_exit = true;
+	return true;
+}
+
+static __always_inline void riscv_trap_exit(unsigned int trapnr,
+					    struct pt_regs *regs,
+					    bool notify_exit)
+{
+	if (notify_exit)
+		mark_trap_exit(trapnr, regs);
+}
 
 static void dump_kernel_instr(const char *loglvl, struct pt_regs *regs)
 {
@@ -146,6 +169,11 @@ static void do_trap_error(struct pt_regs *regs, int signo, int code,
 #define DO_ERROR_INFO(name, signo, code, str)					\
 asmlinkage __visible __trap_section void name(struct pt_regs *regs)		\
 {										\
+	bool notify_exit;							\
+										\
+	if (!riscv_trap_enter(regs->cause, regs, &notify_exit))			\
+		return;								\
+										\
 	if (user_mode(regs)) {							\
 		irqentry_enter_from_user_mode(regs);				\
 		do_trap_error(regs, signo, code, regs->epc, "Oops - " str);	\
@@ -155,6 +183,8 @@ asmlinkage __visible __trap_section void name(struct pt_regs *regs)		\
 		do_trap_error(regs, signo, code, regs->epc, "Oops - " str);	\
 		irqentry_nmi_exit(regs, state);					\
 	}									\
+										\
+	riscv_trap_exit(regs->cause, regs, notify_exit);			\
 }
 
 DO_ERROR_INFO(do_trap_unknown,
@@ -175,9 +205,13 @@ DO_ERROR_INFO(do_trap_insn_fault,
 asmlinkage __visible __trap_section void do_trap_insn_illegal(struct pt_regs *regs)
 {
 	bool handled;
+	bool notify_exit;
 #ifdef CONFIG_BIND_THREAD_TO_AICORES
 	u32 epc;
 #endif
+
+	if (!riscv_trap_enter(RISCV_TRAP_ILLEGAL_INSN, regs, &notify_exit))
+		return;
 
 	if (user_mode(regs)) {
 		irqentry_enter_from_user_mode(regs);
@@ -191,6 +225,8 @@ asmlinkage __visible __trap_section void do_trap_insn_illegal(struct pt_regs *re
 			sched_setaffinity(current->pid, &ai_cpu_mask);
 			local_irq_disable();
 			irqentry_exit_to_user_mode(regs);
+			riscv_trap_exit(RISCV_TRAP_ILLEGAL_INSN, regs,
+					notify_exit);
 			return;
 		}
 #endif
@@ -214,6 +250,8 @@ asmlinkage __visible __trap_section void do_trap_insn_illegal(struct pt_regs *re
 
 		irqentry_nmi_exit(regs, state);
 	}
+
+	riscv_trap_exit(RISCV_TRAP_ILLEGAL_INSN, regs, notify_exit);
 }
 
 DO_ERROR_INFO(do_trap_load_fault,
@@ -221,6 +259,11 @@ DO_ERROR_INFO(do_trap_load_fault,
 
 asmlinkage __visible __trap_section void do_trap_load_misaligned(struct pt_regs *regs)
 {
+	bool notify_exit;
+
+	if (!riscv_trap_enter(RISCV_TRAP_MISALIGNED_LOAD, regs, &notify_exit))
+		return;
+
 	if (user_mode(regs)) {
 		irqentry_enter_from_user_mode(regs);
 
@@ -238,10 +281,17 @@ asmlinkage __visible __trap_section void do_trap_load_misaligned(struct pt_regs 
 
 		irqentry_nmi_exit(regs, state);
 	}
+
+	riscv_trap_exit(RISCV_TRAP_MISALIGNED_LOAD, regs, notify_exit);
 }
 
 asmlinkage __visible __trap_section void do_trap_store_misaligned(struct pt_regs *regs)
 {
+	bool notify_exit;
+
+	if (!riscv_trap_enter(RISCV_TRAP_MISALIGNED_STORE, regs, &notify_exit))
+		return;
+
 	if (user_mode(regs)) {
 		irqentry_enter_from_user_mode(regs);
 
@@ -259,6 +309,8 @@ asmlinkage __visible __trap_section void do_trap_store_misaligned(struct pt_regs
 
 		irqentry_nmi_exit(regs, state);
 	}
+
+	riscv_trap_exit(RISCV_TRAP_MISALIGNED_STORE, regs, notify_exit);
 }
 DO_ERROR_INFO(do_trap_store_fault,
 	SIGSEGV, SEGV_ACCERR, "store (or AMO) access fault");
@@ -317,6 +369,11 @@ void handle_break(struct pt_regs *regs)
 
 asmlinkage __visible __trap_section void do_trap_break(struct pt_regs *regs)
 {
+	bool notify_exit;
+
+	if (!riscv_trap_enter(RISCV_TRAP_BREAKPOINT, regs, &notify_exit))
+		return;
+
 	if (user_mode(regs)) {
 		irqentry_enter_from_user_mode(regs);
 
@@ -330,6 +387,8 @@ asmlinkage __visible __trap_section void do_trap_break(struct pt_regs *regs)
 
 		irqentry_nmi_exit(regs, state);
 	}
+
+	riscv_trap_exit(RISCV_TRAP_BREAKPOINT, regs, notify_exit);
 }
 
 asmlinkage __visible __trap_section void do_trap_ecall_u(struct pt_regs *regs)
@@ -363,13 +422,20 @@ asmlinkage __visible __trap_section void do_trap_ecall_u(struct pt_regs *regs)
 #ifdef CONFIG_MMU
 asmlinkage __visible noinstr void do_page_fault(struct pt_regs *regs)
 {
+	bool notify_exit;
 	irqentry_state_t state = irqentry_enter(regs);
+
+	if (!riscv_trap_enter(regs->cause, regs, &notify_exit)) {
+		irqentry_exit(regs, state);
+		return;
+	}
 
 	handle_page_fault(regs);
 
 	local_irq_disable();
 
 	irqentry_exit(regs, state);
+	riscv_trap_exit(regs->cause, regs, notify_exit);
 }
 #endif
 
