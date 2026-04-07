@@ -174,9 +174,18 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 	}
 }
 
-#define arch_kentry_get_irqstate(__regs)	0
+/*
+ * Generic irq-pipeline entry code needs a per-trap-frame slot to stash the
+ * in-band stall/lockdep state while executing kernel-side exception paths.
+ *
+ * On RISC-V, orig_a0 is only meaningful for user-originated syscalls. Kernel
+ * interrupts/exceptions never consume it, which makes it a practical scratch
+ * slot for the pipeline entry bookkeeping until a dedicated pt_regs field is
+ * added by upstream RISC-V Dovetail support.
+ */
+#define arch_kentry_get_irqstate(__regs)	((__regs)->orig_a0)
 #define arch_kentry_set_irqstate(__regs, __irqstate)	\
-	do { (void)(__irqstate); } while (0)
+	do { (__regs)->orig_a0 = (__irqstate); } while (0)
 
 /*
  * Out-of-band IPI assignments for RISC-V.

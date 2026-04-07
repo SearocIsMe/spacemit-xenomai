@@ -407,34 +407,17 @@ static void noinstr handle_riscv_irq(struct pt_regs *regs)
 
 asmlinkage void noinstr do_irq(struct pt_regs *regs)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	static bool trace_do_irq_seen;
-	static bool trace_do_irq_pipelined_seen;
-#endif
+	irqentry_state_t state = irqentry_enter(regs);
 
 #ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_do_irq_seen;
 	riscv_evl_trace_once(&trace_do_irq_seen, "EVLDBG do_irq entry\n");
-	/*
-	 * handle_irq_pipelined() already establishes its own entry/exit
-	 * context via ct_nmi_enter()/ct_nmi_exit() and stage switching.
-	 * Wrapping it again in irqentry_enter()/irqentry_exit() makes the
-	 * RISC-V IRQ path enter two different interrupt accounting models
-	 * for the same hardware event, which is especially fragile during
-	 * early boot when the first timer/IPI interrupts arrive.
-	 */
 	if (irqs_pipelined()) {
-		riscv_evl_trace_once(&trace_do_irq_pipelined_seen,
-				     "EVLDBG do_irq pipelined\n");
+		riscv_evl_trace("EVLDBG do_irq pipelined\n");
 		riscv_evl_trace_ulong("EVLDBG do_irq status=", regs->status);
 		riscv_evl_trace_ulong("EVLDBG do_irq cause=", regs->cause);
-		if (IS_ENABLED(CONFIG_IRQ_STACKS) && on_thread_stack())
-			call_on_irq_stack(regs, handle_riscv_irq);
-		else
-			handle_riscv_irq(regs);
-		return;
 	}
 #endif
-	irqentry_state_t state = irqentry_enter(regs);
 
 	if (IS_ENABLED(CONFIG_IRQ_STACKS) && on_thread_stack())
 		call_on_irq_stack(regs, handle_riscv_irq);
