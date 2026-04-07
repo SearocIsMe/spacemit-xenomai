@@ -36,6 +36,7 @@ variants=(
   "irq-pipeline-only:${WORK_DIR}/build-k1-irq-pipeline"
   "irq-pipeline-nosmp:${WORK_DIR}/build-k1-irq-pipeline-nosmp"
   "irq-pipeline-noidle:${WORK_DIR}/build-k1-irq-pipeline-noidle"
+  "irq-pipeline-minimal:${WORK_DIR}/build-k1-irq-pipeline-minimal"
   "dovetail-nosmp:${WORK_DIR}/build-k1-dovetail-nosmp"
   "dovetail-noidle:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${WORK_DIR}/build-k1-dovetail"

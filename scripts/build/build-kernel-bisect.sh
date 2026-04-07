@@ -40,6 +40,7 @@ variants=(
   "irq-pipeline-only:${REPO_ROOT}/configs/k1_irq_pipeline_only_defconfig:${WORK_DIR}/build-k1-irq-pipeline"
   "irq-pipeline-nosmp:${REPO_ROOT}/configs/k1_irq_pipeline_nosmp_defconfig:${WORK_DIR}/build-k1-irq-pipeline-nosmp"
   "irq-pipeline-noidle:${REPO_ROOT}/configs/k1_irq_pipeline_noidle_defconfig:${WORK_DIR}/build-k1-irq-pipeline-noidle"
+  "irq-pipeline-minimal:${REPO_ROOT}/configs/k1_irq_pipeline_minimal_defconfig:${WORK_DIR}/build-k1-irq-pipeline-minimal"
   "dovetail-nosmp:${REPO_ROOT}/configs/k1_dovetail_nosmp_defconfig:${WORK_DIR}/build-k1-dovetail-nosmp"
   "dovetail-noidle:${REPO_ROOT}/configs/k1_dovetail_noidle_defconfig:${WORK_DIR}/build-k1-dovetail-noidle"
   "dovetail-only:${REPO_ROOT}/configs/k1_dovetail_only_defconfig:${WORK_DIR}/build-k1-dovetail"
@@ -86,7 +87,7 @@ done
 
 if [[ "${matched}" != "1" ]]; then
   echo "ERROR: Unknown variant '${TARGET}'."
-  echo "Valid values: all, vanilla-k1, irq-pipeline-only, irq-pipeline-nosmp, irq-pipeline-noidle, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
+  echo "Valid values: all, vanilla-k1, irq-pipeline-only, irq-pipeline-nosmp, irq-pipeline-noidle, irq-pipeline-minimal, dovetail-nosmp, dovetail-noidle, dovetail-only, evl-off, full-evl"
   exit 1
 fi
 
