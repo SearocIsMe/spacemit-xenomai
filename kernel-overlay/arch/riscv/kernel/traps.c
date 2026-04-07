@@ -31,11 +31,23 @@
 #include <asm/syscall.h>
 #include <asm/thread_info.h>
 #include <asm/vector.h>
+#include <asm/evl_debug.h>
 #include <asm/irq_stack.h>
 
 int show_unhandled_signals = 1;
 
 static DEFINE_SPINLOCK(die_lock);
+
+#ifdef CONFIG_IRQ_PIPELINE
+static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
+{
+	if (*done)
+		return;
+
+	*done = true;
+	riscv_evl_trace(tag);
+}
+#endif
 
 static void dump_kernel_instr(const char *loglvl, struct pt_regs *regs)
 {
@@ -364,14 +376,24 @@ asmlinkage __visible noinstr void do_page_fault(struct pt_regs *regs)
 static void noinstr handle_riscv_irq(struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
+#ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_handle_irq_seen;
+	static bool trace_pipelined_seen;
+#endif
 
 #ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace_once(&trace_handle_irq_seen,
+			     "EVLDBG handle_riscv_irq entry\n");
 	/*
 	 * When the Dovetail IRQ pipeline is active, route the interrupt
 	 * through handle_irq_pipelined() which handles set_irq_regs()
 	 * internally and delivers pending in-band IRQs on exit.
 	 */
 	if (irqs_pipelined()) {
+		riscv_evl_trace_once(&trace_pipelined_seen,
+				     "EVLDBG handle_riscv_irq pipelined\n");
+		riscv_evl_trace_ulong("EVLDBG handle_riscv_irq cause=",
+				      regs->cause);
 		handle_irq_pipelined(regs);
 		return;
 	}
@@ -385,6 +407,33 @@ static void noinstr handle_riscv_irq(struct pt_regs *regs)
 
 asmlinkage void noinstr do_irq(struct pt_regs *regs)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_do_irq_seen;
+	static bool trace_do_irq_pipelined_seen;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace_once(&trace_do_irq_seen, "EVLDBG do_irq entry\n");
+	/*
+	 * handle_irq_pipelined() already establishes its own entry/exit
+	 * context via ct_nmi_enter()/ct_nmi_exit() and stage switching.
+	 * Wrapping it again in irqentry_enter()/irqentry_exit() makes the
+	 * RISC-V IRQ path enter two different interrupt accounting models
+	 * for the same hardware event, which is especially fragile during
+	 * early boot when the first timer/IPI interrupts arrive.
+	 */
+	if (irqs_pipelined()) {
+		riscv_evl_trace_once(&trace_do_irq_pipelined_seen,
+				     "EVLDBG do_irq pipelined\n");
+		riscv_evl_trace_ulong("EVLDBG do_irq status=", regs->status);
+		riscv_evl_trace_ulong("EVLDBG do_irq cause=", regs->cause);
+		if (IS_ENABLED(CONFIG_IRQ_STACKS) && on_thread_stack())
+			call_on_irq_stack(regs, handle_riscv_irq);
+		else
+			handle_riscv_irq(regs);
+		return;
+	}
+#endif
 	irqentry_state_t state = irqentry_enter(regs);
 
 	if (IS_ENABLED(CONFIG_IRQ_STACKS) && on_thread_stack())

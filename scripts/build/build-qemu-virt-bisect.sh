@@ -13,10 +13,14 @@
 # Variants:
 #   vanilla-qemu        Generic RISC-V baseline with EVL/Dovetail disabled
 #   irq-pipeline-qemu   IRQ pipeline only
+#   irq-pipeline-pmoff-qemu   IRQ pipeline with PM/SBI cpuidle disabled
+#   irq-pipeline-tickoff-qemu IRQ pipeline with tickless/broadcast disabled
 #   irq-pipeline-nosmp-qemu  IRQ pipeline only, SMP disabled
 #   irq-pipeline-noidle-qemu IRQ pipeline only, idle tweaks applied
 #   irq-pipeline-minimal-qemu Smallest practical IRQ pipeline slice
 #   dovetail-qemu       IRQ pipeline + Dovetail
+#   dovetail-noidle-qemu IRQ pipeline + Dovetail with idle/PM disabled
+#   dovetail-nosmp-qemu IRQ pipeline + Dovetail with SMP/idle/PM disabled
 #   full-evl-qemu       IRQ pipeline + Dovetail + EVL
 # =============================================================================
 set -euo pipefail
@@ -41,10 +45,14 @@ QEMU_FRAGMENT_BASE="${REPO_ROOT}/configs/qemu_virt_evl_defconfig"
 variants=(
   "vanilla-qemu:${REPO_ROOT}/configs/k1_vanilla_defconfig:${QEMU_BUILD_ROOT}/vanilla"
   "irq-pipeline-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_only_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline"
+  "irq-pipeline-pmoff-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_pmoff_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline-pmoff"
+  "irq-pipeline-tickoff-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_tickoff_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline-tickoff"
   "irq-pipeline-nosmp-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_nosmp_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline-nosmp"
   "irq-pipeline-noidle-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_noidle_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline-noidle"
   "irq-pipeline-minimal-qemu:${REPO_ROOT}/configs/k1_irq_pipeline_minimal_defconfig:${QEMU_BUILD_ROOT}/irq-pipeline-minimal"
   "dovetail-qemu:${REPO_ROOT}/configs/k1_dovetail_only_defconfig:${QEMU_BUILD_ROOT}/dovetail"
+  "dovetail-noidle-qemu:${REPO_ROOT}/configs/k1_dovetail_noidle_defconfig:${QEMU_BUILD_ROOT}/dovetail-noidle"
+  "dovetail-nosmp-qemu:${REPO_ROOT}/configs/k1_dovetail_nosmp_defconfig:${QEMU_BUILD_ROOT}/dovetail-nosmp"
   "full-evl-qemu:${REPO_ROOT}/configs/k1_evl_defconfig:${QEMU_BUILD_ROOT}/full-evl"
 )
 
@@ -99,7 +107,7 @@ done
 
 if [[ "${matched}" != "1" ]]; then
   echo "ERROR: Unknown variant '${TARGET}'."
-  echo "Valid values: all, vanilla-qemu, irq-pipeline-qemu, irq-pipeline-nosmp-qemu, irq-pipeline-noidle-qemu, irq-pipeline-minimal-qemu, dovetail-qemu, full-evl-qemu"
+  echo "Valid values: all, vanilla-qemu, irq-pipeline-qemu, irq-pipeline-pmoff-qemu, irq-pipeline-tickoff-qemu, irq-pipeline-nosmp-qemu, irq-pipeline-noidle-qemu, irq-pipeline-minimal-qemu, dovetail-qemu, dovetail-noidle-qemu, dovetail-nosmp-qemu, full-evl-qemu"
   exit 1
 fi
 

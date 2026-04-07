@@ -3,6 +3,7 @@
  * Copyright (C) 2024 - RISC-V Dovetail/EVL IRQ pipeline arch hooks
  * Ported from arch/arm64/kernel/irq_pipeline.c
  */
+#include <linux/cpuidle.h>
 #include <linux/irq.h>
 #include <linux/irq_pipeline.h>
 
@@ -38,3 +39,20 @@ void __init arch_irq_pipeline_init(void)
 {
 	/* no per-arch init needed for RISC-V */
 }
+
+#if defined(CONFIG_IRQ_PIPELINE) && !defined(CONFIG_EVL)
+bool irq_cpuidle_control(struct cpuidle_device *dev,
+			 struct cpuidle_state *state)
+{
+	/*
+	 * RISC-V IRQ pipeline bring-up is not stable across the generic
+	 * cpuidle path yet: on QEMU virt, enabling cpuidle under a
+	 * pipelined kernel resets before the first Linux printk, while the
+	 * matching noidle build reaches the kernel banner. Until the arch
+	 * idle/trap glue is made pipeline-aware, keep cpuidle disabled for
+	 * plain IRQ_PIPELINE configurations so that boot behavior matches the
+	 * validated noidle baseline.
+	 */
+	return false;
+}
+#endif

@@ -77,10 +77,14 @@ base defconfig for generic `RISC-V defconfig`.
 |---------|---------|
 | `vanilla-qemu` | Generic RISC-V baseline without EVL/Dovetail |
 | `irq-pipeline-qemu` | Check whether IRQ pipeline hooks still configure, build, and reach boot |
+| `irq-pipeline-pmoff-qemu` | Same as above, but removes PM and SBI cpuidle first |
+| `irq-pipeline-tickoff-qemu` | Same as above, but keeps CPU idle while removing tickless and broadcast behavior |
 | `irq-pipeline-nosmp-qemu` | Same as above, but removes SMP from the equation |
 | `irq-pipeline-noidle-qemu` | Same as above, but with idle-related tweaks |
 | `irq-pipeline-minimal-qemu` | Smallest practical IRQ pipeline debugging slice |
 | `dovetail-qemu` | Add Dovetail on top of IRQ pipeline |
+| `dovetail-noidle-qemu` | Add Dovetail on top of the noidle slice |
+| `dovetail-nosmp-qemu` | Add Dovetail on top of the nosmp/noidle slice |
 | `full-evl-qemu` | Add EVL core on top of Dovetail |
 
 Build all variants:
@@ -137,6 +141,25 @@ QEMU_DEBUG_LOG=.build/qemu-virt/irq-pipeline.qemu.log \
 bash scripts/qemu/run-riscv64-virt.sh .build/qemu-virt/irq-pipeline
 ```
 
+To get very-early RISC-V IRQ pipeline trace markers on the console, append
+`evl_debug` to the kernel command line:
+
+```bash
+QEMU_NO_REBOOT=1 \
+QEMU_DEBUG_LOG=.build/qemu-virt/irq-pipeline.qemu.log \
+APPEND="evl_debug" \
+bash scripts/qemu/run-riscv64-virt.sh .build/qemu-virt/irq-pipeline
+```
+
+Current markers are intentionally one-shot and focus on the shortest suspect
+path:
+
+- `EVLDBG do_irq entry`
+- `EVLDBG do_irq pipelined`
+- `EVLDBG handle_riscv_irq entry`
+- `EVLDBG handle_riscv_irq pipelined`
+- `EVLDBG riscv_intc_irq entry`
+
 You can also try single-core mode to rule out SMP effects:
 
 ```bash
@@ -150,12 +173,16 @@ Recommended order:
 
 1. `vanilla-qemu`
 2. `irq-pipeline-qemu`
-3. `irq-pipeline-nosmp-qemu`
-4. `irq-pipeline-noidle-qemu`
-5. `irq-pipeline-minimal-qemu`
-6. `dovetail-qemu`
-7. `full-evl-qemu`
-8. Only then spend another SD-card cycle on the corresponding Jupiter stage
+3. `irq-pipeline-pmoff-qemu`
+4. `irq-pipeline-tickoff-qemu`
+5. `irq-pipeline-nosmp-qemu`
+6. `irq-pipeline-noidle-qemu`
+7. `irq-pipeline-minimal-qemu`
+8. `dovetail-qemu`
+9. `dovetail-noidle-qemu`
+10. `dovetail-nosmp-qemu`
+11. `full-evl-qemu`
+12. Only then spend another SD-card cycle on the corresponding Jupiter stage
 
 Interpretation:
 
@@ -171,6 +198,10 @@ Interpretation:
 If `irq-pipeline-qemu` resets back to OpenSBI before any Linux banner appears,
 that points to a very early failure in the generic RISC-V bring-up path,
 typically before normal console output is available.
+
+If `irq-pipeline-qemu` resets but `irq-pipeline-noidle-qemu` or
+`irq-pipeline-pmoff-qemu` does not, prioritize the idle / PM / SBI cpuidle
+interaction over the core IRQ pipeline wiring itself.
 
 ## Practical Notes
 

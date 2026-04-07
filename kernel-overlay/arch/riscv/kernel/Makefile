@@ -3,6 +3,7 @@
 # Makefile for the RISC-V Linux kernel
 #
 obj-$(CONFIG_IRQ_PIPELINE)	+= irq_pipeline.o
+obj-$(CONFIG_IRQ_PIPELINE)	+= evl_debug.o
 
 ifdef CONFIG_FTRACE
 CFLAGS_REMOVE_ftrace.o	= $(CC_FLAGS_FTRACE)

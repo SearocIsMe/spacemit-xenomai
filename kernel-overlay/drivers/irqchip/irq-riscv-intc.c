@@ -18,6 +18,7 @@
 #include <linux/of.h>
 #include <linux/smp.h>
 #include <linux/soc/andes/irq.h>
+#include <asm/evl_debug.h>
 
 static struct irq_domain *intc_domain;
 static unsigned int riscv_intc_nr_irqs __ro_after_init = BITS_PER_LONG;
@@ -27,6 +28,17 @@ static unsigned int riscv_intc_custom_nr_irqs __ro_after_init;
 static asmlinkage void riscv_intc_irq(struct pt_regs *regs)
 {
 	unsigned long cause = regs->cause & ~CAUSE_IRQ_FLAG;
+#ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_intc_seen;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (!trace_intc_seen) {
+		trace_intc_seen = true;
+		riscv_evl_trace("EVLDBG riscv_intc_irq entry\n");
+		riscv_evl_trace_ulong("EVLDBG riscv_intc_irq cause=", cause);
+	}
+#endif
 
 	if (generic_handle_domain_irq(intc_domain, cause))
 		pr_warn_ratelimited("Failed to handle interrupt (cause: %ld)\n", cause);
