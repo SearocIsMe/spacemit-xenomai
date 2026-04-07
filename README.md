@@ -71,12 +71,14 @@ spacemit-xenomai/
 ├── docs/
 │   ├── architecture.md            ← EVL dual-kernel architecture notes
 │   ├── porting-notes.md           ← RISC-V specific porting details
+│   ├── qemu-virt.md               ← PC-side QEMU virt validation workflow
 │   ├── riscv-upstream-patch-map.md← Public RISC-V EVL/Dovetail status → local file map
 │   ├── riscv-overlay-audit.md     ← File-by-file risk audit for arch/riscv overlay
 │   └── testing.md                 ← Latency test procedures & results
 │
 ├── configs/
 │   ├── k1_evl_defconfig           ← Kernel config fragment for EVL on K1
+│   ├── qemu_virt_evl_defconfig    ← Generic QEMU virt fragment for RISC-V EVL smoke tests
 │   └── extlinux.conf              ← Boot loader config for Jupiter
 │
 ├── kernel-overlay/                ← Mirror of linux-k1 tree (EVL files only)
@@ -127,7 +129,11 @@ spacemit-xenomai/
     │   ├── 00b-deploy-overlay.sh  ← Deploy kernel-overlay/ into linux-k1
     │   ├── 02-configure.sh        ← Merge SpacemiT defconfig + EVL fragment
     │   ├── 03-build-kernel.sh     ← Cross-compile kernel + modules
+    │   ├── build-qemu-virt-bisect.sh ← Build generic QEMU riscv64 virt variants
     │   └── 04-build-sdk.sh        ← Build libevl SDK (optional)
+    ├── qemu/
+    │   ├── setup-qemu-riscv64-ubuntu.sh ← Install QEMU riscv64 host tools on Ubuntu
+    │   └── run-riscv64-virt.sh    ← Boot a built kernel on QEMU virt
     └── flash/
         ├── flash-sdcard.sh        ← Write image to SD card (Linux host)
         ├── flash-windows.ps1      ← Write image using Win32DiskImager
