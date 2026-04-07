@@ -468,7 +468,7 @@ noinstr bool stage_disabled_flags(unsigned long irqstate, bool *stalled)
 
 	flags = irqs_split_flags(irqstate, &_stalled);
 	*stalled = _stalled;
-	return hard_irqs_disabled_flags(flags) || stalled;
+	return hard_irqs_disabled_flags(flags) || *stalled;
 }
 EXPORT_SYMBOL_GPL(stage_disabled_flags);
 

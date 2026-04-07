@@ -42,11 +42,12 @@
 
 /*
  * RISC-V uses the SR_IE bit in sstatus for hardware IRQ masking.
- * The pipeline virtualises this: the "virtual" IRQ state is the
- * software stall flag; the "native" state is the actual SR_IE bit.
+ * The pipeline virtualises this: in-band callers should only observe a
+ * simple virtual enabled/disabled state, while the pipeline core still
+ * needs helpers to merge/split that virtual state with the real SR_IE bit.
  *
- * IRQMASK_i_POS: bit position of the virtual (software) stall flag.
- * IRQMASK_I_POS: bit position of the native SR_IE hardware flag.
+ * IRQMASK_i_POS: synthetic bit position of the virtual stall flag.
+ * IRQMASK_I_POS: synthetic/native position corresponding to SR_IE.
  */
 #define IRQMASK_i_POS		0	/* virtual stall flag bit */
 #define IRQMASK_I_POS		1	/* SR_IE position in sstatus */
@@ -56,8 +57,10 @@ static inline notrace
 unsigned long arch_irqs_virtual_to_native_flags(int stalled)
 {
 	/*
-	 * stalled=1 → IRQs disabled → SR_IE should be 0.
-	 * Return SR_IE set only when NOT stalled (IRQs enabled).
+	 * Convert the virtual in-band state carried in the synthetic low bit
+	 * to the native SR_IE convention used by hard_local_*() helpers:
+	 *   stalled=0 -> SR_IE set   (enabled)
+	 *   stalled=1 -> SR_IE clear (disabled)
 	 */
 	return (!stalled) ? SR_IE : 0UL;
 }
@@ -66,7 +69,8 @@ static inline notrace
 unsigned long arch_irqs_native_to_virtual_flags(unsigned long flags)
 {
 	/*
-	 * SR_IE=0 → IRQs disabled → stalled=1.
+	 * Convert the native SR_IE state into the synthetic one-bit virtual
+	 * state used by the generic pipeline helpers.
 	 */
 	return (!(flags & SR_IE)) ? (1UL << IRQMASK_i_POS) : 0UL;
 }
@@ -78,9 +82,10 @@ unsigned long arch_irqs_native_to_virtual_flags(unsigned long flags)
  */
 static inline notrace unsigned long arch_local_irq_save(void)
 {
-	int stalled = inband_irq_save();
+	unsigned long stalled = inband_irq_save();
+
 	barrier();
-	return arch_irqs_virtual_to_native_flags(stalled);
+	return stalled ? 1UL : 0UL;
 }
 
 static inline notrace void arch_local_irq_enable(void)
@@ -97,19 +102,20 @@ static inline notrace void arch_local_irq_disable(void)
 
 static inline notrace unsigned long arch_local_save_flags(void)
 {
-	int stalled = inband_irqs_disabled();
+	unsigned long stalled = inband_irqs_disabled();
+
 	barrier();
-	return arch_irqs_virtual_to_native_flags(stalled);
+	return stalled ? 1UL : 0UL;
 }
 
 static inline int arch_irqs_disabled_flags(unsigned long flags)
 {
-	return native_irqs_disabled_flags(flags);
+	return !!flags;
 }
 
 static inline notrace void arch_local_irq_restore(unsigned long flags)
 {
-	inband_irq_restore(arch_irqs_disabled_flags(flags));
+	inband_irq_restore(arch_irqs_disabled_flags(flags) ? 1 : 0);
 	barrier();
 }
 
