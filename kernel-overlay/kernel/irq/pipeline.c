@@ -247,11 +247,28 @@ void synchronize_pipeline(void) /* hardirqs off */
 {
 	struct irq_stage *top = &oob_stage;
 	int stalled = test_oob_stall();
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_sync_pipeline_count;
+#endif
 
 	if (unlikely(!oob_stage_present())) {
 		top = &inband_stage;
 		stalled = test_inband_stall();
 	}
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_sync_pipeline_count < 32) {
+		trace_sync_pipeline_count++;
+		riscv_evl_trace_ulong("EVLDBG synchronize_pipeline top=",
+				      (unsigned long)top);
+		riscv_evl_trace_ulong("EVLDBG synchronize_pipeline current_stage=",
+				      (unsigned long)current_irq_staged->stage);
+		riscv_evl_trace_ulong("EVLDBG synchronize_pipeline inband_pending=",
+				      stage_irqs_pending(this_inband_staged()));
+		riscv_evl_trace_ulong("EVLDBG synchronize_pipeline oob_pending=",
+				      stage_irqs_pending(this_oob_staged()));
+	}
+#endif
 
 	if (current_irq_stage != top)
 		sync_irq_stage(top);
@@ -263,6 +280,9 @@ static void __inband_irq_enable(void)
 {
 	struct irq_stage_data *p;
 	unsigned long flags;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_skip_sync_count;
+#endif
 
 	check_inband_stage();
 
@@ -272,6 +292,26 @@ static void __inband_irq_enable(void)
 
 	p = this_inband_staged();
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
+#ifdef CONFIG_IRQ_PIPELINE
+		/*
+		 * Validation hack: once rest_init() flips the system into
+		 * SYSTEM_SCHEDULING, the very first in-band IRQ enable points
+		 * immediately replay the pending timer tick and keep bouncing in
+		 * sync_current_irq_stage(). Skip that replay during this narrow
+		 * bring-up state to confirm whether "early pending replay" is the
+		 * remaining blocker.
+		 */
+		if (system_state == SYSTEM_SCHEDULING) {
+			if (trace_skip_sync_count < 16) {
+				trace_skip_sync_count++;
+				riscv_evl_trace_ulong("EVLDBG __inband_irq_enable skip_sync state=",
+						      system_state);
+			}
+			hard_local_irq_restore(flags);
+			preempt_check_resched();
+			return;
+		}
+#endif
 		sync_current_irq_stage();
 		hard_local_irq_restore(flags);
 		preempt_check_resched();
@@ -1237,6 +1277,9 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				struct pt_regs *regs)
 {
 	static bool trace_finish_seen;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_finish_sync_count;
+#endif
 
 	/*
 	 * Leave the (pseudo-)NMI entry for RCU before the out-of-band
@@ -1270,8 +1313,26 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	 * - because we posted them directly for scheduling the
 	 * interrupt to happen from the in-band stage.
 	 */
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_finish_sync_count < 32) {
+		trace_finish_sync_count++;
+		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync current_stage=",
+				      (unsigned long)current_irq_staged->stage);
+		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync inband_pending=",
+				      stage_irqs_pending(this_inband_staged()));
+		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync oob_pending=",
+				      stage_irqs_pending(this_oob_staged()));
+	}
+	if (system_state == SYSTEM_SCHEDULING &&
+	    stage_irqs_pending(this_inband_staged())) {
+		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
+				      system_state);
+		goto out;
+	}
+#endif
 	synchronize_pipeline_on_irq();
 
+out:
 	if (!trace_finish_seen) {
 		trace_finish_seen = true;
 		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish\n");

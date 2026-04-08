@@ -1453,11 +1453,24 @@ void __weak free_initmem(void)
 static int __ref kernel_init(void *unused)
 {
 	int ret;
+#ifdef CONFIG_IRQ_PIPELINE
+	unsigned long flags;
+#endif
 
 	/*
 	 * Wait until kthreadd is all set-up.
 	 */
 	wait_for_completion(&kthreadd_done);
+
+#ifdef CONFIG_IRQ_PIPELINE
+	flags = hard_local_irq_save();
+	if (system_state == SYSTEM_SCHEDULING) {
+		riscv_evl_trace_ulong("EVLDBG kernel_init manual_sync state=",
+				      system_state);
+		sync_current_irq_stage();
+	}
+	hard_local_irq_restore(flags);
+#endif
 
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
