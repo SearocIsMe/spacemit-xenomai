@@ -120,6 +120,10 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_update_nr_running_tp);
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
+#ifdef CONFIG_IRQ_PIPELINE
+static DEFINE_PER_CPU(bool, schedule_tail_deferred_sync_done);
+#endif
+
 #ifdef CONFIG_SCHED_DEBUG
 /*
  * Debugging: various feature bits
@@ -5359,9 +5363,14 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 
 	if (system_state == SYSTEM_SCHEDULING &&
 	    irq_pipeline_take_deferred_sync()) {
-		if (trace_schedule_tail_count <= 16)
-			riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
-		sync_current_irq_stage();
+		if (!__this_cpu_read(schedule_tail_deferred_sync_done)) {
+			__this_cpu_write(schedule_tail_deferred_sync_done, true);
+			if (trace_schedule_tail_count <= 16)
+				riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
+			sync_current_irq_stage();
+		} else if (trace_schedule_tail_count <= 16) {
+			riscv_evl_trace("EVLDBG schedule_tail skip repeated deferred_sync\n");
+		}
 	}
 #endif
 

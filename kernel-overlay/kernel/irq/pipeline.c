@@ -1444,12 +1444,25 @@ void sync_current_irq_stage(void) /* hard irqs off */
 	int irq;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_sync_irq_count;
+	static unsigned int trace_sync_call_count;
+	static unsigned int trace_sync_timer_break_count;
 #endif
 
 	WARN_ON_ONCE(irq_pipeline_debug() && on_pipeline_entry());
 	check_hard_irqs_disabled();
 
 	p = current_irq_staged;
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_sync_call_count < 24) {
+		trace_sync_call_count++;
+		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage enter call=",
+				      trace_sync_call_count);
+		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage enter stage=",
+				      (unsigned long)p->stage);
+		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage enter inband_pending=",
+				      stage_irqs_pending(this_inband_staged()));
+	}
+#endif
 respin:
 	stage = p->stage;
 	if (stage == &inband_stage) {
@@ -1491,6 +1504,24 @@ respin:
 			hard_local_irq_enable();
 			do_inband_irq(desc);
 			hard_local_irq_disable();
+#ifdef CONFIG_IRQ_PIPELINE
+			/*
+			 * Validation hack: avoid letting a single bootstrap
+			 * sync call absorb an unbounded stream of freshly
+			 * deferred timer ticks during SYSTEM_SCHEDULING.
+			 * Consume one timer replay, then return so any new
+			 * deferred tick is picked up by a later sync point.
+			 */
+			if (system_state == SYSTEM_SCHEDULING &&
+			    desc->action &&
+			    (desc->action->flags & __IRQF_TIMER)) {
+				if (trace_sync_timer_break_count < 24) {
+					trace_sync_timer_break_count++;
+					riscv_evl_trace("EVLDBG sync_current_irq_stage break_after_timer\n");
+				}
+				break;
+			}
+#endif
 		} else {
 			do_oob_irq(desc);
 		}
@@ -1519,6 +1550,14 @@ respin:
 	} else {
 		unstall_oob();
 	}
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_sync_call_count <= 24) {
+		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage exit stage=",
+				      (unsigned long)stage);
+		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage exit inband_pending=",
+				      stage_irqs_pending(this_inband_staged()));
+	}
+#endif
 }
 
 #ifndef CONFIG_GENERIC_ENTRY
