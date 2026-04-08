@@ -1467,6 +1467,8 @@ static int __ref kernel_init(void *unused)
 	if (system_state == SYSTEM_SCHEDULING) {
 		riscv_evl_trace_ulong("EVLDBG kernel_init manual_sync state=",
 				      system_state);
+		riscv_evl_trace_ulong("EVLDBG kernel_init manual_sync current_stage=",
+				      (unsigned long)current_irq_staged->stage);
 		sync_current_irq_stage();
 	}
 	hard_local_irq_restore(flags);

@@ -34,6 +34,10 @@ int irq_inject_pipeline(unsigned int irq);
 
 void synchronize_pipeline(void);
 
+void irq_pipeline_request_deferred_sync(void);
+
+bool irq_pipeline_take_deferred_sync(void);
+
 static __always_inline void synchronize_pipeline_on_irq(void)
 {
 	/*
@@ -124,6 +128,13 @@ static inline bool irq_cpuidle_enter(struct cpuidle_device *dev,
 }
 
 static inline bool inband_irq_pending(void)
+{
+	return false;
+}
+
+static inline void irq_pipeline_request_deferred_sync(void) { }
+
+static inline bool irq_pipeline_take_deferred_sync(void)
 {
 	return false;
 }

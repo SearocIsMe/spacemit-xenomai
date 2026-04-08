@@ -94,6 +94,7 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 
 struct pipeline_percpu_data { };
 static DEFINE_PER_CPU(struct pipeline_percpu_data, pipeline_percpu_data);
+static DEFINE_PER_CPU(bool, deferred_sync_request);
 
 static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
 {
@@ -275,6 +276,23 @@ void synchronize_pipeline(void) /* hardirqs off */
 	else if (!stalled)
 		sync_current_irq_stage();
 }
+
+void irq_pipeline_request_deferred_sync(void)
+{
+	__this_cpu_write(deferred_sync_request, true);
+}
+EXPORT_SYMBOL_GPL(irq_pipeline_request_deferred_sync);
+
+bool irq_pipeline_take_deferred_sync(void)
+{
+	bool pending = __this_cpu_read(deferred_sync_request);
+
+	if (pending)
+		__this_cpu_write(deferred_sync_request, false);
+
+	return pending;
+}
+EXPORT_SYMBOL_GPL(irq_pipeline_take_deferred_sync);
 
 static void __inband_irq_enable(void)
 {
@@ -1327,6 +1345,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	    stage_irqs_pending(this_inband_staged())) {
 		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
 				      system_state);
+		irq_pipeline_request_deferred_sync();
 		goto out;
 	}
 #endif
