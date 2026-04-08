@@ -22,6 +22,8 @@
 #   QEMU_DEBUG_LOG=path               Write QEMU debug log to this file
 #   QEMU_STDOUT_LOG=path              Mirror guest console/stdout to this file
 #   QEMU_DEBUG_FLAGS=guest_errors,cpu_reset
+#   QEMU_GDB=1                        Start QEMU paused with a GDB stub
+#   QEMU_GDB_PORT=1234                TCP port for the GDB stub
 #   QEMU_BIN=qemu-system-riscv64      Override QEMU binary
 # =============================================================================
 set -euo pipefail
@@ -35,6 +37,8 @@ QEMU_NO_REBOOT="${QEMU_NO_REBOOT:-0}"
 QEMU_DEBUG_LOG="${QEMU_DEBUG_LOG:-}"
 QEMU_STDOUT_LOG="${QEMU_STDOUT_LOG:-}"
 QEMU_DEBUG_FLAGS="${QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
+QEMU_GDB="${QEMU_GDB:-0}"
+QEMU_GDB_PORT="${QEMU_GDB_PORT:-1234}"
 APPEND="${APPEND:-}"
 INITRD="${INITRD:-}"
 ROOTFS_IMG="${ROOTFS_IMG:-}"
@@ -73,6 +77,10 @@ fi
 
 if [[ -n "${QEMU_DEBUG_LOG}" ]]; then
   cmd+=(-d "${QEMU_DEBUG_FLAGS}" -D "${QEMU_DEBUG_LOG}")
+fi
+
+if [[ "${QEMU_GDB}" == "1" ]]; then
+  cmd+=(-S -gdb "tcp::${QEMU_GDB_PORT}")
 fi
 
 kernel_args=(
@@ -116,6 +124,13 @@ fi
 cmd+=(-append "${kernel_args[*]}")
 
 echo "Running: ${cmd[*]}"
+
+if [[ "${QEMU_GDB}" == "1" ]]; then
+  echo "QEMU GDB stub listening on tcp::${QEMU_GDB_PORT}"
+  echo "Connect with:"
+  echo "  riscv64-linux-gnu-gdb ${BUILD_DIR}/vmlinux"
+  echo "  (gdb) target remote :${QEMU_GDB_PORT}"
+fi
 
 if [[ -n "${QEMU_STDOUT_LOG}" ]]; then
   mkdir -p "$(dirname "${QEMU_STDOUT_LOG}")"

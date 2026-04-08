@@ -978,6 +978,19 @@ done:
 static inline
 void do_inband_irq(struct irq_desc *desc)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_inband_irq_count;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_inband_irq_count < 32) {
+		trace_inband_irq_count++;
+		riscv_evl_trace_ulong("EVLDBG do_inband_irq irq=",
+				      irq_desc_get_irq(desc));
+		riscv_evl_trace_ulong("EVLDBG do_inband_irq istate=",
+				      desc->istate);
+	}
+#endif
 	arch_do_IRQ_pipelined(desc);
 	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
 }
@@ -993,6 +1006,9 @@ bool handle_oob_irq(struct irq_desc *desc)
 {
 	struct irq_stage_data *oobd = this_oob_staged();
 	unsigned int irq = irq_desc_get_irq(desc);
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_defer_count;
+#endif
 	int stalled;
 
 	/*
@@ -1016,6 +1032,15 @@ bool handle_oob_irq(struct irq_desc *desc)
 	 */
 	if (!oob_stage_present() || !irq_settings_is_oob(desc)) {
 		desc->istate |= IRQS_DEFERRED;
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_defer_count < 32) {
+			trace_defer_count++;
+			riscv_evl_trace_ulong("EVLDBG handle_oob_irq defer irq=",
+					      irq);
+			riscv_evl_trace_ulong("EVLDBG handle_oob_irq defer istate=",
+					      desc->istate);
+		}
+#endif
 		irq_post_stage(&inband_stage, irq);
 		return false;
 	}
@@ -1337,6 +1362,9 @@ void sync_current_irq_stage(void) /* hard irqs off */
 	struct irq_stage *stage;
 	struct irq_desc *desc;
 	int irq;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_sync_irq_count;
+#endif
 
 	WARN_ON_ONCE(irq_pipeline_debug() && on_pipeline_entry());
 	check_hard_irqs_disabled();
@@ -1367,6 +1395,17 @@ respin:
 		barrier();
 
 		desc = irq_to_desc(irq);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_sync_irq_count < 48) {
+			trace_sync_irq_count++;
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage irq=",
+					      irq);
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage stage=",
+					      (unsigned long)stage);
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage istate=",
+					      desc ? desc->istate : 0);
+		}
+#endif
 
 		if (stage == &inband_stage) {
 			hard_local_irq_enable();
