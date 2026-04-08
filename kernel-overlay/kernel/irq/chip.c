@@ -15,6 +15,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/irqdomain.h>
 #include <linux/irq_pipeline.h>
+#include <asm/evl_debug.h>
 
 #include <trace/events/irq.h>
 
@@ -1251,6 +1252,20 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 	irqreturn_t res;
 	bool handled;
 	int flow;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_percpu_entry_count;
+	static unsigned int trace_percpu_exit_count;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_percpu_entry_count < 64) {
+		trace_percpu_entry_count++;
+		riscv_evl_trace_ulong("EVLDBG handle_percpu_devid_irq entry irq=",
+				      irq);
+		riscv_evl_trace_ulong("EVLDBG handle_percpu_devid_irq entry istate=",
+				      desc->istate);
+	}
+#endif
 
 	flow = get_flow_step(desc);
 	if (irqs_pipelined()) {
@@ -1284,6 +1299,15 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 		trace_irq_handler_entry(irq, action);
 		res = action->handler(irq, raw_cpu_ptr(action->percpu_dev_id));
 		trace_irq_handler_exit(irq, action, res);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_percpu_exit_count < 64) {
+			trace_percpu_exit_count++;
+			riscv_evl_trace_ulong("EVLDBG handle_percpu_devid_irq exit irq=",
+					      irq);
+			riscv_evl_trace_ulong("EVLDBG handle_percpu_devid_irq exit istate=",
+					      desc->istate);
+		}
+#endif
 	} else {
 		unsigned int cpu = smp_processor_id();
 		bool enabled = cpumask_test_cpu(cpu, desc->percpu_enabled);
