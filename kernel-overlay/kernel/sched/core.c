@@ -5350,11 +5350,12 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_schedule_tail_count <= 16)
 		riscv_evl_trace("EVLDBG schedule_tail after preempt_enable\n");
-#endif
+#else
 	hard_cond_local_irq_enable();
+#endif
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_schedule_tail_count <= 16)
-		riscv_evl_trace("EVLDBG schedule_tail after hard_cond_local_irq_enable\n");
+		riscv_evl_trace("EVLDBG schedule_tail skip hard_cond_local_irq_enable\n");
 #endif
 
 	if (current->set_child_tid)
