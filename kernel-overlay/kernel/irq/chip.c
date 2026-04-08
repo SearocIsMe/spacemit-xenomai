@@ -1263,7 +1263,10 @@ void handle_percpu_devid_irq(struct irq_desc *desc)
 			if (!handled && chip->irq_mask)
 				chip->irq_mask(&desc->irq_data);
 			return;
+		} else if (flow == IRQ_FLOW_REPLAY) {
+			irq_clear_deferral(desc);
 		} else if (flow == IRQ_FLOW_FORWARD) {
+			irq_clear_forward(desc);
 			handle_irq_event_percpu(desc);
 			return;
 		}
