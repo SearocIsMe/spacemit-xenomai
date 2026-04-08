@@ -28,6 +28,7 @@
 #include <linux/sched/cond_resched.h>
 #include <linux/sched/cputime.h>
 #include <linux/sched/debug.h>
+#include <asm/evl_debug.h>
 #include <linux/sched/hotplug.h>
 #include <linux/sched/init.h>
 #include <linux/sched/isolation.h>
@@ -5312,6 +5313,9 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	__releases(rq->lock)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_schedule_tail_count;
+#endif
 	/*
 	 * New tasks start with FORK_PREEMPT_COUNT, see there and
 	 * finish_task_switch() for details.
@@ -5329,11 +5333,29 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	 * stage.
 	 */
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_schedule_tail_count < 16) {
+		trace_schedule_tail_count++;
+		riscv_evl_trace("EVLDBG schedule_tail entry\n");
+	}
+#endif
 	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
-	hard_cond_local_irq_enable();
 	oob_trampoline();
 	finish_task_switch(prev);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_schedule_tail_count <= 16)
+		riscv_evl_trace("EVLDBG schedule_tail after finish_task_switch\n");
+#endif
 	preempt_enable();
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_schedule_tail_count <= 16)
+		riscv_evl_trace("EVLDBG schedule_tail after preempt_enable\n");
+#endif
+	hard_cond_local_irq_enable();
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_schedule_tail_count <= 16)
+		riscv_evl_trace("EVLDBG schedule_tail after hard_cond_local_irq_enable\n");
+#endif
 
 	if (current->set_child_tid)
 		put_user(task_pid_vnr(current), current->set_child_tid);

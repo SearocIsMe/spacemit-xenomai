@@ -721,7 +721,11 @@ noinline void __ref __noreturn rest_init(void)
 	 * CONFIG_PREEMPT_VOLUNTARY=y the init task might have scheduled
 	 * already, but it's stuck on the kthreadd_done completion.
 	 */
+	riscv_evl_trace_ulong("EVLDBG rest_init system_state before scheduling=",
+			      system_state);
 	system_state = SYSTEM_SCHEDULING;
+	riscv_evl_trace_ulong("EVLDBG rest_init system_state after scheduling=",
+			      system_state);
 
 	complete(&kthreadd_done);
 
@@ -729,6 +733,7 @@ noinline void __ref __noreturn rest_init(void)
 	 * The boot idle thread must execute schedule()
 	 * at least once to get things moving:
 	 */
+	riscv_evl_trace("EVLDBG rest_init before schedule_preempt_disabled\n");
 	schedule_preempt_disabled();
 	/* Call into cpu_idle with preempt disabled */
 	cpu_startup_entry(CPUHP_ONLINE);

@@ -196,6 +196,7 @@ static irqreturn_t riscv_timer_interrupt(int irq, void *dev_id)
 	}
 #endif
 	csr_clear(CSR_IE, IE_TIE);
+
 	evdev->event_handler(evdev);
 
 	return IRQ_HANDLED;
