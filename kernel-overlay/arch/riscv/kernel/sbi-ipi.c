@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Multiplex several IPIs over a single HW IPI.
+ *
+ * Copyright (c) 2022 Ventana Micro Systems Inc.
+ */
+
+#define pr_fmt(fmt) "riscv: " fmt
+#include <linux/cpu.h>
+#include <linux/init.h>
+#include <linux/irq.h>
+#include <linux/irqchip/chained_irq.h>
+#include <linux/irqdomain.h>
+#include <asm/evl_debug.h>
+#include <asm/sbi.h>
+#include <asm/csr.h>
+
+static int sbi_ipi_virq;
+
+static void sbi_ipi_handle(struct irq_desc *desc)
+{
+	struct irq_chip *chip = irq_desc_get_chip(desc);
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_sbi_ipi_handle_count;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_sbi_ipi_handle_count < 32) {
+		trace_sbi_ipi_handle_count++;
+		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle irq=",
+				      irq_desc_get_irq(desc));
+		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle cpu=",
+				      smp_processor_id());
+	}
+#endif
+
+	chained_irq_enter(chip, desc);
+
+	csr_clear(CSR_IP, IE_SIE);
+	ipi_mux_process();
+
+	chained_irq_exit(chip, desc);
+}
+
+static int sbi_ipi_starting_cpu(unsigned int cpu)
+{
+	enable_percpu_irq(sbi_ipi_virq, irq_get_trigger_type(sbi_ipi_virq));
+	return 0;
+}
+
+#ifdef CONFIG_SOC_SPACEMIT
+static int sbi_clint_ipi_starting_cpu(unsigned int cpu)
+{
+	csr_set(CSR_IE, IE_SIE);
+
+	return 0;
+}
+#endif
+
+void __init sbi_ipi_init(void)
+{
+	int virq;
+	struct irq_domain *domain;
+#ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_sbi_ipi_init_seen;
+#endif
+
+	if (riscv_ipi_have_virq_range())
+		return;
+
+	domain = irq_find_matching_fwnode(riscv_get_intc_hwnode(),
+					  DOMAIN_BUS_ANY);
+	if (!domain) {
+		pr_err("unable to find INTC IRQ domain\n");
+		return;
+	}
+
+	sbi_ipi_virq = irq_create_mapping(domain, RV_IRQ_SOFT);
+	if (!sbi_ipi_virq) {
+		pr_err("unable to create INTC IRQ mapping\n");
+		return;
+	}
+
+	virq = ipi_mux_create(BITS_PER_BYTE, sbi_send_ipi);
+	if (virq <= 0) {
+		pr_err("unable to create muxed IPIs\n");
+		irq_dispose_mapping(sbi_ipi_virq);
+		return;
+	}
+
+	irq_set_chained_handler(sbi_ipi_virq, sbi_ipi_handle);
+
+	/*
+	 * Don't disable IPI when CPU goes offline because
+	 * the masking/unmasking of virtual IPIs is done
+	 * via generic IPI-Mux
+	 */
+	cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
+			  "irqchip/sbi-ipi:starting",
+			  sbi_ipi_starting_cpu, NULL);
+#ifdef CONFIG_SOC_SPACEMIT
+	cpuhp_setup_state(CPUHP_AP_CLINT_IPI_RISCV_STARTING,
+			  "irqchip/sbi-clint-ipi:starting",
+			  sbi_clint_ipi_starting_cpu, NULL);
+#endif
+
+	riscv_ipi_set_virq_range(virq, BITS_PER_BYTE, false);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (!trace_sbi_ipi_init_seen) {
+		trace_sbi_ipi_init_seen = true;
+		riscv_evl_trace_ulong("EVLDBG sbi_ipi_init parent_virq=", sbi_ipi_virq);
+		riscv_evl_trace_ulong("EVLDBG sbi_ipi_init mux_base=", virq);
+	}
+#endif
+	pr_info("providing IPIs using SBI IPI extension\n");
+}

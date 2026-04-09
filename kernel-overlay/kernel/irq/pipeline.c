@@ -1104,6 +1104,10 @@ bool handle_oob_irq(struct irq_desc *desc)
 			riscv_evl_trace_ulong("EVLDBG handle_oob_irq defer istate=",
 					      desc->istate);
 		}
+		if (irq >= 3 && irq <= 8) {
+			riscv_evl_trace_ulong("EVLDBG handle_oob_irq defer ipi_irq=",
+					      irq);
+		}
 #endif
 		irq_post_stage(&inband_stage, irq);
 		return false;
@@ -1504,6 +1508,12 @@ respin:
 					      (unsigned long)stage);
 			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage istate=",
 					      desc ? desc->istate : 0);
+		}
+		if (irq >= 3 && irq <= 8) {
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage ipi_irq=",
+					      irq);
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage ipi_stage=",
+					      (unsigned long)stage);
 		}
 #endif
 

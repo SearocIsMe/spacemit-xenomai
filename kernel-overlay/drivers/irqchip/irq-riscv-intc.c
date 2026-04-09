@@ -27,6 +27,26 @@ static unsigned int riscv_intc_custom_nr_irqs __ro_after_init;
 
 int riscv_intc_dispatch_irq(unsigned long cause)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_dispatch_sw_count;
+	static unsigned int trace_dispatch_ipi_range_count;
+	unsigned int virq;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cause == IRQ_S_SOFT && trace_dispatch_sw_count < 32) {
+		trace_dispatch_sw_count++;
+		riscv_evl_trace_ulong("EVLDBG riscv_intc_dispatch_irq cause=", cause);
+	}
+#endif
+#ifdef CONFIG_IRQ_PIPELINE
+	virq = irq_find_mapping(intc_domain, cause);
+	if (virq >= 3 && virq <= 8 && trace_dispatch_ipi_range_count < 32) {
+		trace_dispatch_ipi_range_count++;
+		riscv_evl_trace_ulong("EVLDBG riscv_intc_dispatch_irq virq=", virq);
+		riscv_evl_trace_ulong("EVLDBG riscv_intc_dispatch_irq hwirq=", cause);
+	}
+#endif
 	return generic_handle_domain_irq(intc_domain, cause);
 }
 

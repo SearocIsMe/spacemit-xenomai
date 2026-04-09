@@ -5358,11 +5358,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 		riscv_evl_trace("EVLDBG schedule_tail skip hard_cond_local_irq_enable\n");
 
 	if (system_state == SYSTEM_SCHEDULING) {
-		if (irq_pipeline_smp_init_in_progress() &&
-		    irq_pipeline_deferred_sync_pending()) {
-			if (trace_schedule_tail_count <= 16)
-				riscv_evl_trace("EVLDBG schedule_tail defer blocked by smp_init\n");
-		} else if (irq_pipeline_take_deferred_sync()) {
+		if (irq_pipeline_take_deferred_sync()) {
 			if (trace_schedule_tail_count <= 16)
 				riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
 			sync_current_irq_stage();

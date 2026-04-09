@@ -25,6 +25,7 @@
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
 #include <asm/cpu_ops.h>
+#include <asm/evl_debug.h>
 
 enum ipi_message_type {
 	IPI_RESCHEDULE,
@@ -118,6 +119,18 @@ void arch_irq_work_raise(void)
 static irqreturn_t handle_IPI(int irq, void *data)
 {
 	int ipi = irq - ipi_virq_base;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_count;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_ipi_count < 32) {
+		trace_ipi_count++;
+		riscv_evl_trace_ulong("EVLDBG handle_IPI irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG handle_IPI ipi=", ipi);
+		riscv_evl_trace_ulong("EVLDBG handle_IPI cpu=", smp_processor_id());
+	}
+#endif
 
 	switch (ipi) {
 	case IPI_RESCHEDULE:
@@ -181,6 +194,9 @@ EXPORT_SYMBOL_GPL(riscv_ipi_for_rfence);
 void riscv_ipi_set_virq_range(int virq, int nr, bool use_for_rfence)
 {
 	int i, err;
+#ifdef CONFIG_IRQ_PIPELINE
+	static bool trace_ipi_range_seen;
+#endif
 
 	if (WARN_ON(ipi_virq_base))
 		return;
@@ -190,6 +206,14 @@ void riscv_ipi_set_virq_range(int virq, int nr, bool use_for_rfence)
 	ipi_virq_base = virq;
 #ifdef CONFIG_IRQ_PIPELINE
 	ipi_irq_base = virq;
+#endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (!trace_ipi_range_seen) {
+		trace_ipi_range_seen = true;
+		riscv_evl_trace_ulong("EVLDBG riscv_ipi_set_virq_range base=", virq);
+		riscv_evl_trace_ulong("EVLDBG riscv_ipi_set_virq_range nr=", nr_ipi);
+	}
 #endif
 
 	/* Request IPIs */
