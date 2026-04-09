@@ -36,7 +36,11 @@ void synchronize_pipeline(void);
 
 void irq_pipeline_request_deferred_sync(void);
 
+bool irq_pipeline_deferred_sync_pending(void);
+
 bool irq_pipeline_take_deferred_sync(void);
+
+bool irq_pipeline_smp_init_in_progress(void);
 
 static __always_inline void synchronize_pipeline_on_irq(void)
 {
@@ -134,7 +138,17 @@ static inline bool inband_irq_pending(void)
 
 static inline void irq_pipeline_request_deferred_sync(void) { }
 
+static inline bool irq_pipeline_deferred_sync_pending(void)
+{
+	return false;
+}
+
 static inline bool irq_pipeline_take_deferred_sync(void)
+{
+	return false;
+}
+
+static inline bool irq_pipeline_smp_init_in_progress(void)
 {
 	return false;
 }

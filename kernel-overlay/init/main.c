@@ -114,6 +114,15 @@
 
 #include <kunit/test.h>
 
+#ifdef CONFIG_IRQ_PIPELINE
+static bool irq_pipeline_smp_init_busy;
+
+bool irq_pipeline_smp_init_in_progress(void)
+{
+	return READ_ONCE(irq_pipeline_smp_init_busy);
+}
+#endif
+
 static int kernel_init(void *);
 
 /*
@@ -1452,6 +1461,9 @@ void __weak free_initmem(void)
 
 static int __ref kernel_init(void *unused)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init entry\n");
+#endif
 	int ret;
 
 	/*
@@ -1542,6 +1554,9 @@ void __init console_on_rootfs(void)
 
 static noinline void __init kernel_init_freeable(void)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable entry\n");
+#endif
 	/* Now the scheduler is fully set up and can do blocking allocations */
 	gfp_allowed_mask = __GFP_BITS_MASK;
 
@@ -1555,15 +1570,39 @@ static noinline void __init kernel_init_freeable(void)
 	smp_prepare_cpus(setup_max_cpus);
 
 	workqueue_init();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after workqueue_init\n");
+#endif
 
 	init_mm_internals();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after init_mm_internals\n");
+#endif
 
 	rcu_init_tasks_generic();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after rcu_init_tasks_generic\n");
+#endif
 	do_pre_smp_initcalls();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after do_pre_smp_initcalls\n");
+#endif
 	lockup_detector_init();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after lockup_detector_init\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before smp_init\n");
+	WRITE_ONCE(irq_pipeline_smp_init_busy, true);
+#endif
 
 	smp_init();
+#ifdef CONFIG_IRQ_PIPELINE
+	WRITE_ONCE(irq_pipeline_smp_init_busy, false);
+	riscv_evl_trace("EVLDBG kernel_init_freeable after smp_init\n");
+#endif
 	sched_init_smp();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after sched_init_smp\n");
+#endif
 
 	workqueue_init_topology();
 	padata_init();

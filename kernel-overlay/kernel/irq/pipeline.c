@@ -283,6 +283,12 @@ void irq_pipeline_request_deferred_sync(void)
 }
 EXPORT_SYMBOL_GPL(irq_pipeline_request_deferred_sync);
 
+bool irq_pipeline_deferred_sync_pending(void)
+{
+	return __this_cpu_read(deferred_sync_request);
+}
+EXPORT_SYMBOL_GPL(irq_pipeline_deferred_sync_pending);
+
 bool irq_pipeline_take_deferred_sync(void)
 {
 	bool pending = __this_cpu_read(deferred_sync_request);
@@ -1341,14 +1347,15 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync oob_pending=",
 				      stage_irqs_pending(this_oob_staged()));
 	}
-	if (system_state == SYSTEM_SCHEDULING &&
-	    stage_irqs_pending(this_inband_staged())) {
-		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
-				      system_state);
-		irq_pipeline_request_deferred_sync();
-		goto out;
-	}
-#endif
+		if (system_state == SYSTEM_SCHEDULING &&
+		    stage_irqs_pending(this_inband_staged())) {
+			riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
+					      system_state);
+			if (!irq_pipeline_deferred_sync_pending())
+				irq_pipeline_request_deferred_sync();
+			goto out;
+		}
+	#endif
 	synchronize_pipeline_on_irq();
 
 out:
