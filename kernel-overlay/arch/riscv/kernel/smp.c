@@ -137,6 +137,9 @@ static irqreturn_t handle_IPI(int irq, void *data)
 		scheduler_ipi();
 		break;
 	case IPI_CALL_FUNC:
+#ifdef CONFIG_IRQ_PIPELINE
+		riscv_evl_trace("EVLDBG handle_IPI call_func\n");
+#endif
 		generic_smp_call_function_interrupt();
 		break;
 	case IPI_CPU_STOP:

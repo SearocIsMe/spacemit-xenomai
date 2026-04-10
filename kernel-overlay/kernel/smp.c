@@ -430,6 +430,14 @@ static int generic_exec_single(int cpu, struct __call_single_data *csd)
  */
 void generic_smp_call_function_single_interrupt(void)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_callfunc_irq_count;
+
+	if (trace_callfunc_irq_count < 16) {
+		trace_callfunc_irq_count++;
+		riscv_evl_trace("EVLDBG generic_smp_call_function_single_interrupt\n");
+	}
+#endif
 	__flush_smp_call_function_queue(true);
 }
 

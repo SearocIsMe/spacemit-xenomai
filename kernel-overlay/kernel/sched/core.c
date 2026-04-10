@@ -3878,6 +3878,14 @@ void sched_ttwu_pending(void *arg)
 	struct rq *rq = this_rq();
 	struct task_struct *p, *t;
 	struct rq_flags rf;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ttwu_pending_count;
+
+	if (trace_ttwu_pending_count < 16) {
+		trace_ttwu_pending_count++;
+		riscv_evl_trace("EVLDBG sched_ttwu_pending\n");
+	}
+#endif
 
 	if (!llist)
 		return;
