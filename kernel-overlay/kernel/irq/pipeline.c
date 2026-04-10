@@ -250,6 +250,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 	int stalled = test_oob_stall();
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_sync_pipeline_count;
+	static unsigned int trace_sync_pipeline_branch_count;
 #endif
 
 	if (unlikely(!oob_stage_present())) {
@@ -272,9 +273,30 @@ void synchronize_pipeline(void) /* hardirqs off */
 #endif
 
 	if (current_irq_stage != top)
+	{
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_sync_pipeline_branch_count < 32) {
+			trace_sync_pipeline_branch_count++;
+			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_irq_stage\n");
+		}
+#endif
 		sync_irq_stage(top);
-	else if (!stalled)
+	}
+	else if (!stalled) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_sync_pipeline_branch_count < 32) {
+			trace_sync_pipeline_branch_count++;
+			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_current\n");
+		}
+#endif
 		sync_current_irq_stage();
+	}
+#ifdef CONFIG_IRQ_PIPELINE
+	else if (trace_sync_pipeline_branch_count < 32) {
+		trace_sync_pipeline_branch_count++;
+		riscv_evl_trace("EVLDBG synchronize_pipeline branch=none_stalled\n");
+	}
+#endif
 }
 
 void irq_pipeline_request_deferred_sync(void)
@@ -678,9 +700,23 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 {
 	struct irq_stage_data *p = this_staged(stage);
 	int l0b, l1b, l2b;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_post_count_l4;
+#endif
 
 	if (irq_post_check(stage, irq))
 		return;
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (irq >= 3 && irq <= 8 && trace_ipi_post_count_l4 < 32) {
+		trace_ipi_post_count_l4++;
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage ipi_irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage stage=",
+				      (unsigned long)stage);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage cpu=",
+				      smp_processor_id());
+	}
+#endif
 
 	l0b = irq / (BITS_PER_LONG * BITS_PER_LONG * BITS_PER_LONG);
 	l1b = irq / (BITS_PER_LONG * BITS_PER_LONG);
@@ -702,6 +738,9 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	unsigned long l0m, l1m, l2m, l3m;
 	int l0b, l1b, l2b, l3b;
 	unsigned int irq;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_pull_count_l4;
+#endif
 
 	l0m = p->log.index_0;
 	if (l0m == 0)
@@ -741,6 +780,17 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 		}
 	}
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (irq >= 3 && irq <= 8 && trace_ipi_pull_count_l4 < 32) {
+		trace_ipi_pull_count_l4++;
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
+				      (unsigned long)p->stage);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
+				      smp_processor_id());
+	}
+#endif
+
 	return irq;
 }
 
@@ -751,9 +801,23 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 {
 	struct irq_stage_data *p = this_staged(stage);
 	int l0b, l1b;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_post_count_l3;
+#endif
 
 	if (irq_post_check(stage, irq))
 		return;
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (irq >= 3 && irq <= 8 && trace_ipi_post_count_l3 < 32) {
+		trace_ipi_post_count_l3++;
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage ipi_irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage stage=",
+				      (unsigned long)stage);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage cpu=",
+				      smp_processor_id());
+	}
+#endif
 
 	l0b = irq / (BITS_PER_LONG * BITS_PER_LONG);
 	l1b = irq / BITS_PER_LONG;
@@ -768,6 +832,9 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 {
 	unsigned long l0m, l1m, l2m;
 	int l0b, l1b, l2b, irq;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_pull_count_l3;
+#endif
 
 	l0m = p->log.index_0;
 	if (unlikely(l0m == 0))
@@ -795,6 +862,17 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 			__clear_bit(l0b, &p->log.index_0);
 	}
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (irq >= 3 && irq <= 8 && trace_ipi_pull_count_l3 < 32) {
+		trace_ipi_pull_count_l3++;
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
+				      (unsigned long)p->stage);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
+				      smp_processor_id());
+	}
+#endif
+
 	return irq;
 }
 
@@ -805,9 +883,23 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 {
 	struct irq_stage_data *p = this_staged(stage);
 	int l0b = irq / BITS_PER_LONG;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_post_count;
+#endif
 
 	if (irq_post_check(stage, irq))
 		return;
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (irq >= 3 && irq <= 8 && trace_ipi_post_count < 32) {
+		trace_ipi_post_count++;
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage ipi_irq=", irq);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage stage=",
+				      (unsigned long)stage);
+		riscv_evl_trace_ulong("EVLDBG irq_post_stage cpu=",
+				      smp_processor_id());
+	}
+#endif
 
 	__set_bit(irq, p->log.map->flat);
 	__set_bit(l0b, &p->log.index_0);
@@ -818,6 +910,9 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 {
 	unsigned long l0m, l1m;
 	int l0b, l1b;
+#ifdef CONFIG_IRQ_PIPELINE
+	static unsigned int trace_ipi_pull_count;
+#endif
 
 	l0m = p->log.index_0;
 	if (l0m == 0)
@@ -834,6 +929,20 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	__clear_bit(l1b, &p->log.map->flat[l0b]);
 	if (p->log.map->flat[l0b] == 0)
 		__clear_bit(l0b, &p->log.index_0);
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if ((l0b * BITS_PER_LONG + l1b) >= 3 &&
+	    (l0b * BITS_PER_LONG + l1b) <= 8 &&
+	    trace_ipi_pull_count < 32) {
+		trace_ipi_pull_count++;
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=",
+				      l0b * BITS_PER_LONG + l1b);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
+				      (unsigned long)p->stage);
+		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
+				      smp_processor_id());
+	}
+#endif
 
 	return l0b * BITS_PER_LONG + l1b;
 }
@@ -1307,6 +1416,9 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	static bool trace_finish_seen;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_finish_sync_count;
+	static unsigned int trace_finish_ipi_pending_count;
+	static unsigned int trace_finish_sync_call_count;
+	static unsigned int trace_finish_sync_ret_count;
 #endif
 
 	/*
@@ -1351,16 +1463,62 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync oob_pending=",
 				      stage_irqs_pending(this_oob_staged()));
 	}
+	{
+		struct irq_stage_data *inbd = this_inband_staged();
+		bool ipi_pending = false;
+		int i;
+
+		for (i = 3; i <= 8; i++) {
+			if (test_bit(i, inbd->log.map->flat)) {
+				ipi_pending = true;
+				break;
+			}
+		}
+
+		if (ipi_pending && trace_finish_ipi_pending_count < 16) {
+			trace_finish_ipi_pending_count++;
+			riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish ipi_pending=",
+					      i);
+		}
+
 		if (system_state == SYSTEM_SCHEDULING &&
-		    stage_irqs_pending(this_inband_staged())) {
+		    stage_irqs_pending(inbd) &&
+		    !ipi_pending) {
 			riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
 					      system_state);
 			if (!irq_pipeline_deferred_sync_pending())
 				irq_pipeline_request_deferred_sync();
 			goto out;
 		}
-	#endif
+
+		if (ipi_pending) {
+			if (trace_finish_sync_call_count < 16) {
+				trace_finish_sync_call_count++;
+				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish direct_inband_sync\n");
+			}
+			switch_inband(inbd);
+			sync_current_irq_stage();
+			if (trace_finish_sync_ret_count < 16) {
+				trace_finish_sync_ret_count++;
+				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish direct_inband_sync_ret\n");
+			}
+			goto out;
+		}
+	}
+#endif
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_finish_sync_call_count < 16) {
+		trace_finish_sync_call_count++;
+		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish call_sync\n");
+	}
+#endif
 	synchronize_pipeline_on_irq();
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_finish_sync_ret_count < 16) {
+		trace_finish_sync_ret_count++;
+		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish ret_sync\n");
+	}
+#endif
 
 out:
 	if (!trace_finish_seen) {
