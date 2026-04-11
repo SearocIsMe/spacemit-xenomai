@@ -95,6 +95,7 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 struct pipeline_percpu_data { };
 static DEFINE_PER_CPU(struct pipeline_percpu_data, pipeline_percpu_data);
 static DEFINE_PER_CPU(bool, deferred_sync_request);
+static DEFINE_PER_CPU(bool, ttwu_window_active);
 
 static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
 {
@@ -128,6 +129,21 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 #endif /* !CONFIG_SMP */
 
 EXPORT_PER_CPU_SYMBOL(irq_pipeline);
+
+bool irq_pipeline_ipi_pending(void)
+{
+	struct irq_stage_data *inbd = this_inband_staged();
+	int ipi;
+
+	for (ipi = 3; ipi <= 8; ipi++) {
+		if (test_bit(ipi, inbd->log.map->flat)) {
+			riscv_evl_trace_ulong("EVLDBG irq_pipeline_ipi_pending irq=", ipi);
+			return true;
+		}
+	}
+
+	return false;
+}
 
 static void sirq_noop(struct irq_data *data) { }
 
@@ -302,6 +318,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 void irq_pipeline_request_deferred_sync(void)
 {
 	__this_cpu_write(deferred_sync_request, true);
+	riscv_evl_trace("EVLDBG irq_pipeline_request_deferred_sync\n");
 }
 EXPORT_SYMBOL_GPL(irq_pipeline_request_deferred_sync);
 
@@ -318,9 +335,24 @@ bool irq_pipeline_take_deferred_sync(void)
 	if (pending)
 		__this_cpu_write(deferred_sync_request, false);
 
+	if (pending)
+		riscv_evl_trace("EVLDBG irq_pipeline_take_deferred_sync\n");
+
 	return pending;
 }
 EXPORT_SYMBOL_GPL(irq_pipeline_take_deferred_sync);
+
+void irq_pipeline_set_ttwu_window(bool active)
+{
+	__this_cpu_write(ttwu_window_active, active);
+}
+EXPORT_SYMBOL_GPL(irq_pipeline_set_ttwu_window);
+
+bool irq_pipeline_ttwu_window_active(void)
+{
+	return __this_cpu_read(ttwu_window_active);
+}
+EXPORT_SYMBOL_GPL(irq_pipeline_ttwu_window_active);
 
 static void __inband_irq_enable(void)
 {
@@ -328,6 +360,7 @@ static void __inband_irq_enable(void)
 	unsigned long flags;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_skip_sync_count;
+	static unsigned int trace_ipi_sync_count;
 #endif
 
 	check_inband_stage();
@@ -340,14 +373,21 @@ static void __inband_irq_enable(void)
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
 #ifdef CONFIG_IRQ_PIPELINE
 		/*
-		 * Validation hack: once rest_init() flips the system into
-		 * SYSTEM_SCHEDULING, the very first in-band IRQ enable points
-		 * immediately replay the pending timer tick and keep bouncing in
-		 * sync_current_irq_stage(). Skip that replay during this narrow
-		 * bring-up state to confirm whether "early pending replay" is the
-		 * remaining blocker.
+		 * During SYSTEM_SCHEDULING, replaying pending timer ticks too
+		 * eagerly from every in-band IRQ enable point can still pull us
+		 * back into the timer deferred/replay path. However, critical
+		 * call-function IPIs must not be delayed until much later, or
+		 * SMP bring-up misses the wakeup window. So only keep the skip
+		 * behavior for non-IPI pending state, and let IPI pending flush
+		 * here from a safe in-band context.
 		 */
 		if (system_state == SYSTEM_SCHEDULING) {
+			if (irq_pipeline_ipi_pending()) {
+				if (trace_ipi_sync_count < 16) {
+					trace_ipi_sync_count++;
+					riscv_evl_trace("EVLDBG __inband_irq_enable ipi_sync\n");
+				}
+			} else {
 			if (trace_skip_sync_count < 16) {
 				trace_skip_sync_count++;
 				riscv_evl_trace_ulong("EVLDBG __inband_irq_enable skip_sync state=",
@@ -356,6 +396,7 @@ static void __inband_irq_enable(void)
 			hard_local_irq_restore(flags);
 			preempt_check_resched();
 			return;
+			}
 		}
 #endif
 		sync_current_irq_stage();
@@ -1419,6 +1460,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	static unsigned int trace_finish_ipi_pending_count;
 	static unsigned int trace_finish_sync_call_count;
 	static unsigned int trace_finish_sync_ret_count;
+	static unsigned int trace_finish_ipi_defer_count;
 #endif
 
 	/*
@@ -1481,6 +1523,16 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 					      i);
 		}
 
+		if (ipi_pending) {
+			if (trace_finish_ipi_defer_count < 16) {
+				trace_finish_ipi_defer_count++;
+				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_sync\n");
+			}
+			if (!irq_pipeline_deferred_sync_pending())
+				irq_pipeline_request_deferred_sync();
+			goto out;
+		}
+
 		if (system_state == SYSTEM_SCHEDULING &&
 		    stage_irqs_pending(inbd) &&
 		    !ipi_pending) {
@@ -1488,20 +1540,6 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 					      system_state);
 			if (!irq_pipeline_deferred_sync_pending())
 				irq_pipeline_request_deferred_sync();
-			goto out;
-		}
-
-		if (ipi_pending) {
-			if (trace_finish_sync_call_count < 16) {
-				trace_finish_sync_call_count++;
-				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish direct_inband_sync\n");
-			}
-			switch_inband(inbd);
-			sync_current_irq_stage();
-			if (trace_finish_sync_ret_count < 16) {
-				trace_finish_sync_ret_count++;
-				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish direct_inband_sync_ret\n");
-			}
 			goto out;
 		}
 	}
@@ -1694,6 +1732,12 @@ respin:
 					trace_sync_timer_break_count++;
 					riscv_evl_trace("EVLDBG sync_current_irq_stage break_after_timer\n");
 				}
+				break;
+			}
+			if (irq_pipeline_ttwu_window_active() &&
+			    desc->action &&
+			    (desc->action->flags & __IRQF_TIMER)) {
+				riscv_evl_trace("EVLDBG sync_current_irq_stage skip_timer_ttwu_window\n");
 				break;
 			}
 #endif

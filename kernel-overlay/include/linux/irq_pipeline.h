@@ -42,6 +42,12 @@ bool irq_pipeline_take_deferred_sync(void);
 
 bool irq_pipeline_smp_init_in_progress(void);
 
+bool irq_pipeline_ipi_pending(void);
+
+void irq_pipeline_set_ttwu_window(bool active);
+
+bool irq_pipeline_ttwu_window_active(void);
+
 static __always_inline void synchronize_pipeline_on_irq(void)
 {
 	/*

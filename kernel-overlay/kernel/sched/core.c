@@ -3887,8 +3887,10 @@ void sched_ttwu_pending(void *arg)
 	}
 #endif
 
+	irq_pipeline_set_ttwu_window(true);
+
 	if (!llist)
-		return;
+		goto out;
 
 	rq_lock_irqsave(rq, &rf);
 	update_rq_clock(rq);
@@ -3915,6 +3917,8 @@ void sched_ttwu_pending(void *arg)
 	 */
 	WRITE_ONCE(rq->ttwu_pending, 0);
 	rq_unlock_irqrestore(rq, &rf);
+out:
+	irq_pipeline_set_ttwu_window(false);
 }
 
 /*
@@ -5323,6 +5327,7 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 {
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_schedule_tail_count;
+	bool ipi_pending = false;
 #endif
 	/*
 	 * New tasks start with FORK_PREEMPT_COUNT, see there and
@@ -5367,8 +5372,14 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 
 	if (system_state == SYSTEM_SCHEDULING) {
 		if (irq_pipeline_take_deferred_sync()) {
-			if (trace_schedule_tail_count <= 16)
-				riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
+			ipi_pending = irq_pipeline_ipi_pending();
+
+			if (trace_schedule_tail_count <= 16) {
+				if (ipi_pending)
+					riscv_evl_trace("EVLDBG schedule_tail ipi_sync\n");
+				else
+					riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
+			}
 			sync_current_irq_stage();
 		}
 	}

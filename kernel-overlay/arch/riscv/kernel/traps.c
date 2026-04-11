@@ -518,6 +518,19 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long tsk_stk = (unsigned long)current->stack;
 	unsigned long ovf_stk = (unsigned long)this_cpu_ptr(overflow_stack);
 
+	if (riscv_evl_trace_enabled()) {
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack cpu=",
+				    raw_smp_processor_id());
+		riscv_evl_trace_ptr("EVLDBG handle_bad_stack current=", current);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_sp=", regs->sp);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_low=", tsk_stk);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_high=",
+				    tsk_stk + THREAD_SIZE);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack overflow_low=", ovf_stk);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack overflow_high=",
+				    ovf_stk + OVERFLOW_STACK_SIZE);
+	}
+
 	console_verbose();
 
 	pr_emerg("Insufficient stack space to handle exception!\n");
