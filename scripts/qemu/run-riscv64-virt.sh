@@ -25,6 +25,9 @@
 #   QEMU_GDB=1                        Start QEMU paused with a GDB stub
 #   QEMU_GDB_PORT=1234                TCP port for the GDB stub
 #   QEMU_BIN=qemu-system-riscv64      Override QEMU binary
+#   QEMU_BIOS=path                    Override the firmware passed via -bios
+#   QEMU_DTB=path                     Override the DTB passed via -dtb
+#   QEMU_BOOT_HART=0                  Patch a generated DTB with /chosen/boot-hartid
 # =============================================================================
 set -euo pipefail
 
@@ -39,6 +42,9 @@ QEMU_STDOUT_LOG="${QEMU_STDOUT_LOG:-}"
 QEMU_DEBUG_FLAGS="${QEMU_DEBUG_FLAGS:-guest_errors,cpu_reset}"
 QEMU_GDB="${QEMU_GDB:-0}"
 QEMU_GDB_PORT="${QEMU_GDB_PORT:-1234}"
+QEMU_BIOS="${QEMU_BIOS:-}"
+QEMU_DTB="${QEMU_DTB:-}"
+QEMU_BOOT_HART="${QEMU_BOOT_HART:-}"
 APPEND="${APPEND:-}"
 INITRD="${INITRD:-}"
 ROOTFS_IMG="${ROOTFS_IMG:-}"
@@ -60,6 +66,47 @@ if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ -z "${QEMU_BIOS}" ]]; then
+  for bios in \
+    /usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin \
+    /usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.elf
+  do
+    if [[ -f "${bios}" ]]; then
+      QEMU_BIOS="${bios}"
+      break
+    fi
+  done
+fi
+
+if [[ -n "${QEMU_BIOS}" && ! -f "${QEMU_BIOS}" ]]; then
+  echo "ERROR: QEMU_BIOS not found: ${QEMU_BIOS}"
+  exit 1
+fi
+
+if [[ -n "${QEMU_BOOT_HART}" ]]; then
+  if ! command -v fdtput >/dev/null 2>&1; then
+    echo "ERROR: fdtput is required when QEMU_BOOT_HART is set."
+    exit 1
+  fi
+
+  QEMU_DTB="${BUILD_DIR}/qemu-virt-boot-hart-${QEMU_BOOT_HART}.dtb"
+  "${QEMU_BIN}" \
+    -machine virt,dumpdtb="${QEMU_DTB}" \
+    -cpu rv64 \
+    -smp "${QEMU_SMP}" \
+    -m "${QEMU_MEM}" \
+    -display none \
+    -serial none \
+    -bios "${QEMU_BIOS:-default}" \
+    >/dev/null 2>&1
+  fdtput -t x "${QEMU_DTB}" /chosen boot-hartid "${QEMU_BOOT_HART}"
+fi
+
+if [[ -n "${QEMU_DTB}" && ! -f "${QEMU_DTB}" ]]; then
+  echo "ERROR: QEMU_DTB not found: ${QEMU_DTB}"
+  exit 1
+fi
+
 cmd=(
   "${QEMU_BIN}"
   -machine virt
@@ -67,9 +114,13 @@ cmd=(
   -smp "${QEMU_SMP}"
   -m "${QEMU_MEM}"
   -nographic
-  -bios default
+  -bios "${QEMU_BIOS:-default}"
   -kernel "${KERNEL_IMAGE}"
 )
+
+if [[ -n "${QEMU_DTB}" ]]; then
+  cmd+=(-dtb "${QEMU_DTB}")
+fi
 
 if [[ "${QEMU_NO_REBOOT}" == "1" ]]; then
   cmd+=(-no-reboot)
@@ -124,6 +175,12 @@ fi
 cmd+=(-append "${kernel_args[*]}")
 
 echo "Running: ${cmd[*]}"
+if [[ -n "${QEMU_BIOS}" ]]; then
+  echo "Using explicit QEMU BIOS: ${QEMU_BIOS}"
+fi
+if [[ -n "${QEMU_DTB}" ]]; then
+  echo "Using explicit QEMU DTB: ${QEMU_DTB}"
+fi
 
 if [[ "${QEMU_GDB}" == "1" ]]; then
   echo "QEMU GDB stub listening on tcp::${QEMU_GDB_PORT}"

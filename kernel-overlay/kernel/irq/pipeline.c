@@ -16,6 +16,7 @@
 #include <linux/sched.h>
 #include <linux/smp.h>
 #include <asm/evl_debug.h>
+#include <asm/ptrace.h>
 #include <dovetail/irq.h>
 #include <trace/events/irq.h>
 #include "internals.h"
@@ -96,6 +97,7 @@ struct pipeline_percpu_data { };
 static DEFINE_PER_CPU(struct pipeline_percpu_data, pipeline_percpu_data);
 static DEFINE_PER_CPU(bool, deferred_sync_request);
 static DEFINE_PER_CPU(bool, ttwu_window_active);
+static DEFINE_PER_CPU(bool, urgent_ipi_sync_request);
 
 static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
 {
@@ -130,6 +132,9 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 
 EXPORT_PER_CPU_SYMBOL(irq_pipeline);
 
+void irq_local_work_raise(void);
+static unsigned int inband_work_sirq;
+
 bool irq_pipeline_ipi_pending(void)
 {
 	struct irq_stage_data *inbd = this_inband_staged();
@@ -143,6 +148,41 @@ bool irq_pipeline_ipi_pending(void)
 	}
 
 	return false;
+}
+
+static void irq_pipeline_request_urgent_ipi_sync(void)
+{
+	__this_cpu_write(urgent_ipi_sync_request, true);
+	riscv_evl_trace("EVLDBG irq_pipeline_request_urgent_ipi_sync\n");
+	irq_local_work_raise();
+}
+
+asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
+{
+	if (!__this_cpu_read(urgent_ipi_sync_request))
+		return;
+
+	if (!irq_pipeline_ipi_pending())
+		return;
+
+	__this_cpu_write(urgent_ipi_sync_request, false);
+	riscv_evl_trace("EVLDBG ret_from_exception ipi_sync\n");
+	switch_inband(this_inband_staged());
+	sync_current_irq_stage();
+}
+
+asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
+{
+	if (!__this_cpu_read(urgent_ipi_sync_request))
+		return;
+
+	if (!irq_pipeline_ipi_pending())
+		return;
+
+	__this_cpu_write(urgent_ipi_sync_request, false);
+	riscv_evl_trace("EVLDBG thread_stack_tail ipi_sync\n");
+	switch_inband(this_inband_staged());
+	sync_current_irq_stage();
 }
 
 static void sirq_noop(struct irq_data *data) { }
@@ -190,6 +230,9 @@ void handle_synthetic_irq(struct irq_desc *desc)
 	struct irqaction *action;
 	irqreturn_t ret;
 	void *dev_id;
+
+	if (irq == inband_work_sirq)
+		riscv_evl_trace("EVLDBG handle_synthetic_irq inband_work_sirq\n");
 
 	if (on_pipeline_entry()) {
 		handle_oob_irq(desc);
@@ -372,6 +415,16 @@ static void __inband_irq_enable(void)
 	p = this_inband_staged();
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
 #ifdef CONFIG_IRQ_PIPELINE
+		if (__this_cpu_read(urgent_ipi_sync_request)) {
+			if (trace_ipi_sync_count < 16) {
+				trace_ipi_sync_count++;
+				riscv_evl_trace("EVLDBG __inband_irq_enable urgent_ipi_sync\n");
+			}
+			sync_current_irq_stage();
+			hard_local_irq_restore(flags);
+			preempt_check_resched();
+			return;
+		}
 		/*
 		 * During SYSTEM_SCHEDULING, replaying pending timer ticks too
 		 * eagerly from every in-band IRQ enable point can still pull us
@@ -835,6 +888,39 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	return irq;
 }
 
+static inline int peek_next_irq(struct irq_stage_data *p)
+{
+	unsigned long l0m, l1m, l2m, l3m;
+	int l0b, l1b, l2b, l3b;
+	unsigned int irq;
+
+	l0m = p->log.index_0;
+	if (l0m == 0)
+		return -1;
+	l0b = __ffs(l0m);
+	irq = ltob_3(l0b);
+
+	l1m = p->log.map->index_1[l0b];
+	if (unlikely(l1m == 0))
+		return -1;
+	l1b = __ffs(l1m);
+	irq += ltob_2(l1b);
+
+	l2m = p->log.map->index_2[ltob_1(l0b) + l1b];
+	if (unlikely(l2m == 0))
+		return -1;
+	l2b = __ffs(l2m);
+	irq += ltob_1(l2b);
+
+	l3m = p->log.map->flat[ltob_2(l0b) + ltob_1(l1b) + l2b];
+	if (unlikely(l3m == 0))
+		return -1;
+	l3b = __ffs(l3m);
+	irq += l3b;
+
+	return irq;
+}
+
 #elif __IRQ_STAGE_MAP_LEVELS == 3
 
 /* Must be called hard irqs off. */
@@ -917,6 +1003,31 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	return irq;
 }
 
+static inline int peek_next_irq(struct irq_stage_data *p)
+{
+	unsigned long l0m, l1m, l2m;
+	int l0b, l1b, l2b, irq;
+
+	l0m = p->log.index_0;
+	if (unlikely(l0m == 0))
+		return -1;
+
+	l0b = __ffs(l0m);
+	l1m = p->log.map->index_1[l0b];
+	if (l1m == 0)
+		return -1;
+
+	l1b = __ffs(l1m) + l0b * BITS_PER_LONG;
+	l2m = p->log.map->flat[l1b];
+	if (unlikely(l2m == 0))
+		return -1;
+
+	l2b = __ffs(l2m);
+	irq = l1b * BITS_PER_LONG + l2b;
+
+	return irq;
+}
+
 #else /* __IRQ_STAGE_MAP_LEVELS == 2 */
 
 /* Must be called hard irqs off. */
@@ -984,6 +1095,25 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 				      smp_processor_id());
 	}
 #endif
+
+	return l0b * BITS_PER_LONG + l1b;
+}
+
+static inline int peek_next_irq(struct irq_stage_data *p)
+{
+	unsigned long l0m, l1m;
+	int l0b, l1b;
+
+	l0m = p->log.index_0;
+	if (l0m == 0)
+		return -1;
+
+	l0b = __ffs(l0m);
+	l1m = p->log.map->flat[l0b];
+	if (unlikely(l1m == 0))
+		return -1;
+
+	l1b = __ffs(l1m);
 
 	return l0b * BITS_PER_LONG + l1b;
 }
@@ -1528,8 +1658,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				trace_finish_ipi_defer_count++;
 				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_sync\n");
 			}
-			if (!irq_pipeline_deferred_sync_pending())
-				irq_pipeline_request_deferred_sync();
+			irq_pipeline_request_urgent_ipi_sync();
 			goto out;
 		}
 
@@ -1668,6 +1797,9 @@ void sync_current_irq_stage(void) /* hard irqs off */
 				      (unsigned long)p->stage);
 		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage enter inband_pending=",
 				      stage_irqs_pending(this_inband_staged()));
+		if (p->stage == &inband_stage)
+			riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage enter next_irq=",
+					      peek_next_irq(p));
 	}
 #endif
 respin:
@@ -1731,6 +1863,8 @@ respin:
 				if (trace_sync_timer_break_count < 24) {
 					trace_sync_timer_break_count++;
 					riscv_evl_trace("EVLDBG sync_current_irq_stage break_after_timer\n");
+					riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage next_after_timer=",
+							      peek_next_irq(p));
 				}
 				break;
 			}
@@ -2094,10 +2228,14 @@ bool irq_cpuidle_enter(struct cpuidle_device *dev,
 	return ret;
 }
 
-static unsigned int inband_work_sirq;
-
 static irqreturn_t inband_work_interrupt(int sirq, void *dev_id)
 {
+	if (__this_cpu_read(urgent_ipi_sync_request)) {
+		__this_cpu_write(urgent_ipi_sync_request, false);
+		riscv_evl_trace("EVLDBG inband_work_interrupt ipi_sync\n");
+		sync_current_irq_stage();
+	}
+
 	irq_work_run();
 
 	return IRQ_HANDLED;
@@ -2120,7 +2258,18 @@ void irq_local_work_raise(void)
 	 * with hard irqs on.
 	 */
 	flags = hard_local_irq_save();
+	riscv_evl_trace("EVLDBG irq_local_work_raise\n");
 	irq_post_inband(inband_work_sirq);
+	riscv_evl_trace_ulong("EVLDBG irq_local_work_raise sirq=", inband_work_sirq);
+	if (__this_cpu_read(urgent_ipi_sync_request) &&
+	    running_inband() &&
+	    !hard_irqs_disabled_flags(flags) &&
+	    irq_pipeline_ipi_pending()) {
+		riscv_evl_trace("EVLDBG irq_local_work_raise urgent_sync_now\n");
+		sync_current_irq_stage();
+		hard_local_irq_restore(flags);
+		return;
+	}
 	if (running_inband() &&
 	    !hard_irqs_disabled_flags(flags) && !irqs_disabled())
 		sync_current_irq_stage();

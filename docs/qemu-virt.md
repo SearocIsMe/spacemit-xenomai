@@ -217,8 +217,11 @@ interaction over the core IRQ pipeline wiring itself.
 ## Practical Notes
 
 - `QEMU virt` uses a generic machine model, not the SpacemiT K1 device tree.
-- The script uses `-bios default`, which relies on the host QEMU package to
-  provide the standard RISC-V firmware path.
+- The script prefers an explicit `QEMU_BIOS` path when provided, and otherwise
+  auto-detects the standard host OpenSBI firmware before falling back to
+  `-bios default`.
+- For reproducibility, `QEMU_BOOT_HART=<n>` patches a generated DTB with
+  `/chosen/boot-hartid = <n>` and passes it back to QEMU via `-dtb`.
 - For the first smoke test, an initramfs is optional. Even an early boot panic
   can still be useful if it proves the kernel reaches the expected stage.
 - This lane is intentionally isolated from the SD-card image generation
