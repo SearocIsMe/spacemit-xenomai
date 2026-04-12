@@ -288,3 +288,89 @@ Instead:
 
 Only after one IRQ-pipeline variant boots should we move upward to
 `dovetail-only` and then EVL.
+
+## Additional Review Findings (2026-04)
+
+### Image-generation path assessment
+
+The flash pipeline in [`scripts/flash/make-full-sdcard-img.sh`](scripts/flash/make-full-sdcard-img.sh) is no longer the main suspect for the current Jupiter boot failure when using the staged profiles:
+
+- `kernel-only` preserves the base image bootflow, initramfs, env, and rootfs
+- `kernel-modules` still preserves the bootflow while only replacing the module tree
+- the script now auto-detects `root=` and preserves raw env when requested
+
+Therefore, if a `kernel-only` or `kernel-modules` image built from a locally built kernel still hangs at the Bianbu logo, the primary blocker is more likely in the kernel runtime path than in SD-card image assembly.
+
+### Strongest current boot-failure hypotheses
+
+Based on the repository audit, the likely blocker order is:
+
+1. `IRQ_PIPELINE`-level RISC-V runtime semantics
+2. timer/tick replay and interrupt entry behavior
+3. trap/entry bookkeeping under pipelined IRQ handling
+4. only later, Dovetail alternate scheduling and EVL core
+
+This matches both:
+
+- the public EVL bring-up order documented by Xenomai 4
+- local evidence that `irq-pipeline-*` variants already hang before full EVL validation begins
+
+### Kernel-overlay review verdict
+
+The current overlay should be split mentally into three classes:
+
+#### Class A — likely sound enough to keep for now
+
+- generic EVL and Dovetail subtree imports
+- Kconfig / Makefile wiring
+- bridge headers under `arch/riscv/include/dovetail/`
+- small ABI helpers such as `syscall_get_arg0()`
+
+These are not where the main boot blocker is most likely located.
+
+#### Class B — plausible but still provisional
+
+- [`kernel-overlay/arch/riscv/include/asm/mmu_context.h`](kernel-overlay/arch/riscv/include/asm/mmu_context.h)
+- [`kernel-overlay/arch/riscv/include/asm/dovetail.h`](kernel-overlay/arch/riscv/include/asm/dovetail.h)
+
+These are sufficient for build progress, but should not be treated as upstream-grade runtime logic yet.
+
+#### Class C — highest-risk files for current boot failure
+
+- [`kernel-overlay/arch/riscv/include/asm/irqflags.h`](kernel-overlay/arch/riscv/include/asm/irqflags.h)
+- [`kernel-overlay/arch/riscv/include/asm/irq_pipeline.h`](kernel-overlay/arch/riscv/include/asm/irq_pipeline.h)
+- [`kernel-overlay/arch/riscv/kernel/irq_pipeline.c`](kernel-overlay/arch/riscv/kernel/irq_pipeline.c)
+- [`kernel-overlay/arch/riscv/kernel/traps.c`](kernel-overlay/arch/riscv/kernel/traps.c)
+- [`kernel-overlay/arch/riscv/kernel/smp.c`](kernel-overlay/arch/riscv/kernel/smp.c)
+
+These files directly affect:
+
+- whether timer interrupts continue to advance Linux time
+- whether deferred IRQ replay behaves correctly
+- whether trap entry/exit state remains coherent
+- whether the system survives pipelined IRQs before userspace
+
+### Concrete interpretation of the current failure
+
+If the official base image boots, but the following all fail:
+
+- `irq-pipeline-only`
+- `irq-pipeline-noidle`
+- `irq-pipeline-nosmp`
+
+then the most likely conclusion is:
+
+- the boot blocker is below EVL
+- the boot blocker is probably below alternate scheduling too
+- the next narrowing step is the single-core local interrupt/timer/trap path, i.e. `irq-pipeline-minimal`
+
+In other words, the working assumption should now be:
+
+> the image builder is good enough for staged bring-up; the RISC-V IRQ pipeline semantics are not yet proven.
+
+### Immediate rules for the next iteration
+
+1. Do not spend more time on `full-evl` images until one IRQ-pipeline stage boots.
+2. Treat QEMU `virt` as a mandatory architecture smoke-test lane, not optional nice-to-have.
+3. Do not claim RISC-V EVL completion while [`kernel-overlay/arch/riscv/include/asm/evl/fptest.h`](kernel-overlay/arch/riscv/include/asm/evl/fptest.h) and [`kernel-overlay/arch/riscv/include/uapi/asm/evl/fptest.h`](kernel-overlay/arch/riscv/include/uapi/asm/evl/fptest.h) remain placeholders.
+4. Any change to IRQ, trap, timer, MM, or SMP paths must be justified against public RISC-V Dovetail work, not only against successful compilation.

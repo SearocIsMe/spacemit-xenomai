@@ -3884,6 +3884,8 @@ void sched_ttwu_pending(void *arg)
 	if (trace_ttwu_pending_count < 16) {
 		trace_ttwu_pending_count++;
 		riscv_evl_trace("EVLDBG sched_ttwu_pending\n");
+		riscv_evl_trace_ulong("EVLDBG sched_ttwu_pending cpu=",
+				      smp_processor_id());
 	}
 #endif
 

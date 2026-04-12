@@ -1605,15 +1605,33 @@ static noinline void __init kernel_init_freeable(void)
 #endif
 
 	workqueue_init_topology();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after workqueue_init_topology\n");
+#endif
 	padata_init();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after padata_init\n");
+#endif
 	page_alloc_init_late();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after page_alloc_init_late\n");
+#endif
 
 	do_basic_setup();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after do_basic_setup\n");
+#endif
 
 	kunit_run_all_tests();
 
 	wait_for_initramfs();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after wait_for_initramfs\n");
+#endif
 	console_on_rootfs();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after console_on_rootfs\n");
+#endif
 
 	/*
 	 * check if there is an early userspace init.  If yes, let it do all

@@ -173,16 +173,29 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 
 asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 {
+	bool stalled;
+	unsigned int cpu;
+
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
 	if (!irq_pipeline_ipi_pending())
 		return;
 
+	cpu = smp_processor_id();
+	if (cpu != 0) {
+		riscv_evl_trace_ulong("EVLDBG thread_stack_tail skip_cpu=", cpu);
+		return;
+	}
+
 	__this_cpu_write(urgent_ipi_sync_request, false);
+	stalled = test_inband_stall();
 	riscv_evl_trace("EVLDBG thread_stack_tail ipi_sync\n");
+	riscv_evl_trace_ulong("EVLDBG thread_stack_tail cpu=", cpu);
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
+	if (stalled)
+		stall_inband_nocheck();
 }
 
 static void sirq_noop(struct irq_data *data) { }
@@ -401,6 +414,7 @@ static void __inband_irq_enable(void)
 {
 	struct irq_stage_data *p;
 	unsigned long flags;
+	unsigned int cpu;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_skip_sync_count;
 	static unsigned int trace_ipi_sync_count;
@@ -409,6 +423,7 @@ static void __inband_irq_enable(void)
 	check_inband_stage();
 
 	flags = hard_local_irq_save();
+	cpu = smp_processor_id();
 
 	unstall_inband_nocheck();
 
@@ -416,9 +431,21 @@ static void __inband_irq_enable(void)
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
 #ifdef CONFIG_IRQ_PIPELINE
 		if (__this_cpu_read(urgent_ipi_sync_request)) {
+			if (cpu != 0) {
+				if (trace_ipi_sync_count < 16) {
+					trace_ipi_sync_count++;
+					riscv_evl_trace_ulong("EVLDBG __inband_irq_enable urgent_skip_cpu=",
+							      cpu);
+				}
+				hard_local_irq_restore(flags);
+				preempt_check_resched();
+				return;
+			}
 			if (trace_ipi_sync_count < 16) {
 				trace_ipi_sync_count++;
 				riscv_evl_trace("EVLDBG __inband_irq_enable urgent_ipi_sync\n");
+				riscv_evl_trace_ulong("EVLDBG __inband_irq_enable urgent_cpu=",
+						      cpu);
 			}
 			sync_current_irq_stage();
 			hard_local_irq_restore(flags);
@@ -2230,9 +2257,17 @@ bool irq_cpuidle_enter(struct cpuidle_device *dev,
 
 static irqreturn_t inband_work_interrupt(int sirq, void *dev_id)
 {
+	unsigned int cpu = smp_processor_id();
+
 	if (__this_cpu_read(urgent_ipi_sync_request)) {
+		if (cpu != 0) {
+			riscv_evl_trace_ulong("EVLDBG inband_work_interrupt urgent_skip_cpu=",
+					      cpu);
+			return IRQ_HANDLED;
+		}
 		__this_cpu_write(urgent_ipi_sync_request, false);
 		riscv_evl_trace("EVLDBG inband_work_interrupt ipi_sync\n");
+		riscv_evl_trace_ulong("EVLDBG inband_work_interrupt cpu=", cpu);
 		sync_current_irq_stage();
 	}
 
