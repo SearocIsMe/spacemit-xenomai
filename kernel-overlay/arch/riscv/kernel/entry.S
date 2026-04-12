@@ -263,12 +263,17 @@ SYM_FUNC_START(call_on_irq_stack)
 	/* Switch back to the thread shadow call stack */
 	scs_load_current
 
-	/* Switch back to the thread stack and restore ra and s0 */
+	/*
+	 * Switch back to the thread stack before running the tail helper, but
+	 * keep the original frame record intact until after the helper returns.
+	 * Otherwise the helper call would overwrite the restored RA and make the
+	 * final ret loop back into call_on_irq_stack() itself.
+	 */
 	addi	sp, s0, -STACKFRAME_SIZE_ON_STACK
+	call	irq_pipeline_call_on_irq_stack_tail_sync
 	REG_L	ra, STACKFRAME_RA(sp)
 	REG_L	s0, STACKFRAME_FP(sp)
 	addi	sp, sp, STACKFRAME_SIZE_ON_STACK
-	call	irq_pipeline_call_on_irq_stack_tail_sync
 
 	ret
 SYM_FUNC_END(call_on_irq_stack)
