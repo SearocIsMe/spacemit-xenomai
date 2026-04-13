@@ -165,6 +165,12 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 	if (!irq_pipeline_ipi_pending())
 		return;
 
+	if (!irq_pipeline_smp_init_in_progress()) {
+		__this_cpu_write(urgent_ipi_sync_request, false);
+		riscv_evl_trace("EVLDBG ret_from_exception skip_urgent_after_smp\n");
+		return;
+	}
+
 	__this_cpu_write(urgent_ipi_sync_request, false);
 	riscv_evl_trace("EVLDBG ret_from_exception ipi_sync\n");
 	switch_inband(this_inband_staged());
@@ -181,6 +187,12 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 
 	if (!irq_pipeline_ipi_pending())
 		return;
+
+	if (!irq_pipeline_smp_init_in_progress()) {
+		__this_cpu_write(urgent_ipi_sync_request, false);
+		riscv_evl_trace("EVLDBG thread_stack_tail skip_after_smp\n");
+		return;
+	}
 
 	cpu = smp_processor_id();
 	if (cpu != 0) {
@@ -431,6 +443,13 @@ static void __inband_irq_enable(void)
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
 #ifdef CONFIG_IRQ_PIPELINE
 		if (__this_cpu_read(urgent_ipi_sync_request)) {
+			if (!irq_pipeline_smp_init_in_progress()) {
+				__this_cpu_write(urgent_ipi_sync_request, false);
+				riscv_evl_trace("EVLDBG __inband_irq_enable urgent_skip_after_smp\n");
+				hard_local_irq_restore(flags);
+				preempt_check_resched();
+				return;
+			}
 			if (cpu != 0) {
 				if (trace_ipi_sync_count < 16) {
 					trace_ipi_sync_count++;
@@ -1681,6 +1700,12 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		}
 
 		if (ipi_pending) {
+			if (!irq_pipeline_smp_init_in_progress()) {
+				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_normal\n");
+				if (!irq_pipeline_deferred_sync_pending())
+					irq_pipeline_request_deferred_sync();
+				goto out;
+			}
 			if (trace_finish_ipi_defer_count < 16) {
 				trace_finish_ipi_defer_count++;
 				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_sync\n");
@@ -2260,6 +2285,11 @@ static irqreturn_t inband_work_interrupt(int sirq, void *dev_id)
 	unsigned int cpu = smp_processor_id();
 
 	if (__this_cpu_read(urgent_ipi_sync_request)) {
+		if (!irq_pipeline_smp_init_in_progress()) {
+			__this_cpu_write(urgent_ipi_sync_request, false);
+			riscv_evl_trace("EVLDBG inband_work_interrupt urgent_skip_after_smp\n");
+			return IRQ_HANDLED;
+		}
 		if (cpu != 0) {
 			riscv_evl_trace_ulong("EVLDBG inband_work_interrupt urgent_skip_cpu=",
 					      cpu);
@@ -2297,6 +2327,7 @@ void irq_local_work_raise(void)
 	irq_post_inband(inband_work_sirq);
 	riscv_evl_trace_ulong("EVLDBG irq_local_work_raise sirq=", inband_work_sirq);
 	if (__this_cpu_read(urgent_ipi_sync_request) &&
+	    irq_pipeline_smp_init_in_progress() &&
 	    running_inband() &&
 	    !hard_irqs_disabled_flags(flags) &&
 	    irq_pipeline_ipi_pending()) {

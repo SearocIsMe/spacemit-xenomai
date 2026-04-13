@@ -1602,19 +1602,23 @@ static noinline void __init kernel_init_freeable(void)
 	sched_init_smp();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after sched_init_smp\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before workqueue_init_topology\n");
 #endif
 
 	workqueue_init_topology();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after workqueue_init_topology\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before padata_init\n");
 #endif
 	padata_init();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after padata_init\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before page_alloc_init_late\n");
 #endif
 	page_alloc_init_late();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after page_alloc_init_late\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before do_basic_setup\n");
 #endif
 
 	do_basic_setup();
