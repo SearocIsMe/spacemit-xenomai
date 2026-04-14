@@ -703,21 +703,20 @@ cpuhp_set_state(int cpu, struct cpuhp_cpu_state *st, enum cpuhp_state target)
 	bool bringup = st->state < target;
 
 #ifdef CONFIG_IRQ_PIPELINE
-	if (cpu <= 3 && riscv_evl_trace_enabled()) {
-		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state cpu=",
-				      cpu);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state prev=",
-				      prev_state);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state target=",
-				      target);
-		if (prev_state == CPUHP_TEARDOWN_CPU ||
-		    target == CPUHP_TEARDOWN_CPU) {
-			void *caller = __builtin_return_address(0);
+		if (cpu <= 3 && riscv_evl_trace_enabled()) {
+			riscv_evl_trace_ulong("EVLDBG cpuhp_set_state cpu=",
+					      cpu);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_set_state prev=",
+					      prev_state);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_set_state target=",
+					      target);
+			{
+				void *caller = __builtin_return_address(0);
 
-			riscv_evl_trace_ptr("EVLDBG cpuhp_set_state caller=",
-					    caller);
+				riscv_evl_trace_ptr("EVLDBG cpuhp_set_state caller=",
+						    caller);
+			}
 		}
-	}
 #endif
 	st->rollback = false;
 	st->last = NULL;
