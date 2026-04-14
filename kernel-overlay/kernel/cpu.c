@@ -740,6 +740,16 @@ cpuhp_set_state(int cpu, struct cpuhp_cpu_state *st, enum cpuhp_state target)
 	enum cpuhp_state prev_state = st->state;
 	bool bringup = st->state < target;
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu <= 3 && riscv_evl_trace_enabled()) {
+		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state cpu=",
+				      cpu);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state prev=",
+				      prev_state);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_set_state target=",
+				      target);
+	}
+#endif
 	st->rollback = false;
 	st->last = NULL;
 
@@ -1001,6 +1011,18 @@ static bool cpuhp_next_state(bool bringup,
 			     struct cpuhp_cpu_state *st,
 			     enum cpuhp_state target)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && st->state == CPUHP_TEARDOWN_CPU) {
+		riscv_evl_trace_ulong("EVLDBG cpuhp_next_state pre cpu=",
+				      smp_processor_id());
+		riscv_evl_trace_ulong("EVLDBG cpuhp_next_state pre bringup=",
+				      bringup);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_next_state pre state=",
+				      st->state);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_next_state pre target=",
+				      target);
+	}
+#endif
 	do {
 		if (bringup) {
 			if (st->state >= target)
@@ -1014,6 +1036,19 @@ static bool cpuhp_next_state(bool bringup,
 			*state_to_run = st->state--;
 		}
 
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() &&
+		    *state_to_run == CPUHP_TEARDOWN_CPU) {
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state hit cpu=",
+					      smp_processor_id());
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state hit bringup=",
+					      bringup);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state hit state=",
+					      *state_to_run);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state hit target=",
+					      target);
+		}
+#endif
 		if (!cpuhp_step_empty(bringup, cpuhp_get_step(*state_to_run)))
 			break;
 	} while (true);
