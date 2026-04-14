@@ -176,12 +176,6 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
 	int (*cbm)(unsigned int cpu, struct hlist_node *node);
 	int (*cb)(unsigned int cpu);
 	int ret, cnt;
-	bool trace = false;
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (bringup && cpu >= 1 && cpu <= 3)
-		trace = true;
-#endif
 
 	if (st->fail == state) {
 		st->fail = CPUHP_INVALID;
@@ -197,19 +191,9 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
 		WARN_ON_ONCE(lastp && *lastp);
 		cb = bringup ? step->startup.single : step->teardown.single;
 
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace) {
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb state=", state);
-			riscv_evl_trace_ptr("EVLDBG cpuhp_cb fn=", cb);
-		}
-#endif
 		trace_cpuhp_enter(cpu, st->target, state, cb);
 		ret = cb(cpu);
 		trace_cpuhp_exit(cpu, st->state, state, ret);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace)
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb ret=", ret);
-#endif
 		return ret;
 	}
 	cbm = bringup ? step->startup.multi : step->teardown.multi;
@@ -217,20 +201,9 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
 	/* Single invocation for instance add/remove */
 	if (node) {
 		WARN_ON_ONCE(lastp && *lastp);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace) {
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb state=", state);
-			riscv_evl_trace_ptr("EVLDBG cpuhp_cb fn=", cbm);
-			riscv_evl_trace_ptr("EVLDBG cpuhp_cb node=", node);
-		}
-#endif
 		trace_cpuhp_multi_enter(cpu, st->target, state, cbm, node);
 		ret = cbm(cpu, node);
 		trace_cpuhp_exit(cpu, st->state, state, ret);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace)
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb ret=", ret);
-#endif
 		return ret;
 	}
 
@@ -240,20 +213,9 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
 		if (lastp && node == *lastp)
 			break;
 
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace) {
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb state=", state);
-			riscv_evl_trace_ptr("EVLDBG cpuhp_cb fn=", cbm);
-			riscv_evl_trace_ptr("EVLDBG cpuhp_cb node=", node);
-		}
-#endif
 		trace_cpuhp_multi_enter(cpu, st->target, state, cbm, node);
 		ret = cbm(cpu, node);
 		trace_cpuhp_exit(cpu, st->state, state, ret);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace)
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb ret=", ret);
-#endif
 		if (ret) {
 			if (!lastp)
 				goto err;
@@ -1064,24 +1026,23 @@ static int __cpuhp_invoke_callback_range(bool bringup,
 {
 	enum cpuhp_state state;
 	int ret = 0;
-	bool trace = false;
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (bringup && cpu >= 1 && cpu <= 3)
-		trace = true;
-	if (trace) {
-		riscv_evl_trace_ulong("EVLDBG cpuhp_cb_range entry state=", st->state);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_cb_range target=", target);
-	}
-#endif
 
 	while (cpuhp_next_state(bringup, &state, st, target)) {
 		int err;
 
 #ifdef CONFIG_IRQ_PIPELINE
-		if (trace) {
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb_range next=", state);
-			riscv_evl_trace_ulong("EVLDBG cpuhp_cb_range st=", st->state);
+		if (cpu <= 3 && riscv_evl_trace_enabled() &&
+		    (state == CPUHP_TEARDOWN_CPU || st->state == CPUHP_TEARDOWN_CPU)) {
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state cpu=",
+					      cpu);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state bringup=",
+					      bringup);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state state=",
+					      state);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state target=",
+					      target);
+			riscv_evl_trace_ulong("EVLDBG cpuhp_next_state st->state=",
+					      st->state);
 		}
 #endif
 		err = cpuhp_invoke_callback(cpu, state, bringup, NULL, NULL);
