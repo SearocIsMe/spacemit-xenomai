@@ -946,10 +946,26 @@ static int bringup_cpu(unsigned int cpu)
 	ret = cpuhp_bp_sync_alive(cpu);
 	if (ret)
 		goto out_unlock;
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG bringup_cpu bp_sync_alive ret=",
+				      ret);
+		riscv_evl_trace_ulong("EVLDBG bringup_cpu bp_sync_alive state=",
+				      st->state);
+	}
+#endif
 
 	ret = bringup_wait_for_ap_online(cpu);
 	if (ret)
 		goto out_unlock;
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG bringup_cpu wait_online ret=",
+				      ret);
+		riscv_evl_trace_ulong("EVLDBG bringup_cpu wait_online state=",
+				      st->state);
+	}
+#endif
 
 	irq_unlock_sparse();
 
