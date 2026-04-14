@@ -155,14 +155,30 @@ static int riscv_timer_starting_cpu(unsigned int cpu)
 {
 	struct clock_event_device *ce = per_cpu_ptr(&riscv_clock_event, cpu);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled())
+		riscv_evl_trace_ulong("EVLDBG riscv_timer_starting_cpu entry cpu=", cpu);
+#endif
 	ce->cpumask = cpumask_of(cpu);
 	ce->irq = riscv_clock_event_irq;
 	if (riscv_timer_cannot_wake_cpu)
 		ce->features |= CLOCK_EVT_FEAT_C3STOP;
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled())
+		riscv_evl_trace_ptr("EVLDBG riscv_timer_starting_cpu before cfg ce=", ce);
+#endif
 	clockevents_config_and_register(ce, riscv_timebase, 100, 0x7fffffff);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled())
+		riscv_evl_trace_ulong("EVLDBG riscv_timer_starting_cpu after cfg cpu=", cpu);
+#endif
 
 	enable_percpu_irq(riscv_clock_event_irq,
 			  irq_get_trigger_type(riscv_clock_event_irq));
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled())
+		riscv_evl_trace_ulong("EVLDBG riscv_timer_starting_cpu after enable cpu=", cpu);
+#endif
 	return 0;
 }
 
