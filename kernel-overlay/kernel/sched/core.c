@@ -6794,6 +6794,23 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 		psi_account_irqtime(rq, prev, next);
 		psi_sched_switch(prev, next, !task_on_rq_queued(prev));
 
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu_of(rq) <= 3 &&
+		    (!strncmp(prev->comm, "cpuhp/", 6) ||
+		     !strncmp(next->comm, "cpuhp/", 6))) {
+			riscv_evl_trace_ulong("EVLDBG __schedule switch cpu=",
+					      cpu_of(rq));
+			riscv_evl_trace_ptr("EVLDBG __schedule switch prev=",
+					    prev);
+			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_pid=",
+					      prev->pid);
+			riscv_evl_trace_ptr("EVLDBG __schedule switch next=",
+					    next);
+			riscv_evl_trace_ulong("EVLDBG __schedule switch next_pid=",
+					      next->pid);
+		}
+#endif
+
 		trace_sched_switch(sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
 
 		/* Also unlocks the rq: */
