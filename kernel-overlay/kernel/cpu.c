@@ -769,6 +769,13 @@ static void __cpuhp_kick_ap(struct cpuhp_cpu_state *st)
 	if (!st->single && st->state == st->target)
 		return;
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (st->cpu >= 1 && st->cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap state=", st->state);
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap target=", st->target);
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap bringup=", st->bringup);
+	}
+#endif
 	st->result = 0;
 	/*
 	 * Make sure the above stores are visible before should_run becomes
@@ -778,6 +785,13 @@ static void __cpuhp_kick_ap(struct cpuhp_cpu_state *st)
 	st->should_run = true;
 	wake_up_process(st->thread);
 	wait_for_ap_thread(st, st->bringup);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (st->cpu >= 1 && st->cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done state=", st->state);
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done target=", st->target);
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done result=", st->result);
+	}
+#endif
 }
 
 static int cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st,
@@ -786,13 +800,34 @@ static int cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st,
 	enum cpuhp_state prev_state;
 	int ret;
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu >= 1 && cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap state=", st->state);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap target=", target);
+	}
+#endif
 	prev_state = cpuhp_set_state(cpu, st, target);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap prev_state=", prev_state);
+#endif
 	__cpuhp_kick_ap(st);
 	if ((ret = st->result)) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu >= 1 && cpu <= 3)
+			riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap rollback=", ret);
+#endif
 		cpuhp_reset_state(cpu, st, prev_state);
 		__cpuhp_kick_ap(st);
 	}
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu >= 1 && cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap final_state=", st->state);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap final_ret=", ret);
+	}
+#endif
 	return ret;
 }
 
