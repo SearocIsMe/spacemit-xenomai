@@ -9,6 +9,15 @@ extern bool riscv_evl_early_debug_enabled;
 
 void riscv_evl_early_puts(const char *s);
 void riscv_evl_early_puthex_ulong(unsigned long value);
+void riscv_evl_trace_sched_switch(unsigned long cpu,
+				  const void *prev, long prev_pid,
+				  unsigned long prev_cpu,
+				  unsigned long prev_on_cpu,
+				  const char *prev_comm,
+				  const void *next, long next_pid,
+				  unsigned long next_cpu,
+				  unsigned long next_on_cpu,
+				  const char *next_comm);
 
 static inline void riscv_evl_trace(const char *tag)
 {
@@ -45,6 +54,15 @@ static const bool riscv_evl_early_debug_enabled;
 
 static inline void riscv_evl_early_puts(const char *s) { }
 static inline void riscv_evl_early_puthex_ulong(unsigned long value) { }
+static inline void riscv_evl_trace_sched_switch(unsigned long cpu,
+						const void *prev, long prev_pid,
+						unsigned long prev_cpu,
+						unsigned long prev_on_cpu,
+						const char *prev_comm,
+						const void *next, long next_pid,
+						unsigned long next_cpu,
+						unsigned long next_on_cpu,
+						const char *next_comm) { }
 static inline void riscv_evl_trace(const char *tag) { }
 static inline bool riscv_evl_trace_enabled(void) { return false; }
 static inline void riscv_evl_trace_ulong(const char *prefix, unsigned long value) { }

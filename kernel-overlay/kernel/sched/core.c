@@ -6798,24 +6798,15 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 		if (cpu_of(rq) <= 3 &&
 		    (!strncmp(prev->comm, "cpuhp/", 6) ||
 		     !strncmp(next->comm, "cpuhp/", 6))) {
-			riscv_evl_trace_ulong("EVLDBG __schedule switch cpu=",
-					      cpu_of(rq));
-			riscv_evl_trace_ptr("EVLDBG __schedule switch prev=",
-					    prev);
-			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_pid=",
-					      prev->pid);
-			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_task_cpu=",
-					      task_cpu(prev));
-			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_on_cpu=",
-					      READ_ONCE(prev->on_cpu));
-			riscv_evl_trace_ptr("EVLDBG __schedule switch next=",
-					    next);
-			riscv_evl_trace_ulong("EVLDBG __schedule switch next_pid=",
-					      next->pid);
-			riscv_evl_trace_ulong("EVLDBG __schedule switch next_task_cpu=",
-					      task_cpu(next));
-			riscv_evl_trace_ulong("EVLDBG __schedule switch next_on_cpu=",
-					      READ_ONCE(next->on_cpu));
+			riscv_evl_trace_sched_switch(cpu_of(rq),
+						     prev, prev->pid,
+						     task_cpu(prev),
+						     READ_ONCE(prev->on_cpu),
+						     prev->comm,
+						     next, next->pid,
+						     task_cpu(next),
+						     READ_ONCE(next->on_cpu),
+						     next->comm);
 		}
 #endif
 
