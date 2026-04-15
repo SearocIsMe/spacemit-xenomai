@@ -56,6 +56,11 @@ static __always_inline bool evl_trace_kworker_u(const struct kthread_create_info
 	return create->full_name && !strncmp(create->full_name, "kworker/u", 9);
 }
 
+static __always_inline bool evl_trace_cpuhp_task(const struct task_struct *task)
+{
+	return task && !strncmp(task->comm, "cpuhp/", 6);
+}
+
 struct kthread {
 	unsigned long flags;
 	unsigned int cpu;
@@ -555,7 +560,26 @@ static void __kthread_bind_mask(struct task_struct *p, const struct cpumask *mas
 
 static void __kthread_bind(struct task_struct *p, unsigned int cpu, unsigned int state)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(p)) {
+		riscv_evl_trace_ptr("EVLDBG __kthread_bind task=", p);
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind req_cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind state=", state);
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_cpu_before=",
+				      task_cpu(p));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_state_before=",
+				      READ_ONCE(p->__state));
+	}
+#endif
 	__kthread_bind_mask(p, cpumask_of(cpu), state);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(p)) {
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_cpu_after=",
+				      task_cpu(p));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_state_after=",
+				      READ_ONCE(p->__state));
+	}
+#endif
 }
 
 void kthread_bind_mask(struct task_struct *p, const struct cpumask *mask)
@@ -599,6 +623,14 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
 	if (IS_ERR(p))
 		return p;
 	kthread_bind(p, cpu);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(p)) {
+		riscv_evl_trace_ptr("EVLDBG kthread_create_on_cpu task=", p);
+		riscv_evl_trace_ulong("EVLDBG kthread_create_on_cpu cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG kthread_create_on_cpu task_cpu=",
+				      task_cpu(p));
+	}
+#endif
 	/* CPU hotplug need to bind once again when unparking the thread. */
 	to_kthread(p)->cpu = cpu;
 	return p;
@@ -651,6 +683,17 @@ void kthread_unpark(struct task_struct *k)
 	 */
 	if (test_bit(KTHREAD_IS_PER_CPU, &kthread->flags))
 		__kthread_bind(k, kthread->cpu, TASK_PARKED);
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(k)) {
+		riscv_evl_trace_ptr("EVLDBG kthread_unpark task=", k);
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark cpu=", kthread->cpu);
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark task_cpu=",
+				      task_cpu(k));
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark state=",
+				      READ_ONCE(k->__state));
+	}
+#endif
 
 	clear_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
 	/*
