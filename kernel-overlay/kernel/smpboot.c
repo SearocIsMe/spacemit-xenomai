@@ -124,6 +124,8 @@ static int smpboot_thread_fn(void *data)
 					      td->status);
 			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn selfparking=",
 					      ht->selfparking);
+			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn should_park=",
+					      kthread_should_park());
 		}
 #endif
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -189,6 +191,10 @@ static int smpboot_thread_fn(void *data)
 #endif
 			preempt_enable_no_resched();
 			schedule();
+#ifdef CONFIG_IRQ_PIPELINE
+			if (trace_cpuhp)
+				riscv_evl_trace("EVLDBG smpboot_thread_fn after schedule");
+#endif
 		} else {
 #ifdef CONFIG_IRQ_PIPELINE
 			if (trace_cpuhp)
