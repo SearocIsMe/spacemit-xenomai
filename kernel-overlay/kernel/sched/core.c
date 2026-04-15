@@ -6804,10 +6804,18 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 					    prev);
 			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_pid=",
 					      prev->pid);
+			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_task_cpu=",
+					      task_cpu(prev));
+			riscv_evl_trace_ulong("EVLDBG __schedule switch prev_on_cpu=",
+					      READ_ONCE(prev->on_cpu));
 			riscv_evl_trace_ptr("EVLDBG __schedule switch next=",
 					    next);
 			riscv_evl_trace_ulong("EVLDBG __schedule switch next_pid=",
 					      next->pid);
+			riscv_evl_trace_ulong("EVLDBG __schedule switch next_task_cpu=",
+					      task_cpu(next));
+			riscv_evl_trace_ulong("EVLDBG __schedule switch next_on_cpu=",
+					      READ_ONCE(next->on_cpu));
 		}
 #endif
 
