@@ -830,6 +830,11 @@ static void __cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st)
 	 */
 	smp_mb();
 	st->should_run = true;
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap should_run_set=",
+				      st->should_run);
+#endif
 	if (st->thread) {
 		int woke = wake_up_process(st->thread);
 
@@ -1261,6 +1266,16 @@ static int cpuhp_should_run(unsigned int cpu)
 {
 	struct cpuhp_cpu_state *st = this_cpu_ptr(&cpuhp_state);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (cpu >= 1 && cpu <= 3) {
+		riscv_evl_trace_ulong("EVLDBG cpuhp_should_run cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_should_run smp_cpu=",
+				      smp_processor_id());
+		riscv_evl_trace_ptr("EVLDBG cpuhp_should_run st=", st);
+		riscv_evl_trace_ulong("EVLDBG cpuhp_should_run value=",
+				      st->should_run);
+	}
+#endif
 	return st->should_run;
 }
 
