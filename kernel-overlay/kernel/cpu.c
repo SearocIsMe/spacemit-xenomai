@@ -812,6 +812,15 @@ static void __cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st)
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap state=", st->state);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap target=", st->target);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap bringup=", st->bringup);
+		riscv_evl_trace_ptr("EVLDBG __cpuhp_kick_ap thread=", st->thread);
+		if (st->thread) {
+			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap task_cpu=",
+					      task_cpu(st->thread));
+			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap task_state=",
+					      READ_ONCE(st->thread->__state));
+			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap task_on_cpu=",
+					      READ_ONCE(st->thread->on_cpu));
+		}
 	}
 #endif
 	st->result = 0;
@@ -821,7 +830,19 @@ static void __cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st)
 	 */
 	smp_mb();
 	st->should_run = true;
-	wake_up_process(st->thread);
+	if (st->thread) {
+		int woke = wake_up_process(st->thread);
+
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu >= 1 && cpu <= 3)
+			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap wake_ret=", woke);
+#endif
+	} else {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu >= 1 && cpu <= 3)
+			riscv_evl_trace("EVLDBG __cpuhp_kick_ap null_thread");
+#endif
+	}
 	wait_for_ap_thread(st, st->bringup);
 #ifdef CONFIG_IRQ_PIPELINE
 	if (cpu >= 1 && cpu <= 3) {
