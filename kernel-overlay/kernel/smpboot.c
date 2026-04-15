@@ -110,15 +110,20 @@ static int smpboot_thread_fn(void *data)
 {
 	struct smpboot_thread_data *td = data;
 	struct smp_hotplug_thread *ht = td->ht;
+	bool trace_cpuhp;
+	bool should_run;
 
 	while (1) {
+		trace_cpuhp = td->cpu >= 1 && td->cpu <= 3 &&
+			!strncmp(current->comm, "cpuhp/", 6);
 #ifdef CONFIG_IRQ_PIPELINE
-		if (td->cpu >= 1 && td->cpu <= 3 &&
-		    !strncmp(current->comm, "cpuhp/", 6)) {
+		if (trace_cpuhp) {
 			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn cpu=",
 					      td->cpu);
 			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn status=",
 					      td->status);
+			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn selfparking=",
+					      ht->selfparking);
 		}
 #endif
 		set_current_state(TASK_INTERRUPTIBLE);
@@ -134,6 +139,10 @@ static int smpboot_thread_fn(void *data)
 		}
 
 		if (kthread_should_park()) {
+#ifdef CONFIG_IRQ_PIPELINE
+			if (trace_cpuhp)
+				riscv_evl_trace("EVLDBG smpboot_thread_fn park");
+#endif
 			__set_current_state(TASK_RUNNING);
 			preempt_enable();
 			if (ht->park && td->status == HP_THREAD_ACTIVE) {
@@ -167,18 +176,22 @@ static int smpboot_thread_fn(void *data)
 			continue;
 		}
 
-		if (!ht->thread_should_run(td->cpu)) {
+		should_run = ht->thread_should_run(td->cpu);
 #ifdef CONFIG_IRQ_PIPELINE
-			if (td->cpu >= 1 && td->cpu <= 3 &&
-			    !strncmp(current->comm, "cpuhp/", 6))
+		if (trace_cpuhp)
+			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn should_run=",
+					      should_run);
+#endif
+		if (!should_run) {
+#ifdef CONFIG_IRQ_PIPELINE
+			if (trace_cpuhp)
 				riscv_evl_trace("EVLDBG smpboot_thread_fn schedule");
 #endif
 			preempt_enable_no_resched();
 			schedule();
 		} else {
 #ifdef CONFIG_IRQ_PIPELINE
-			if (td->cpu >= 1 && td->cpu <= 3 &&
-			    !strncmp(current->comm, "cpuhp/", 6))
+			if (trace_cpuhp)
 				riscv_evl_trace("EVLDBG smpboot_thread_fn call thread_fn");
 #endif
 			__set_current_state(TASK_RUNNING);
