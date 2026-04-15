@@ -764,13 +764,13 @@ cpuhp_reset_state(int cpu, struct cpuhp_cpu_state *st,
 }
 
 /* Regular hotplug invocation of the AP hotplug thread */
-static void __cpuhp_kick_ap(struct cpuhp_cpu_state *st)
+static void __cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st)
 {
 	if (!st->single && st->state == st->target)
 		return;
 
 #ifdef CONFIG_IRQ_PIPELINE
-	if (st->cpu >= 1 && st->cpu <= 3) {
+	if (cpu >= 1 && cpu <= 3) {
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap state=", st->state);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap target=", st->target);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap bringup=", st->bringup);
@@ -786,7 +786,7 @@ static void __cpuhp_kick_ap(struct cpuhp_cpu_state *st)
 	wake_up_process(st->thread);
 	wait_for_ap_thread(st, st->bringup);
 #ifdef CONFIG_IRQ_PIPELINE
-	if (st->cpu >= 1 && st->cpu <= 3) {
+	if (cpu >= 1 && cpu <= 3) {
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done state=", st->state);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done target=", st->target);
 		riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap done result=", st->result);
@@ -812,14 +812,14 @@ static int cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st,
 	if (cpu >= 1 && cpu <= 3)
 		riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap prev_state=", prev_state);
 #endif
-	__cpuhp_kick_ap(st);
+	__cpuhp_kick_ap(cpu, st);
 	if ((ret = st->result)) {
 #ifdef CONFIG_IRQ_PIPELINE
 		if (cpu >= 1 && cpu <= 3)
 			riscv_evl_trace_ulong("EVLDBG cpuhp_kick_ap rollback=", ret);
 #endif
 		cpuhp_reset_state(cpu, st, prev_state);
-		__cpuhp_kick_ap(st);
+		__cpuhp_kick_ap(cpu, st);
 	}
 
 #ifdef CONFIG_IRQ_PIPELINE
@@ -1316,7 +1316,7 @@ cpuhp_invoke_ap_callback(int cpu, enum cpuhp_state state, bool bringup,
 	st->cb_state = state;
 	st->single = true;
 
-	__cpuhp_kick_ap(st);
+	__cpuhp_kick_ap(cpu, st);
 
 	/*
 	 * If we failed and did a partial, do a rollback.
@@ -1325,7 +1325,7 @@ cpuhp_invoke_ap_callback(int cpu, enum cpuhp_state state, bool bringup,
 		st->rollback = true;
 		st->bringup = !bringup;
 
-		__cpuhp_kick_ap(st);
+		__cpuhp_kick_ap(cpu, st);
 	}
 
 	/*
@@ -1663,7 +1663,7 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen,
 	if (ret && st->state < prev_state) {
 		if (st->state == CPUHP_TEARDOWN_CPU) {
 			cpuhp_reset_state(cpu, st, prev_state);
-			__cpuhp_kick_ap(st);
+			__cpuhp_kick_ap(cpu, st);
 		} else {
 			WARN(1, "DEAD callback error for CPU%d", cpu);
 		}
