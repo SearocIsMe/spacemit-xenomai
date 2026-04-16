@@ -4723,6 +4723,8 @@ static void wq_update_pod(struct workqueue_struct *wq, int cpu,
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_target)
 		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after alloc_unbound_pwq\n");
+	if (trace_target)
+		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 new_pwq=", pwq);
 #endif
 	if (!pwq) {
 		pr_warn("workqueue: allocation failed while updating CPU pod affinity of \"%s\"\n",
@@ -4744,6 +4746,8 @@ static void wq_update_pod(struct workqueue_struct *wq, int cpu,
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_target)
 		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after install_unbound_pwq\n");
+	if (trace_target)
+		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 installed_pwq=", pwq);
 #endif
 	goto out_unlock;
 
@@ -4751,6 +4755,8 @@ use_dfl_pwq:
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_target)
 		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 use_dfl_pwq\n");
+	if (trace_target)
+		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 dfl_pwq=", wq->dfl_pwq);
 #endif
 	mutex_lock(&wq->mutex);
 	raw_spin_lock_irq(&wq->dfl_pwq->pool->lock);
