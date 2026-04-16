@@ -2170,10 +2170,9 @@ static struct worker *create_worker(struct worker_pool *pool)
 	char id_buf[23];
 	static int trace_count;
 
-	if (trace_count < 24) {
-		riscv_evl_trace_hex("EVLDBG create_worker entry cpu=", pool->cpu);
-		riscv_evl_trace_ptr("EVLDBG create_worker pool=", pool);
-	}
+	if (trace_count < 24)
+		riscv_evl_trace_worker_state("EVLDBG create_worker entry",
+					     pool->cpu, pool->id, pool, NULL, 0, 0, 0);
 
 	/* ID is needed to determine kthread name */
 	id = ida_alloc(&pool->worker_ida, GFP_KERNEL);
@@ -2199,10 +2198,13 @@ static struct worker *create_worker(struct worker_pool *pool)
 
 	worker->task = kthread_create_on_node(worker_thread, worker, pool->node,
 					      "kworker/%s", id_buf);
-	if (trace_count < 24)
-		riscv_evl_trace_hex("EVLDBG create_worker after kthread_create err=",
-				    IS_ERR(worker->task) ? PTR_ERR(worker->task) : 0);
 	if (IS_ERR(worker->task)) {
+		if (trace_count < 24)
+			riscv_evl_trace_worker_state("EVLDBG create_worker create_fail",
+						     pool->cpu, pool->id, pool,
+						     worker->task, 0,
+						     (unsigned long)PTR_ERR(worker->task),
+						     worker->flags);
 		if (PTR_ERR(worker->task) == -EINTR) {
 			pr_err("workqueue: Interrupted when creating a worker thread \"kworker/%s\"\n",
 			       id_buf);
@@ -2213,22 +2215,27 @@ static struct worker *create_worker(struct worker_pool *pool)
 		goto fail;
 	}
 
+	if (trace_count < 24)
+		riscv_evl_trace_worker_state("EVLDBG create_worker created",
+					     pool->cpu, pool->id, pool,
+					     worker->task, task_cpu(worker->task),
+					     READ_ONCE(worker->task->__state),
+					     worker->flags);
+
 	set_user_nice(worker->task, pool->attrs->nice);
-	if (trace_count < 24)
-		riscv_evl_early_puts("EVLDBG create_worker after set_user_nice\n");
 	kthread_bind_mask(worker->task, pool_allowed_cpus(pool));
-	if (trace_count < 24)
-		riscv_evl_early_puts("EVLDBG create_worker after kthread_bind_mask\n");
 
 	/* successful, attach the worker to the pool */
 	worker_attach_to_pool(worker, pool);
 	if (trace_count < 24)
-		riscv_evl_early_puts("EVLDBG create_worker after worker_attach_to_pool\n");
+		riscv_evl_trace_worker_state("EVLDBG create_worker attached",
+					     pool->cpu, pool->id, pool,
+					     worker->task, task_cpu(worker->task),
+					     READ_ONCE(worker->task->__state),
+					     worker->flags);
 
 	/* start the newly created worker */
 	raw_spin_lock_irq(&pool->lock);
-	if (trace_count < 24)
-		riscv_evl_early_puts("EVLDBG create_worker after raw_spin_lock_irq\n");
 
 	worker->pool->nr_workers++;
 	worker_enter_idle(worker);
@@ -2241,11 +2248,19 @@ static struct worker *create_worker(struct worker_pool *pool)
 	 */
 	wake_up_process(worker->task);
 	if (trace_count < 24)
-		riscv_evl_early_puts("EVLDBG create_worker after wake_up_process\n");
+		riscv_evl_trace_worker_state("EVLDBG create_worker wake",
+					     pool->cpu, pool->id, pool,
+					     worker->task, task_cpu(worker->task),
+					     READ_ONCE(worker->task->__state),
+					     worker->flags);
 
 	raw_spin_unlock_irq(&pool->lock);
 	if (trace_count < 24) {
-		riscv_evl_early_puts("EVLDBG create_worker exit\n");
+		riscv_evl_trace_worker_state("EVLDBG create_worker exit",
+					     pool->cpu, pool->id, pool,
+					     worker->task, task_cpu(worker->task),
+					     READ_ONCE(worker->task->__state),
+					     worker->flags);
 		trace_count++;
 	}
 
@@ -2253,7 +2268,10 @@ static struct worker *create_worker(struct worker_pool *pool)
 
 fail:
 	if (trace_count < 24) {
-		riscv_evl_early_puts("EVLDBG create_worker fail\n");
+		riscv_evl_trace_worker_state("EVLDBG create_worker fail",
+					     pool->cpu, pool->id, pool,
+					     worker ? worker->task : NULL, 0, 0,
+					     worker ? worker->flags : 0);
 		trace_count++;
 	}
 	ida_free(&pool->worker_ida, id);
@@ -2758,10 +2776,17 @@ static int worker_thread(void *__worker)
 {
 	struct worker *worker = __worker;
 	struct worker_pool *pool = worker->pool;
+	static int trace_count;
 
 	/* tell the scheduler that this is a workqueue worker */
 	set_pf_worker(true);
 woke_up:
+	if (trace_count < 24)
+		riscv_evl_trace_worker_state("EVLDBG worker_thread woke",
+					     pool->cpu, pool->id, pool,
+					     current, task_cpu(current),
+					     READ_ONCE(current->__state),
+					     worker->flags);
 	raw_spin_lock_irq(&pool->lock);
 
 	/* am I supposed to die? */
@@ -2823,6 +2848,14 @@ sleep:
 	 */
 	worker_enter_idle(worker);
 	__set_current_state(TASK_IDLE);
+	if (trace_count < 24) {
+		riscv_evl_trace_worker_state("EVLDBG worker_thread sleep",
+					     pool->cpu, pool->id, pool,
+					     current, task_cpu(current),
+					     READ_ONCE(current->__state),
+					     worker->flags);
+		trace_count++;
+	}
 	raw_spin_unlock_irq(&pool->lock);
 	schedule();
 	goto woke_up;

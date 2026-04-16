@@ -106,3 +106,30 @@ void riscv_evl_trace_cpuhp_state(const char *tag,
 	riscv_evl_early_puts(buf);
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
+
+void riscv_evl_trace_worker_state(const char *tag,
+				  unsigned long pool_cpu,
+				  unsigned long pool_id,
+				  const void *pool,
+				  const void *task,
+				  unsigned long task_cpu,
+				  unsigned long task_state,
+				  unsigned long worker_flags)
+{
+	unsigned long flags;
+	char buf[224];
+	int len;
+
+	if (!riscv_evl_early_debug_enabled)
+		return;
+
+	len = scnprintf(buf, sizeof(buf),
+			"%s pool_cpu=%#lx pool_id=%#lx pool=%px task=%px task_cpu=%#lx task_state=%#lx worker_flags=%#lx\n",
+			tag, pool_cpu, pool_id, pool, task, task_cpu, task_state,
+			worker_flags);
+
+	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
+	buf[len] = '\0';
+	riscv_evl_early_puts(buf);
+	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
+}

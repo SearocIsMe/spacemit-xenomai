@@ -25,6 +25,14 @@ void riscv_evl_trace_cpuhp_state(const char *tag,
 				 unsigned long target,
 				 unsigned long should_run,
 				 unsigned long result);
+void riscv_evl_trace_worker_state(const char *tag,
+				  unsigned long pool_cpu,
+				  unsigned long pool_id,
+				  const void *pool,
+				  const void *task,
+				  unsigned long task_cpu,
+				  unsigned long task_state,
+				  unsigned long worker_flags);
 
 static inline void riscv_evl_trace(const char *tag)
 {
@@ -77,6 +85,14 @@ static inline void riscv_evl_trace_cpuhp_state(const char *tag,
 					       unsigned long target,
 					       unsigned long should_run,
 					       unsigned long result) { }
+static inline void riscv_evl_trace_worker_state(const char *tag,
+						unsigned long pool_cpu,
+						unsigned long pool_id,
+						const void *pool,
+						const void *task,
+						unsigned long task_cpu,
+						unsigned long task_state,
+						unsigned long worker_flags) { }
 static inline void riscv_evl_trace(const char *tag) { }
 static inline bool riscv_evl_trace_enabled(void) { return false; }
 static inline void riscv_evl_trace_ulong(const char *prefix, unsigned long value) { }
