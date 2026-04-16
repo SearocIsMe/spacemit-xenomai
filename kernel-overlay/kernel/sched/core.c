@@ -2771,6 +2771,24 @@ __do_set_cpus_allowed(struct task_struct *p, struct affinity_context *ctx)
 	queued = task_on_rq_queued(p);
 	running = task_current(rq, p);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
+		riscv_evl_trace_ptr("EVLDBG __do_set_cpus_allowed task=", p);
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed rq_cpu=",
+				      cpu_of(rq));
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed task_cpu_before=",
+				      task_cpu(p));
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed queued=",
+				      queued);
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed running=",
+				      running);
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed mask_first=",
+				      cpumask_first(ctx->new_mask));
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed mask_weight=",
+				      cpumask_weight(ctx->new_mask));
+	}
+#endif
+
 	if (queued) {
 		/*
 		 * Because __kthread_bind() calls this on blocked tasks without
@@ -2783,6 +2801,17 @@ __do_set_cpus_allowed(struct task_struct *p, struct affinity_context *ctx)
 		put_prev_task(rq, p);
 
 	p->sched_class->set_cpus_allowed(p, ctx);
+
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed task_cpu_after=",
+				      task_cpu(p));
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed cpus_ptr_first=",
+				      cpumask_first(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed cpus_ptr_weight=",
+				      cpumask_weight(p->cpus_ptr));
+	}
+#endif
 
 	if (queued)
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
@@ -4348,6 +4377,19 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		smp_cond_load_acquire(&p->on_cpu, !VAL);
 
 		cpu = select_task_rq(p, p->wake_cpu, wake_flags | WF_TTWU);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
+			riscv_evl_trace_ptr("EVLDBG ttwu task=", p);
+			riscv_evl_trace_ulong("EVLDBG ttwu wake_cpu=", p->wake_cpu);
+			riscv_evl_trace_ulong("EVLDBG ttwu selected_cpu=", cpu);
+			riscv_evl_trace_ulong("EVLDBG ttwu task_cpu_before=",
+					      task_cpu(p));
+			riscv_evl_trace_ulong("EVLDBG ttwu cpus_ptr_first=",
+					      cpumask_first(p->cpus_ptr));
+			riscv_evl_trace_ulong("EVLDBG ttwu cpus_ptr_weight=",
+					      cpumask_weight(p->cpus_ptr));
+		}
+#endif
 		if (task_cpu(p) != cpu) {
 			if (p->in_iowait) {
 				delayacct_blkio_end(p);
@@ -4357,6 +4399,11 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 			wake_flags |= WF_MIGRATED;
 			psi_ttwu_dequeue(p);
 			set_task_cpu(p, cpu);
+#ifdef CONFIG_IRQ_PIPELINE
+			if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6))
+				riscv_evl_trace_ulong("EVLDBG ttwu task_cpu_after=",
+						      task_cpu(p));
+#endif
 		}
 #else
 		cpu = task_cpu(p);
