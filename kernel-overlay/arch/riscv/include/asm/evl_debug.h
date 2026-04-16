@@ -18,6 +18,13 @@ void riscv_evl_trace_sched_switch(unsigned long cpu,
 				  unsigned long next_cpu,
 				  unsigned long next_on_cpu,
 				  const char *next_comm);
+void riscv_evl_trace_cpuhp_state(const char *tag,
+				 unsigned long cpu,
+				 unsigned long bringup,
+				 unsigned long state,
+				 unsigned long target,
+				 unsigned long should_run,
+				 unsigned long result);
 
 static inline void riscv_evl_trace(const char *tag)
 {
@@ -63,6 +70,13 @@ static inline void riscv_evl_trace_sched_switch(unsigned long cpu,
 						unsigned long next_cpu,
 						unsigned long next_on_cpu,
 						const char *next_comm) { }
+static inline void riscv_evl_trace_cpuhp_state(const char *tag,
+					       unsigned long cpu,
+					       unsigned long bringup,
+					       unsigned long state,
+					       unsigned long target,
+					       unsigned long should_run,
+					       unsigned long result) { }
 static inline void riscv_evl_trace(const char *tag) { }
 static inline bool riscv_evl_trace_enabled(void) { return false; }
 static inline void riscv_evl_trace_ulong(const char *prefix, unsigned long value) { }

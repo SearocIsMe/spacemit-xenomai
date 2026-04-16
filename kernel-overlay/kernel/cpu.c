@@ -298,12 +298,11 @@ static inline void complete_ap_thread(struct cpuhp_cpu_state *st, bool bringup)
 	if (riscv_evl_trace_enabled()) {
 		int cpu = smp_processor_id();
 
-		if (cpu >= 0 && cpu <= 3) {
-			riscv_evl_trace_ulong("EVLDBG complete_ap_thread cpu=", cpu);
-			riscv_evl_trace_ulong("EVLDBG complete_ap_thread bringup=", bringup);
-			riscv_evl_trace_ulong("EVLDBG complete_ap_thread state=", st->state);
-			riscv_evl_trace_ulong("EVLDBG complete_ap_thread target=", st->target);
-		}
+		if (cpu >= 0 && cpu <= 3)
+			riscv_evl_trace_cpuhp_state("EVLDBG complete_ap_thread",
+						    cpu, bringup, st->state,
+						    st->target, st->should_run,
+						    st->result);
 	}
 #endif
 	complete(done);
@@ -1300,13 +1299,11 @@ static void cpuhp_thread_fun(unsigned int cpu)
 	enum cpuhp_state state;
 
 #ifdef CONFIG_IRQ_PIPELINE
-	if (cpu >= 1 && cpu <= 3) {
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun cpu=", cpu);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun bringup=", bringup);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun state=", st->state);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun target=", st->target);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun should_run=", st->should_run);
-	}
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_cpuhp_state("EVLDBG cpuhp_thread_fun",
+					    cpu, bringup, st->state,
+					    st->target, st->should_run,
+					    st->result);
 #endif
 	if (WARN_ON_ONCE(!st->should_run))
 		return;
@@ -1364,14 +1361,11 @@ end:
 	lockdep_release_cpus_lock();
 
 #ifdef CONFIG_IRQ_PIPELINE
-	if (cpu >= 1 && cpu <= 3) {
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end cpu=", cpu);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end bringup=", bringup);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end state=", st->state);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end target=", st->target);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end should_run=", st->should_run);
-		riscv_evl_trace_ulong("EVLDBG cpuhp_thread_fun end result=", st->result);
-	}
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_cpuhp_state("EVLDBG cpuhp_thread_fun end",
+					    cpu, bringup, st->state,
+					    st->target, st->should_run,
+					    st->result);
 #endif
 	if (!st->should_run)
 		complete_ap_thread(st, bringup);

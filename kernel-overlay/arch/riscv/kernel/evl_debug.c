@@ -81,3 +81,28 @@ void riscv_evl_trace_sched_switch(unsigned long cpu,
 	riscv_evl_early_puts(buf);
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
+
+void riscv_evl_trace_cpuhp_state(const char *tag,
+				 unsigned long cpu,
+				 unsigned long bringup,
+				 unsigned long state,
+				 unsigned long target,
+				 unsigned long should_run,
+				 unsigned long result)
+{
+	unsigned long flags;
+	char buf[192];
+	int len;
+
+	if (!riscv_evl_early_debug_enabled)
+		return;
+
+	len = scnprintf(buf, sizeof(buf),
+			"%s cpu=%#lx bringup=%#lx state=%#lx target=%#lx should_run=%#lx result=%#lx\n",
+			tag, cpu, bringup, state, target, should_run, result);
+
+	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
+	buf[len] = '\0';
+	riscv_evl_early_puts(buf);
+	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
+}
