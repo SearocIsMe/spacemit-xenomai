@@ -569,6 +569,12 @@ static void __kthread_bind(struct task_struct *p, unsigned int cpu, unsigned int
 				      task_cpu(p));
 		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_state_before=",
 				      READ_ONCE(p->__state));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_first_before=",
+				      cpumask_first(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_weight_before=",
+				      cpumask_weight(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_req_before=",
+				      cpumask_test_cpu(cpu, p->cpus_ptr));
 	}
 #endif
 	__kthread_bind_mask(p, cpumask_of(cpu), state);
@@ -578,6 +584,12 @@ static void __kthread_bind(struct task_struct *p, unsigned int cpu, unsigned int
 				      task_cpu(p));
 		riscv_evl_trace_ulong("EVLDBG __kthread_bind task_state_after=",
 				      READ_ONCE(p->__state));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_first_after=",
+				      cpumask_first(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_weight_after=",
+				      cpumask_weight(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG __kthread_bind allowed_req_after=",
+				      cpumask_test_cpu(cpu, p->cpus_ptr));
 	}
 #endif
 }
@@ -692,6 +704,12 @@ void kthread_unpark(struct task_struct *k)
 				      task_cpu(k));
 		riscv_evl_trace_ulong("EVLDBG kthread_unpark state=",
 				      READ_ONCE(k->__state));
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark allowed_first=",
+				      cpumask_first(k->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark allowed_weight=",
+				      cpumask_weight(k->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG kthread_unpark allowed_req=",
+				      cpumask_test_cpu(kthread->cpu, k->cpus_ptr));
 	}
 #endif
 
