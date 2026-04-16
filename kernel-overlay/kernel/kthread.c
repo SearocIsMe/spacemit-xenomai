@@ -492,7 +492,11 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	 * the OOM killer while kthreadd is trying to allocate memory for
 	 * new kernel thread.
 	 */
+	if (evl_trace_kworker_u(create))
+		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_begin\n");
 	if (unlikely(wait_for_completion_killable(&done))) {
+		if (evl_trace_kworker_u(create))
+			riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_killable\n");
 		/*
 		 * If I was killed by a fatal signal before kthreadd (or new
 		 * kernel thread) calls complete(), leave the cleanup of this
@@ -506,6 +510,8 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 		 */
 		wait_for_completion(&done);
 	}
+	if (evl_trace_kworker_u(create))
+		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_end\n");
 	task = create->result;
 	if (evl_trace_kworker_u(create))
 		riscv_evl_trace_ptr("EVLDBG __kthread_create_on_node kworker_u result=", task);
