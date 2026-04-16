@@ -288,6 +288,17 @@ static void __kthread_parkme(struct kthread *self)
 		 * wait_task_inactive() in kthread_park().
 		 */
 		set_special_state(TASK_PARKED);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(current)) {
+			riscv_evl_trace_ptr("EVLDBG __kthread_parkme task=", current);
+			riscv_evl_trace_ulong("EVLDBG __kthread_parkme task_cpu=",
+				      task_cpu(current));
+			riscv_evl_trace_ulong("EVLDBG __kthread_parkme state=",
+				      READ_ONCE(current->__state));
+			riscv_evl_trace_ulong("EVLDBG __kthread_parkme should_park=",
+				      test_bit(KTHREAD_SHOULD_PARK, &self->flags));
+		}
+#endif
 		if (!test_bit(KTHREAD_SHOULD_PARK, &self->flags))
 			break;
 
@@ -745,7 +756,22 @@ int kthread_park(struct task_struct *k)
 
 	set_bit(KTHREAD_SHOULD_PARK, &kthread->flags);
 	if (k != current) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(k)) {
+			riscv_evl_trace_ptr("EVLDBG kthread_park task=", k);
+			riscv_evl_trace_ulong("EVLDBG kthread_park task_cpu=",
+				      task_cpu(k));
+			riscv_evl_trace_ulong("EVLDBG kthread_park state=",
+				      READ_ONCE(k->__state));
+			riscv_evl_trace_ulong("EVLDBG kthread_park should_park=",
+				      test_bit(KTHREAD_SHOULD_PARK, &kthread->flags));
+		}
+#endif
 		wake_up_process(k);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && evl_trace_cpuhp_task(k))
+			riscv_evl_trace("EVLDBG kthread_park after wake_up_process");
+#endif
 		/*
 		 * Wait for __kthread_parkme() to complete(), this means we
 		 * _will_ have TASK_PARKED and are about to call schedule().
