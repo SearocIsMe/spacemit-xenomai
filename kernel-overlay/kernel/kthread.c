@@ -876,8 +876,12 @@ int kthreadd(void *unused)
 					    struct kthread_create_info, list);
 			list_del_init(&create->list);
 			spin_unlock(&kthread_create_lock);
+			if (evl_trace_kworker_u(create))
+				riscv_evl_early_puts("EVLDBG kthreadd kworker_u dequeue\n");
 
 			create_kthread(create);
+			if (evl_trace_kworker_u(create))
+				riscv_evl_early_puts("EVLDBG kthreadd kworker_u create_done\n");
 
 			spin_lock(&kthread_create_lock);
 		}
