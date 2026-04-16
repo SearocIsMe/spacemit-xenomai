@@ -228,12 +228,37 @@ __smpboot_create_thread(struct smp_hotplug_thread *ht, unsigned int cpu)
 		kfree(td);
 		return PTR_ERR(tsk);
 	}
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && cpu >= 1 && cpu <= 3 &&
+	    !strncmp(tsk->comm, "cpuhp/", 6)) {
+		riscv_evl_trace_ptr("EVLDBG __smpboot_create_thread task=", tsk);
+		riscv_evl_trace_ulong("EVLDBG __smpboot_create_thread cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG __smpboot_create_thread task_cpu=",
+				      task_cpu(tsk));
+		riscv_evl_trace_ulong("EVLDBG __smpboot_create_thread state=",
+				      READ_ONCE(tsk->__state));
+	}
+#endif
 	kthread_set_per_cpu(tsk, cpu);
 	/*
 	 * Park the thread so that it could start right on the CPU
 	 * when it is available.
 	 */
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && cpu >= 1 && cpu <= 3 &&
+	    !strncmp(tsk->comm, "cpuhp/", 6))
+		riscv_evl_trace("EVLDBG __smpboot_create_thread before park");
+#endif
 	kthread_park(tsk);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && cpu >= 1 && cpu <= 3 &&
+	    !strncmp(tsk->comm, "cpuhp/", 6)) {
+		riscv_evl_trace_ulong("EVLDBG __smpboot_create_thread parked task_cpu=",
+				      task_cpu(tsk));
+		riscv_evl_trace_ulong("EVLDBG __smpboot_create_thread parked state=",
+				      READ_ONCE(tsk->__state));
+	}
+#endif
 	get_task_struct(tsk);
 	*per_cpu_ptr(ht->store, cpu) = tsk;
 	if (ht->create) {
@@ -270,6 +295,17 @@ static void smpboot_unpark_thread(struct smp_hotplug_thread *ht, unsigned int cp
 {
 	struct task_struct *tsk = *per_cpu_ptr(ht->store, cpu);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && tsk && cpu >= 1 && cpu <= 3 &&
+	    !strncmp(tsk->comm, "cpuhp/", 6)) {
+		riscv_evl_trace_ptr("EVLDBG smpboot_unpark_thread task=", tsk);
+		riscv_evl_trace_ulong("EVLDBG smpboot_unpark_thread cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG smpboot_unpark_thread task_cpu=",
+				      task_cpu(tsk));
+		riscv_evl_trace_ulong("EVLDBG smpboot_unpark_thread state=",
+				      READ_ONCE(tsk->__state));
+	}
+#endif
 	if (!ht->selfparking)
 		kthread_unpark(tsk);
 }
