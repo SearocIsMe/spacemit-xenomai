@@ -1602,12 +1602,6 @@ static noinline void __init kernel_init_freeable(void)
 	sched_init_smp();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after sched_init_smp\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before workqueue_init_topology\n");
-#endif
-
-	workqueue_init_topology();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after workqueue_init_topology\n");
 	riscv_evl_trace("EVLDBG kernel_init_freeable before padata_init\n");
 #endif
 	padata_init();
@@ -1635,6 +1629,19 @@ static noinline void __init kernel_init_freeable(void)
 	console_on_rootfs();
 #ifdef CONFIG_IRQ_PIPELINE
 	riscv_evl_trace("EVLDBG kernel_init_freeable after console_on_rootfs\n");
+	riscv_evl_trace("EVLDBG kernel_init_freeable before deferred workqueue_init_topology\n");
+#endif
+
+	/*
+	 * Before workqueue_init_topology(), unbound workqueues still operate
+	 * through the default SYSTEM affinity scope. Defer the topology split
+	 * until the later boot stage on IRQ pipeline builds so the second
+	 * events_unbound worker isn't spawned while secondary CPU bringup is
+	 * still fragile.
+	 */
+	workqueue_init_topology();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG kernel_init_freeable after deferred workqueue_init_topology\n");
 #endif
 
 	/*
