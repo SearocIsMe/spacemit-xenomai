@@ -38,6 +38,7 @@
 #include <linux/random.h>
 #include <linux/cc_platform.h>
 
+#include <asm/current.h>
 #include <trace/events/power.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpuhp.h>
@@ -1304,6 +1305,15 @@ static void cpuhp_thread_fun(unsigned int cpu)
 					    cpu, bringup, st->state,
 					    st->target, st->should_run,
 					    st->result);
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_task_stack_state("EVLDBG cpuhp_thread_fun stack",
+						 cpu, current,
+						 task_pid_nr(current),
+						 task_cpu(current),
+						 current_stack_pointer,
+						 current->thread_info.kernel_sp,
+						 current->thread.sp,
+						 task_pt_regs(current));
 #endif
 	if (WARN_ON_ONCE(!st->should_run))
 		return;
@@ -1366,6 +1376,15 @@ end:
 					    cpu, bringup, st->state,
 					    st->target, st->should_run,
 					    st->result);
+	if (cpu >= 1 && cpu <= 3)
+		riscv_evl_trace_task_stack_state("EVLDBG cpuhp_thread_fun end stack",
+						 cpu, current,
+						 task_pid_nr(current),
+						 task_cpu(current),
+						 current_stack_pointer,
+						 current->thread_info.kernel_sp,
+						 current->thread.sp,
+						 task_pt_regs(current));
 #endif
 	if (!st->should_run)
 		complete_ap_thread(st, bringup);

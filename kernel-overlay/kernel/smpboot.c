@@ -17,6 +17,7 @@
 #include <linux/smpboot.h>
 #include <linux/string.h>
 
+#include <asm/current.h>
 #include <asm/evl_debug.h>
 
 #include "smpboot.h"
@@ -123,6 +124,15 @@ static int smpboot_thread_fn(void *data)
 						      ht->selfparking,
 						      kthread_should_park(),
 						      ~0UL);
+		if (trace_cpuhp)
+			riscv_evl_trace_task_stack_state("EVLDBG smpboot_thread_fn stack",
+							 td->cpu, current,
+							 task_pid_nr(current),
+							 task_cpu(current),
+							 current_stack_pointer,
+							 current->thread_info.kernel_sp,
+							 current->thread.sp,
+							 task_pt_regs(current));
 #endif
 		set_current_state(TASK_INTERRUPTIBLE);
 		preempt_disable();
@@ -198,6 +208,15 @@ static int smpboot_thread_fn(void *data)
 #ifdef CONFIG_IRQ_PIPELINE
 			if (trace_cpuhp)
 				riscv_evl_trace("EVLDBG smpboot_thread_fn call thread_fn");
+			if (trace_cpuhp)
+				riscv_evl_trace_task_stack_state("EVLDBG smpboot_thread_fn call stack",
+								 td->cpu, current,
+								 task_pid_nr(current),
+								 task_cpu(current),
+								 current_stack_pointer,
+								 current->thread_info.kernel_sp,
+								 current->thread.sp,
+								 task_pt_regs(current));
 #endif
 			__set_current_state(TASK_RUNNING);
 			preempt_enable();

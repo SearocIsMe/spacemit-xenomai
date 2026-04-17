@@ -39,6 +39,15 @@ void riscv_evl_trace_smpboot_state(const char *tag,
 				   unsigned long selfparking,
 				   unsigned long should_park,
 				   unsigned long should_run);
+void riscv_evl_trace_task_stack_state(const char *tag,
+				      unsigned long cpu,
+				      const void *task,
+				      long pid,
+				      unsigned long task_cpu,
+				      unsigned long current_sp,
+				      unsigned long ti_kernel_sp,
+				      unsigned long thread_sp,
+				      const void *task_regs);
 
 static inline void riscv_evl_trace(const char *tag)
 {
@@ -105,6 +114,15 @@ static inline void riscv_evl_trace_smpboot_state(const char *tag,
 						 unsigned long selfparking,
 						 unsigned long should_park,
 						 unsigned long should_run) { }
+static inline void riscv_evl_trace_task_stack_state(const char *tag,
+						    unsigned long cpu,
+						    const void *task,
+						    long pid,
+						    unsigned long task_cpu,
+						    unsigned long current_sp,
+						    unsigned long ti_kernel_sp,
+						    unsigned long thread_sp,
+						    const void *task_regs) { }
 static inline void riscv_evl_trace(const char *tag) { }
 static inline bool riscv_evl_trace_enabled(void) { return false; }
 static inline void riscv_evl_trace_ulong(const char *prefix, unsigned long value) { }
