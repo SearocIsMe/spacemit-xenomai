@@ -133,3 +133,27 @@ void riscv_evl_trace_worker_state(const char *tag,
 	riscv_evl_early_puts(buf);
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
+
+void riscv_evl_trace_smpboot_state(const char *tag,
+				   unsigned long cpu,
+				   unsigned long status,
+				   unsigned long selfparking,
+				   unsigned long should_park,
+				   unsigned long should_run)
+{
+	unsigned long flags;
+	char buf[192];
+	int len;
+
+	if (!riscv_evl_early_debug_enabled)
+		return;
+
+	len = scnprintf(buf, sizeof(buf),
+			"%s cpu=%#lx status=%#lx selfparking=%#lx should_park=%#lx should_run=%#lx\n",
+			tag, cpu, status, selfparking, should_park, should_run);
+
+	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
+	buf[len] = '\0';
+	riscv_evl_early_puts(buf);
+	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
+}

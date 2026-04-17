@@ -117,16 +117,12 @@ static int smpboot_thread_fn(void *data)
 		trace_cpuhp = td->cpu >= 1 && td->cpu <= 3 &&
 			!strncmp(current->comm, "cpuhp/", 6);
 #ifdef CONFIG_IRQ_PIPELINE
-		if (trace_cpuhp) {
-			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn cpu=",
-					      td->cpu);
-			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn status=",
-					      td->status);
-			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn selfparking=",
-					      ht->selfparking);
-			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn should_park=",
-					      kthread_should_park());
-		}
+		if (trace_cpuhp)
+			riscv_evl_trace_smpboot_state("EVLDBG smpboot_thread_fn enter",
+						      td->cpu, td->status,
+						      ht->selfparking,
+						      kthread_should_park(),
+						      ~0UL);
 #endif
 		set_current_state(TASK_INTERRUPTIBLE);
 		preempt_disable();
@@ -181,8 +177,11 @@ static int smpboot_thread_fn(void *data)
 		should_run = ht->thread_should_run(td->cpu);
 #ifdef CONFIG_IRQ_PIPELINE
 		if (trace_cpuhp)
-			riscv_evl_trace_ulong("EVLDBG smpboot_thread_fn should_run=",
-					      should_run);
+			riscv_evl_trace_smpboot_state("EVLDBG smpboot_thread_fn decision",
+						      td->cpu, td->status,
+						      ht->selfparking,
+						      kthread_should_park(),
+						      should_run);
 #endif
 		if (!should_run) {
 #ifdef CONFIG_IRQ_PIPELINE
