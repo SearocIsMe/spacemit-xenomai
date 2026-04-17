@@ -4917,6 +4917,10 @@ void wake_up_new_task(struct task_struct *p)
 {
 	struct rq_flags rf;
 	struct rq *rq;
+#ifdef CONFIG_IRQ_PIPELINE
+	bool trace_kworker_u = riscv_evl_trace_enabled() &&
+		!strncmp(p->comm, "kworker/u", 9);
+#endif
 
 	raw_spin_lock_irqsave(&p->pi_lock, rf.flags);
 	WRITE_ONCE(p->__state, TASK_RUNNING);
@@ -4931,12 +4935,35 @@ void wake_up_new_task(struct task_struct *p)
 	 */
 	p->recent_used_cpu = task_cpu(p);
 	rseq_migrate(p);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_kworker_u) {
+		riscv_evl_trace_ptr("EVLDBG wake_up_new_task task=", p);
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_before=",
+				      task_cpu(p));
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task wake_cpu=",
+				      p->wake_cpu);
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task cpus_ptr_first=",
+				      cpumask_first(p->cpus_ptr));
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task cpus_ptr_weight=",
+				      cpumask_weight(p->cpus_ptr));
+	}
+#endif
 	__set_task_cpu(p, select_task_rq(p, task_cpu(p), WF_FORK));
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_kworker_u)
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_after=",
+				      task_cpu(p));
+#endif
 #endif
 	rq = __task_rq_lock(p, &rf);
 	update_rq_clock(rq);
 	post_init_entity_util_avg(p);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_kworker_u)
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_cpu=",
+				      cpu_of(rq));
+#endif
 	activate_task(rq, p, ENQUEUE_NOCLOCK);
 	trace_sched_wakeup_new(p);
 	check_preempt_curr(rq, p, WF_FORK);
