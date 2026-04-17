@@ -4711,8 +4711,17 @@ static void wq_update_pod(struct workqueue_struct *wq, int cpu,
 #endif
 	pwq = rcu_dereference_protected(*per_cpu_ptr(wq->cpu_pwq, cpu),
 					lockdep_is_held(&wq_pool_mutex));
-	if (wqattrs_equal(target_attrs, pwq->pool->attrs))
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_target)
+		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 current_pwq=", pwq);
+#endif
+	if (wqattrs_equal(target_attrs, pwq->pool->attrs)) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (trace_target)
+			riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 attrs_equal\n");
+#endif
 		return;
+	}
 
 	/* create a new pwq */
 #ifdef CONFIG_IRQ_PIPELINE
