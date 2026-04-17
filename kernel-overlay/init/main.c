@@ -1357,10 +1357,25 @@ static void __init do_initcalls(void)
 static void __init do_basic_setup(void)
 {
 	cpuset_init_smp();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG do_basic_setup after cpuset_init_smp\n");
+#endif
 	driver_init();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG do_basic_setup after driver_init\n");
+#endif
 	init_irq_proc();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG do_basic_setup after init_irq_proc\n");
+#endif
 	do_ctors();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG do_basic_setup after do_ctors\n");
+#endif
 	do_initcalls();
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace("EVLDBG do_basic_setup after do_initcalls\n");
+#endif
 }
 
 static void __init do_pre_smp_initcalls(void)
