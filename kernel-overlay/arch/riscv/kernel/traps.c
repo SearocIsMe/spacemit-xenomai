@@ -522,7 +522,17 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack cpu=",
 				    raw_smp_processor_id());
 		riscv_evl_trace_ptr("EVLDBG handle_bad_stack current=", current);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack current_pid=",
+				    task_pid_nr(current));
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_cpu=",
+				    task_cpu(current));
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_sp=", regs->sp);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack ti_kernel_sp=",
+				    current->thread_info.kernel_sp);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack thread_sp=",
+				    current->thread.sp);
+		riscv_evl_trace_ptr("EVLDBG handle_bad_stack task_pt_regs=",
+				    task_pt_regs(current));
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_low=", tsk_stk);
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_high=",
 				    tsk_stk + THREAD_SIZE);
