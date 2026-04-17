@@ -6871,7 +6871,9 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 #ifdef CONFIG_IRQ_PIPELINE
 		if (cpu_of(rq) <= 3 &&
 		    (!strncmp(prev->comm, "cpuhp/", 6) ||
-		     !strncmp(next->comm, "cpuhp/", 6))) {
+		     !strncmp(next->comm, "cpuhp/", 6) ||
+		     !strncmp(prev->comm, "kworker/u", 9) ||
+		     !strncmp(next->comm, "kworker/u", 9))) {
 			riscv_evl_trace_sched_switch(cpu_of(rq),
 						     prev, prev->pid,
 						     task_cpu(prev),
