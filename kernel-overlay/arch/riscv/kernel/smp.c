@@ -134,6 +134,11 @@ static irqreturn_t handle_IPI(int irq, void *data)
 
 	switch (ipi) {
 	case IPI_RESCHEDULE:
+#ifdef CONFIG_IRQ_PIPELINE
+		riscv_evl_trace_ulong("EVLDBG handle_IPI resched cpu=",
+				      smp_processor_id());
+		riscv_evl_trace_ulong("EVLDBG handle_IPI resched irq=", irq);
+#endif
 		scheduler_ipi();
 		break;
 	case IPI_CALL_FUNC:
@@ -365,6 +370,9 @@ bool smp_crash_stop_failed(void)
 
 void arch_smp_send_reschedule(int cpu)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	riscv_evl_trace_ulong("EVLDBG arch_smp_send_reschedule cpu=", cpu);
+#endif
 	send_ipi_single(cpu, IPI_RESCHEDULE);
 }
 EXPORT_SYMBOL_GPL(arch_smp_send_reschedule);
