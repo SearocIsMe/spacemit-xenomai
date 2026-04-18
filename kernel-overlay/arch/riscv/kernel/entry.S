@@ -147,6 +147,10 @@ SYM_CODE_START_NOALIGN(ret_from_exception)
 	move a0, sp
 	call riscv_v_context_nesting_end
 #endif
+#ifdef CONFIG_IRQ_PIPELINE
+	move a0, sp
+	call irq_pipeline_ret_from_exception_sync
+#endif
 	REG_L a0, PT_STATUS(sp)
 	/*
 	 * The current load reservation is effectively part of the processor's
