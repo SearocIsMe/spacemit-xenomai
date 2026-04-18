@@ -1044,24 +1044,58 @@ void resched_curr(struct rq *rq)
 {
 	struct task_struct *curr = rq->curr;
 	int cpu;
+	bool sent_ipi;
 
 	lockdep_assert_rq_held(rq);
 
-	if (test_tsk_need_resched(curr))
+	if (riscv_evl_trace_enabled() && curr->pid == 0)
+		riscv_evl_trace_resched_state("EVLDBG resched_curr entry",
+					      cpu_of(rq), curr, curr->pid,
+					      test_tsk_need_resched(curr),
+					      preempt_count(),
+					      irqs_disabled());
+
+	if (test_tsk_need_resched(curr)) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && curr->pid == 0)
+			riscv_evl_trace("EVLDBG resched_curr already_need_resched\n");
+#endif
 		return;
+	}
 
 	cpu = cpu_of(rq);
 
 	if (cpu == smp_processor_id()) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && curr->pid == 0)
+			riscv_evl_trace_ulong("EVLDBG resched_curr local_cpu=", cpu);
+#endif
 		set_tsk_need_resched(curr);
 		set_preempt_need_resched();
 		return;
 	}
 
-	if (set_nr_and_not_polling(curr))
+	sent_ipi = set_nr_and_not_polling(curr);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && curr->pid == 0) {
+		riscv_evl_trace_ulong("EVLDBG resched_curr remote_cpu=", cpu);
+		riscv_evl_trace_ulong("EVLDBG resched_curr set_nr_and_not_polling=",
+				      sent_ipi);
+	}
+#endif
+	if (sent_ipi) {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && curr->pid == 0)
+			riscv_evl_trace("EVLDBG resched_curr send_ipi\n");
+#endif
 		smp_send_reschedule(cpu);
-	else
+	} else {
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && curr->pid == 0)
+			riscv_evl_trace("EVLDBG resched_curr no_ipi_polling\n");
+#endif
 		trace_sched_wake_idle_without_ipi(cpu);
+	}
 }
 
 void resched_cpu(int cpu)
