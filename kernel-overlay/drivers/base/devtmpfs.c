@@ -414,16 +414,22 @@ static noinline int __init devtmpfs_setup(void *p)
 {
 	int err;
 
+	riscv_evl_trace("EVLDBG devtmpfs_setup entry\n");
 	err = ksys_unshare(CLONE_NEWNS);
 	if (err)
 		goto out;
+	riscv_evl_trace("EVLDBG devtmpfs_setup after unshare\n");
 	err = init_mount("devtmpfs", "/", "devtmpfs", DEVTMPFS_MFLAGS, NULL);
 	if (err)
 		goto out;
+	riscv_evl_trace("EVLDBG devtmpfs_setup after init_mount\n");
 	init_chdir("/.."); /* will traverse into overmounted root */
+	riscv_evl_trace("EVLDBG devtmpfs_setup after init_chdir\n");
 	init_chroot(".");
+	riscv_evl_trace("EVLDBG devtmpfs_setup after init_chroot\n");
 out:
 	*(int *)p = err;
+	riscv_evl_trace("EVLDBG devtmpfs_setup exit\n");
 	return err;
 }
 
@@ -434,9 +440,12 @@ out:
  */
 static int __ref devtmpfsd(void *p)
 {
+	riscv_evl_trace("EVLDBG devtmpfsd entry\n");
 	int err = devtmpfs_setup(p);
 
+	riscv_evl_trace("EVLDBG devtmpfsd after setup\n");
 	complete(&setup_done);
+	riscv_evl_trace("EVLDBG devtmpfsd after complete\n");
 	if (err)
 		return err;
 	devtmpfs_work_loop();
