@@ -217,7 +217,7 @@ void riscv_evl_trace_resched_state(const char *tag,
 				   const void *task,
 				   long pid,
 				   unsigned long need_resched,
-				   unsigned long preempt_count,
+				   unsigned long preempt_count_value,
 				   unsigned long irqs_disabled)
 {
 	unsigned long flags;
@@ -229,7 +229,7 @@ void riscv_evl_trace_resched_state(const char *tag,
 
 	len = scnprintf(buf, sizeof(buf),
 			"%s cpu=%#lx task=%px pid=%ld need_resched=%#lx preempt_count=%#lx irqs_disabled=%#lx\n",
-			tag, cpu, task, pid, need_resched, preempt_count,
+			tag, cpu, task, pid, need_resched, preempt_count_value,
 			irqs_disabled);
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
