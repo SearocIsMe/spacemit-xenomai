@@ -23,6 +23,15 @@ void sched_idle_set_state(struct cpuidle_state *idle_state)
 
 static int __read_mostly cpu_idle_force_poll;
 
+static __always_inline unsigned long riscv_evl_idle_polling_flag(void)
+{
+#ifdef TIF_POLLING_NRFLAG
+	return test_ti_thread_flag(current_thread_info(), TIF_POLLING_NRFLAG);
+#else
+	return 0;
+#endif
+}
+
 void cpu_idle_poll_ctrl(bool enable)
 {
 	if (enable) {
@@ -302,8 +311,7 @@ static void do_idle(void)
 		riscv_evl_trace_idle_state("EVLDBG idle loop exit",
 					 cpu, current, current->pid,
 					 need_resched(),
-					 test_ti_thread_flag(current_thread_info(),
-							     TIF_POLLING_NRFLAG),
+					 riscv_evl_idle_polling_flag(),
 					 test_preempt_need_resched());
 #endif
 
@@ -325,8 +333,7 @@ static void do_idle(void)
 		riscv_evl_trace_idle_state("EVLDBG idle before schedule_idle",
 					 cpu, current, current->pid,
 					 need_resched(),
-					 test_ti_thread_flag(current_thread_info(),
-							     TIF_POLLING_NRFLAG),
+					 riscv_evl_idle_polling_flag(),
 					 test_preempt_need_resched());
 #endif
 	schedule_idle();
@@ -336,8 +343,7 @@ static void do_idle(void)
 		riscv_evl_trace_idle_state("EVLDBG idle after schedule_idle",
 					 cpu, current, current->pid,
 					 need_resched(),
-					 test_ti_thread_flag(current_thread_info(),
-							     TIF_POLLING_NRFLAG),
+					 riscv_evl_idle_polling_flag(),
 					 test_preempt_need_resched());
 #endif
 

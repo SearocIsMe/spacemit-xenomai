@@ -7234,6 +7234,17 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 {
 	enum ctx_state prev_state;
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current->pid == 0 &&
+	    raw_smp_processor_id() > 0)
+		riscv_evl_trace_resched_state("EVLDBG preempt_schedule_irq entry",
+					      raw_smp_processor_id(),
+					      current, current->pid,
+					      need_resched(),
+					      preempt_count(),
+					      irqs_disabled());
+#endif
+
 	if (irq_pipeline_debug()) {
 		/* Catch any weirdness in pipelined entry code. */
 		if (WARN_ON_ONCE(!running_inband()))
@@ -7252,6 +7263,15 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 		preempt_disable();
 		local_irq_enable();
 		__schedule(SM_PREEMPT);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && current->pid == 0 &&
+		    raw_smp_processor_id() > 0)
+			riscv_evl_trace_resched_state(
+				"EVLDBG preempt_schedule_irq after_schedule",
+				raw_smp_processor_id(), current, current->pid,
+				need_resched(), preempt_count(),
+				irqs_disabled());
+#endif
 		sync_inband_irqs();
 		local_irq_disable();
 		sched_preempt_enable_no_resched();
