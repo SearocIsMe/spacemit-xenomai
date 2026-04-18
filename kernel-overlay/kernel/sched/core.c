@@ -4920,6 +4920,8 @@ void wake_up_new_task(struct task_struct *p)
 #ifdef CONFIG_IRQ_PIPELINE
 	bool trace_kworker_u = riscv_evl_trace_enabled() &&
 		!strncmp(p->comm, "kworker/u", 9);
+	bool trace_kdevtmpfs = riscv_evl_trace_enabled() &&
+		!strcmp(p->comm, "kdevtmpfs");
 #endif
 
 	raw_spin_lock_irqsave(&p->pi_lock, rf.flags);
@@ -4936,7 +4938,7 @@ void wake_up_new_task(struct task_struct *p)
 	p->recent_used_cpu = task_cpu(p);
 	rseq_migrate(p);
 #ifdef CONFIG_IRQ_PIPELINE
-	if (trace_kworker_u) {
+	if (trace_kworker_u || trace_kdevtmpfs) {
 		riscv_evl_trace_ptr("EVLDBG wake_up_new_task task=", p);
 		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_before=",
 				      task_cpu(p));
@@ -4950,7 +4952,7 @@ void wake_up_new_task(struct task_struct *p)
 #endif
 	__set_task_cpu(p, select_task_rq(p, task_cpu(p), WF_FORK));
 #ifdef CONFIG_IRQ_PIPELINE
-	if (trace_kworker_u)
+	if (trace_kworker_u || trace_kdevtmpfs)
 		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_after=",
 				      task_cpu(p));
 #endif
@@ -4960,7 +4962,7 @@ void wake_up_new_task(struct task_struct *p)
 	post_init_entity_util_avg(p);
 
 #ifdef CONFIG_IRQ_PIPELINE
-	if (trace_kworker_u)
+	if (trace_kworker_u || trace_kdevtmpfs)
 		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_cpu=",
 				      cpu_of(rq));
 #endif
@@ -6873,7 +6875,9 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 		    (!strncmp(prev->comm, "cpuhp/", 6) ||
 		     !strncmp(next->comm, "cpuhp/", 6) ||
 		     !strncmp(prev->comm, "kworker/u", 9) ||
-		     !strncmp(next->comm, "kworker/u", 9))) {
+		     !strncmp(next->comm, "kworker/u", 9) ||
+		     !strcmp(prev->comm, "kdevtmpfs") ||
+		     !strcmp(next->comm, "kdevtmpfs"))) {
 			riscv_evl_trace_sched_switch(cpu_of(rq),
 						     prev, prev->pid,
 						     task_cpu(prev),
