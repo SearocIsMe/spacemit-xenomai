@@ -185,3 +185,29 @@ void riscv_evl_trace_task_stack_state(const char *tag,
 	riscv_evl_early_puts(buf);
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
+
+void riscv_evl_trace_idle_state(const char *tag,
+				unsigned long cpu,
+				const void *task,
+				long pid,
+				unsigned long need_resched,
+				unsigned long polling,
+				unsigned long preempt_need_resched)
+{
+	unsigned long flags;
+	char buf[224];
+	int len;
+
+	if (!riscv_evl_early_debug_enabled)
+		return;
+
+	len = scnprintf(buf, sizeof(buf),
+			"%s cpu=%#lx task=%px pid=%ld need_resched=%#lx polling=%#lx preempt_need_resched=%#lx\n",
+			tag, cpu, task, pid, need_resched, polling,
+			preempt_need_resched);
+
+	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
+	buf[len] = '\0';
+	riscv_evl_early_puts(buf);
+	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
+}

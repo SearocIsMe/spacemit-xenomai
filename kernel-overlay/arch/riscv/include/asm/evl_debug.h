@@ -48,6 +48,13 @@ void riscv_evl_trace_task_stack_state(const char *tag,
 				      unsigned long ti_kernel_sp,
 				      unsigned long thread_sp,
 				      const void *task_regs);
+void riscv_evl_trace_idle_state(const char *tag,
+				unsigned long cpu,
+				const void *task,
+				long pid,
+				unsigned long need_resched,
+				unsigned long polling,
+				unsigned long preempt_need_resched);
 
 static inline void riscv_evl_trace(const char *tag)
 {
@@ -123,6 +130,13 @@ static inline void riscv_evl_trace_task_stack_state(const char *tag,
 						    unsigned long ti_kernel_sp,
 						    unsigned long thread_sp,
 						    const void *task_regs) { }
+static inline void riscv_evl_trace_idle_state(const char *tag,
+					      unsigned long cpu,
+					      const void *task,
+					      long pid,
+					      unsigned long need_resched,
+					      unsigned long polling,
+					      unsigned long preempt_need_resched) { }
 static inline void riscv_evl_trace(const char *tag) { }
 static inline bool riscv_evl_trace_enabled(void) { return false; }
 static inline void riscv_evl_trace_ulong(const char *prefix, unsigned long value) { }
