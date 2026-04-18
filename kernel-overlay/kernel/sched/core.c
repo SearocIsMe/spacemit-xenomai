@@ -4984,6 +4984,18 @@ void wake_up_new_task(struct task_struct *p)
 #endif
 	trace_sched_wakeup_new(p);
 	check_preempt_curr(rq, p, WF_FORK);
+#ifdef CONFIG_IRQ_PIPELINE
+	if (trace_special_kthread) {
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_need_resched=",
+				      test_tsk_need_resched(rq->curr));
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_on_rq=",
+				      task_on_rq_queued(rq->curr));
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_prio=",
+				      rq->curr->prio);
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task p_prio=",
+				      p->prio);
+	}
+#endif
 #ifdef CONFIG_SMP
 	if (p->sched_class->task_woken) {
 		/*
