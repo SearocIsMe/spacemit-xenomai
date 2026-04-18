@@ -182,6 +182,14 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 	bool stalled;
 	unsigned int cpu;
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current->pid == 0)
+		riscv_evl_trace_resched_state(
+			"EVLDBG irq_stack_tail_sync entry",
+			raw_smp_processor_id(), current, current->pid,
+			need_resched(), preempt_count(), irqs_disabled());
+#endif
+
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
@@ -206,6 +214,13 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 	riscv_evl_trace_ulong("EVLDBG thread_stack_tail cpu=", cpu);
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current->pid == 0)
+		riscv_evl_trace_resched_state(
+			"EVLDBG irq_stack_tail_sync after_sync",
+			raw_smp_processor_id(), current, current->pid,
+			need_resched(), preempt_count(), irqs_disabled());
+#endif
 	if (stalled)
 		stall_inband_nocheck();
 }
