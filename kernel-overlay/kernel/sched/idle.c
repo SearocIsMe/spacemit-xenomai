@@ -441,6 +441,17 @@ balance_idle(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
  */
 static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int flags)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() &&
+	    (!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"))) {
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle cpu=", cpu_of(rq));
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr_idle curr=", rq->curr);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle curr_pid=",
+				      rq->curr ? rq->curr->pid : 0);
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr_idle p=", p);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle p_pid=", p->pid);
+	}
+#endif
 	resched_curr(rq);
 }
 
