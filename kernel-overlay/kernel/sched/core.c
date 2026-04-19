@@ -2260,13 +2260,21 @@ void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 		(!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"));
 	if (trace_special_kthread) {
 		riscv_evl_trace_ulong("EVLDBG check_preempt_curr cpu=", cpu_of(rq));
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr curr=", rq->curr);
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr idle=", rq->idle);
 		riscv_evl_trace_ptr("EVLDBG check_preempt_curr curr_class=",
 				    rq->curr->sched_class);
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr idle_class=",
+				    rq->idle->sched_class);
 		riscv_evl_trace_ptr("EVLDBG check_preempt_curr p_class=",
 				    p->sched_class);
 		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_pid=",
 				      rq->curr ? rq->curr->pid : 0);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr idle_pid=",
+				      rq->idle ? rq->idle->pid : 0);
 		riscv_evl_trace_ulong("EVLDBG check_preempt_curr p_pid=", p->pid);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_eq_idle=",
+				      rq->curr == rq->idle);
 		riscv_evl_trace_ulong("EVLDBG check_preempt_curr same_class=",
 				      p->sched_class == rq->curr->sched_class);
 		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_is_idle=",
@@ -5032,8 +5040,14 @@ void wake_up_new_task(struct task_struct *p)
 				      rq->nr_running);
 		riscv_evl_trace_ptr("EVLDBG wake_up_new_task rq_curr=",
 				    rq->curr);
+		riscv_evl_trace_ptr("EVLDBG wake_up_new_task rq_idle=",
+				    rq->idle);
 		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_curr_pid=",
 				      rq->curr ? rq->curr->pid : 0);
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_idle_pid=",
+				      rq->idle ? rq->idle->pid : 0);
+		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_eq_idle=",
+				      rq->curr == rq->idle);
 		riscv_evl_trace("EVLDBG wake_up_new_task before check_preempt_curr\n");
 	}
 #endif
