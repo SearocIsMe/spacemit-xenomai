@@ -40,6 +40,11 @@ int show_unhandled_signals = 1;
 
 static DEFINE_SPINLOCK(die_lock);
 
+#ifdef CONFIG_GENERIC_BUG
+static DEFINE_PER_CPU(unsigned long, riscv_last_warn_bugaddr);
+static DEFINE_PER_CPU(unsigned long, riscv_last_warn_epc_after);
+#endif
+
 #ifdef CONFIG_IRQ_PIPELINE
 static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
 {
@@ -345,6 +350,11 @@ static bool probe_breakpoint_handler(struct pt_regs *regs)
 
 void handle_break(struct pt_regs *regs)
 {
+#ifdef CONFIG_GENERIC_BUG
+	unsigned long bugaddr = regs->epc;
+	enum bug_trap_type bug_type = BUG_TRAP_TYPE_NONE;
+#endif
+
 	if (probe_single_step_handler(regs))
 		return;
 
@@ -360,9 +370,21 @@ void handle_break(struct pt_regs *regs)
 								== NOTIFY_STOP)
 		return;
 #endif
-	else if (report_bug(regs->epc, regs) == BUG_TRAP_TYPE_WARN ||
-		 handle_cfi_failure(regs) == BUG_TRAP_TYPE_WARN)
-		regs->epc += get_break_insn_length(regs->epc);
+	else if (({
+			bool warned = false;
+
+#ifdef CONFIG_GENERIC_BUG
+			bug_type = report_bug(regs->epc, regs);
+			if (bug_type == BUG_TRAP_TYPE_WARN) {
+				this_cpu_write(riscv_last_warn_bugaddr, bugaddr);
+				regs->epc += get_break_insn_length(regs->epc);
+				this_cpu_write(riscv_last_warn_epc_after, regs->epc);
+				warned = true;
+			}
+#endif
+			warned;
+		 }) || handle_cfi_failure(regs) == BUG_TRAP_TYPE_WARN)
+		;
 	else
 		die(regs, "Kernel BUG");
 }
@@ -620,6 +642,14 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("EVLDBG handle_bad_stack task_cpu=");
 		riscv_evl_early_puthex_ulong(task_cpu(current));
 		riscv_evl_early_puts("\n");
+#ifdef CONFIG_GENERIC_BUG
+		riscv_evl_early_puts("EVLDBG handle_bad_stack last_warn_bugaddr=");
+		riscv_evl_early_puthex_ulong(this_cpu_read(riscv_last_warn_bugaddr));
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack last_warn_epc_after=");
+		riscv_evl_early_puthex_ulong(this_cpu_read(riscv_last_warn_epc_after));
+		riscv_evl_early_puts("\n");
+#endif
 		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_epc=");
 		riscv_evl_early_puthex_ulong(regs->epc);
 		riscv_evl_early_puts("\n");
