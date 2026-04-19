@@ -442,6 +442,69 @@ asmlinkage __visible __trap_section void do_trap_ecall_u(struct pt_regs *regs)
 }
 
 #ifdef CONFIG_MMU
+static __always_inline void riscv_evl_dump_lowaddr_fault(struct pt_regs *regs)
+{
+	unsigned long tsk_stk = (unsigned long)current->stack;
+
+	if (!riscv_evl_early_debug_enabled || user_mode(regs) ||
+	    regs->badaddr >= PAGE_SIZE)
+		return;
+
+	riscv_evl_early_puts("EVLDBG lowaddr_fault cpu=");
+	riscv_evl_early_puthex_ulong(raw_smp_processor_id());
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault current=");
+	riscv_evl_early_puthex_ulong((unsigned long)current);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault current_pid=");
+	riscv_evl_early_puthex_ulong(task_pid_nr(current));
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault current_comm=");
+	riscv_evl_early_puts(current->comm);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault task_cpu=");
+	riscv_evl_early_puthex_ulong(task_cpu(current));
+	riscv_evl_early_puts("\n");
+#ifdef CONFIG_GENERIC_BUG
+	riscv_evl_early_puts("EVLDBG lowaddr_fault last_warn_bugaddr=");
+	riscv_evl_early_puthex_ulong(this_cpu_read(riscv_last_warn_bugaddr));
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault last_warn_epc_after=");
+	riscv_evl_early_puthex_ulong(this_cpu_read(riscv_last_warn_epc_after));
+	riscv_evl_early_puts("\n");
+#endif
+	riscv_evl_early_puts("EVLDBG lowaddr_fault regs_epc=");
+	riscv_evl_early_puthex_ulong(regs->epc);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault regs_ra=");
+	riscv_evl_early_puthex_ulong(regs->ra);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault regs_cause=");
+	riscv_evl_early_puthex_ulong(regs->cause);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault regs_sp=");
+	riscv_evl_early_puthex_ulong(regs->sp);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault regs_badaddr=");
+	riscv_evl_early_puthex_ulong(regs->badaddr);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault ti_kernel_sp=");
+	riscv_evl_early_puthex_ulong(current->thread_info.kernel_sp);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault thread_sp=");
+	riscv_evl_early_puthex_ulong(current->thread.sp);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault task_pt_regs=");
+	riscv_evl_early_puthex_ulong((unsigned long)task_pt_regs(current));
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault task_stack_low=");
+	riscv_evl_early_puthex_ulong(tsk_stk);
+	riscv_evl_early_puts("\n");
+	riscv_evl_early_puts("EVLDBG lowaddr_fault task_stack_high=");
+	riscv_evl_early_puthex_ulong(tsk_stk + THREAD_SIZE);
+	riscv_evl_early_puts("\n");
+}
+
 asmlinkage __visible noinstr void do_page_fault(struct pt_regs *regs)
 {
 	bool notify_exit;
@@ -451,6 +514,8 @@ asmlinkage __visible noinstr void do_page_fault(struct pt_regs *regs)
 		irqentry_exit(regs, state);
 		return;
 	}
+
+	riscv_evl_dump_lowaddr_fault(regs);
 
 	handle_page_fault(regs);
 
