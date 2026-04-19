@@ -33,75 +33,14 @@ static void sbi_ipi_handle(struct irq_desc *desc)
 		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle cpu=",
 				      smp_processor_id());
 	}
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
-	    !strcmp(current->comm, "cpuhp/1")) {
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ip_before=",
-				      csr_read(CSR_IP));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ie_before=",
-				      csr_read(CSR_IE));
-		riscv_evl_trace_task_stack_state(
-			"EVLDBG sbi_ipi_handle before enter",
-			smp_processor_id(), current, task_pid_nr(current),
-			task_cpu(current), current_stack_pointer,
-			current->thread_info.kernel_sp, current->thread.sp,
-			task_pt_regs(current));
-	}
 #endif
 
 	chained_irq_enter(chip, desc);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
-	    !strcmp(current->comm, "cpuhp/1")) {
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ip_after_enter=",
-				      csr_read(CSR_IP));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ie_after_enter=",
-				      csr_read(CSR_IE));
-	}
-#endif
 
 	csr_clear(CSR_IP, IE_SIE);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
-	    !strcmp(current->comm, "cpuhp/1")) {
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ip_after_clear=",
-				      csr_read(CSR_IP));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ie_after_clear=",
-				      csr_read(CSR_IE));
-	}
-#endif
 	ipi_mux_process();
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
-	    !strcmp(current->comm, "cpuhp/1")) {
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ip_after_mux=",
-				      csr_read(CSR_IP));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ie_after_mux=",
-				      csr_read(CSR_IE));
-		riscv_evl_trace_task_stack_state(
-			"EVLDBG sbi_ipi_handle before exit",
-			smp_processor_id(), current, task_pid_nr(current),
-			task_cpu(current), current_stack_pointer,
-			current->thread_info.kernel_sp, current->thread.sp,
-			task_pt_regs(current));
-	}
-#endif
 
 	chained_irq_exit(chip, desc);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
-	    !strcmp(current->comm, "cpuhp/1")) {
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ip_after_exit=",
-				      csr_read(CSR_IP));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle csr_ie_after_exit=",
-				      csr_read(CSR_IE));
-		riscv_evl_trace_task_stack_state(
-			"EVLDBG sbi_ipi_handle after exit",
-			smp_processor_id(), current, task_pid_nr(current),
-			task_cpu(current), current_stack_pointer,
-			current->thread_info.kernel_sp, current->thread.sp,
-			task_pt_regs(current));
-	}
-#endif
 }
 
 static int sbi_ipi_starting_cpu(unsigned int cpu)

@@ -143,26 +143,8 @@ static irqreturn_t handle_IPI(int irq, void *data)
 		riscv_evl_trace_ulong("EVLDBG handle_IPI resched cpu=",
 				      smp_processor_id());
 		riscv_evl_trace_ulong("EVLDBG handle_IPI resched irq=", irq);
-		if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1"))
-			riscv_evl_trace_task_stack_state(
-				"EVLDBG handle_IPI resched before",
-				smp_processor_id(), current, task_pid_nr(current),
-				task_cpu(current), current_sp,
-				current->thread_info.kernel_sp,
-				current->thread.sp, task_pt_regs(current));
 #endif
 		scheduler_ipi();
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1")) {
-			current_sp = sp_reg;
-			riscv_evl_trace_task_stack_state(
-				"EVLDBG handle_IPI resched after",
-				smp_processor_id(), current, task_pid_nr(current),
-				task_cpu(current), current_sp,
-				current->thread_info.kernel_sp,
-				current->thread.sp, task_pt_regs(current));
-		}
-#endif
 		break;
 	case IPI_CALL_FUNC:
 #ifdef CONFIG_IRQ_PIPELINE
