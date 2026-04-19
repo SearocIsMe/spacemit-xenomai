@@ -520,6 +520,11 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long caller8_fp = 0, caller8_ra = 0;
 	unsigned long caller9_fp = 0, caller9_ra = 0;
 	unsigned long caller10_fp = 0, caller10_ra = 0;
+	unsigned long caller11_fp = 0, caller11_ra = 0;
+	unsigned long caller12_fp = 0, caller12_ra = 0;
+	unsigned long caller13_fp = 0, caller13_ra = 0;
+	unsigned long caller14_fp = 0, caller14_ra = 0;
+	unsigned long caller15_fp = 0, caller15_ra = 0;
 
 	if (fp >= tsk_stk + 16 && fp <= stk_hi) {
 		saved_fp = *(unsigned long *)(fp - 16);
@@ -562,6 +567,31 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 											    caller9_fp <= stk_hi) {
 												caller10_fp = *(unsigned long *)(caller9_fp - 16);
 												caller10_ra = *(unsigned long *)(caller9_fp - 8);
+												if (caller10_fp >= tsk_stk + 16 &&
+												    caller10_fp <= stk_hi) {
+													caller11_fp = *(unsigned long *)(caller10_fp - 16);
+													caller11_ra = *(unsigned long *)(caller10_fp - 8);
+													if (caller11_fp >= tsk_stk + 16 &&
+													    caller11_fp <= stk_hi) {
+														caller12_fp = *(unsigned long *)(caller11_fp - 16);
+														caller12_ra = *(unsigned long *)(caller11_fp - 8);
+														if (caller12_fp >= tsk_stk + 16 &&
+														    caller12_fp <= stk_hi) {
+															caller13_fp = *(unsigned long *)(caller12_fp - 16);
+															caller13_ra = *(unsigned long *)(caller12_fp - 8);
+															if (caller13_fp >= tsk_stk + 16 &&
+															    caller13_fp <= stk_hi) {
+																caller14_fp = *(unsigned long *)(caller13_fp - 16);
+																caller14_ra = *(unsigned long *)(caller13_fp - 8);
+																if (caller14_fp >= tsk_stk + 16 &&
+																    caller14_fp <= stk_hi) {
+																	caller15_fp = *(unsigned long *)(caller14_fp - 16);
+																	caller15_ra = *(unsigned long *)(caller14_fp - 8);
+																}
+															}
+														}
+													}
+												}
 											}
 										}
 									}
@@ -691,6 +721,36 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack caller10_ra=");
 		riscv_evl_early_puthex_ulong(caller10_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller11_fp=");
+		riscv_evl_early_puthex_ulong(caller11_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller11_ra=");
+		riscv_evl_early_puthex_ulong(caller11_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller12_fp=");
+		riscv_evl_early_puthex_ulong(caller12_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller12_ra=");
+		riscv_evl_early_puthex_ulong(caller12_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller13_fp=");
+		riscv_evl_early_puthex_ulong(caller13_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller13_ra=");
+		riscv_evl_early_puthex_ulong(caller13_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller14_fp=");
+		riscv_evl_early_puthex_ulong(caller14_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller14_ra=");
+		riscv_evl_early_puthex_ulong(caller14_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller15_fp=");
+		riscv_evl_early_puthex_ulong(caller15_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller15_ra=");
+		riscv_evl_early_puthex_ulong(caller15_ra);
 		riscv_evl_early_puts("\n");
 	}
 
