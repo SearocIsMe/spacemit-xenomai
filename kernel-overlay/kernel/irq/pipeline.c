@@ -218,6 +218,14 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 			"EVLDBG irq_stack_tail_sync entry",
 			raw_smp_processor_id(), current, current->pid,
 			need_resched(), preempt_count(), irqs_disabled());
+	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	    !strcmp(current->comm, "cpuhp/1"))
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG irq_stack_tail_sync cpuhp entry",
+			raw_smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_stack_pointer,
+			current->thread_info.kernel_sp, current->thread.sp,
+			task_pt_regs(current));
 #endif
 
 	if (!__this_cpu_read(urgent_ipi_sync_request))
@@ -235,6 +243,16 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 	cpu = smp_processor_id();
 	if (cpu != 0) {
 		riscv_evl_trace_ulong("EVLDBG thread_stack_tail skip_cpu=", cpu);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+		    !strcmp(current->comm, "cpuhp/1"))
+			riscv_evl_trace_task_stack_state(
+				"EVLDBG irq_stack_tail_sync cpuhp skip_cpu",
+				raw_smp_processor_id(), current, task_pid_nr(current),
+				task_cpu(current), current_stack_pointer,
+				current->thread_info.kernel_sp, current->thread.sp,
+				task_pt_regs(current));
+#endif
 		return;
 	}
 
@@ -250,6 +268,14 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 			"EVLDBG irq_stack_tail_sync after_sync",
 			raw_smp_processor_id(), current, current->pid,
 			need_resched(), preempt_count(), irqs_disabled());
+	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	    !strcmp(current->comm, "cpuhp/1"))
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG irq_stack_tail_sync cpuhp after_sync",
+			raw_smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_stack_pointer,
+			current->thread_info.kernel_sp, current->thread.sp,
+			task_pt_regs(current));
 #endif
 	if (stalled)
 		stall_inband_nocheck();
