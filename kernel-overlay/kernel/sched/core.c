@@ -2253,6 +2253,26 @@ static inline void check_class_changed(struct rq *rq, struct task_struct *p,
 
 void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
+	bool trace_special_kthread = false;
+
+#ifdef CONFIG_IRQ_PIPELINE
+	trace_special_kthread = riscv_evl_trace_enabled() &&
+		(!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"));
+	if (trace_special_kthread) {
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr cpu=", cpu_of(rq));
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr curr_class=",
+				    rq->curr->sched_class);
+		riscv_evl_trace_ptr("EVLDBG check_preempt_curr p_class=",
+				    p->sched_class);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_pid=",
+				      rq->curr ? rq->curr->pid : 0);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr p_pid=", p->pid);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr same_class=",
+				      p->sched_class == rq->curr->sched_class);
+		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_is_idle=",
+				      rq->curr->sched_class == &idle_sched_class);
+	}
+#endif
 	if (p->sched_class == rq->curr->sched_class)
 		rq->curr->sched_class->check_preempt_curr(rq, p, flags);
 	else if (sched_class_above(p->sched_class, rq->curr->sched_class))
