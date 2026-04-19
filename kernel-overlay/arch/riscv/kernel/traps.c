@@ -509,7 +509,9 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long ovf_stk = (unsigned long)this_cpu_ptr(overflow_stack);
 	unsigned long stk_hi = tsk_stk + THREAD_SIZE;
 	unsigned long fp = frame_pointer(regs);
-	unsigned long saved_fp = 0, saved_ra = 0, caller_fp = 0, caller_ra = 0;
+	unsigned long saved_fp = 0, saved_ra = 0;
+	unsigned long caller_fp = 0, caller_ra = 0;
+	unsigned long caller2_fp = 0, caller2_ra = 0;
 
 	if (fp >= tsk_stk + 16 && fp <= stk_hi) {
 		saved_fp = *(unsigned long *)(fp - 16);
@@ -517,6 +519,10 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		if (saved_fp >= tsk_stk + 16 && saved_fp <= stk_hi) {
 			caller_fp = *(unsigned long *)(saved_fp - 16);
 			caller_ra = *(unsigned long *)(saved_fp - 8);
+			if (caller_fp >= tsk_stk + 16 && caller_fp <= stk_hi) {
+				caller2_fp = *(unsigned long *)(caller_fp - 16);
+				caller2_ra = *(unsigned long *)(caller_fp - 8);
+			}
 		}
 	}
 
@@ -583,6 +589,12 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack caller_ra=");
 		riscv_evl_early_puthex_ulong(caller_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller2_fp=");
+		riscv_evl_early_puthex_ulong(caller2_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller2_ra=");
+		riscv_evl_early_puthex_ulong(caller2_ra);
 		riscv_evl_early_puts("\n");
 	}
 
