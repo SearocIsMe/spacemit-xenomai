@@ -507,6 +507,18 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 {
 	unsigned long tsk_stk = (unsigned long)current->stack;
 	unsigned long ovf_stk = (unsigned long)this_cpu_ptr(overflow_stack);
+	unsigned long stk_hi = tsk_stk + THREAD_SIZE;
+	unsigned long fp = frame_pointer(regs);
+	unsigned long saved_fp = 0, saved_ra = 0, caller_fp = 0, caller_ra = 0;
+
+	if (fp >= tsk_stk + 16 && fp <= stk_hi) {
+		saved_fp = *(unsigned long *)(fp - 16);
+		saved_ra = *(unsigned long *)(fp - 8);
+		if (saved_fp >= tsk_stk + 16 && saved_fp <= stk_hi) {
+			caller_fp = *(unsigned long *)(saved_fp - 16);
+			caller_ra = *(unsigned long *)(saved_fp - 8);
+		}
+	}
 
 	if (riscv_evl_early_debug_enabled) {
 		riscv_evl_early_puts("EVLDBG handle_bad_stack cpu=");
@@ -536,6 +548,9 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_sp=");
 		riscv_evl_early_puthex_ulong(regs->sp);
 		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_s0=");
+		riscv_evl_early_puthex_ulong(fp);
+		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack ti_kernel_sp=");
 		riscv_evl_early_puthex_ulong(current->thread_info.kernel_sp);
 		riscv_evl_early_puts("\n");
@@ -556,6 +571,18 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack overflow_high=");
 		riscv_evl_early_puthex_ulong(ovf_stk + OVERFLOW_STACK_SIZE);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack frame_saved_fp=");
+		riscv_evl_early_puthex_ulong(saved_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack frame_saved_ra=");
+		riscv_evl_early_puthex_ulong(saved_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller_fp=");
+		riscv_evl_early_puthex_ulong(caller_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller_ra=");
+		riscv_evl_early_puthex_ulong(caller_ra);
 		riscv_evl_early_puts("\n");
 	}
 
