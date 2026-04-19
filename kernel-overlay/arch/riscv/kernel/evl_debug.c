@@ -17,6 +17,7 @@ static DEFINE_RAW_SPINLOCK(riscv_evl_trace_lock);
 static int __init setup_riscv_evl_early_debug(char *arg)
 {
 	riscv_evl_early_debug_enabled = true;
+	riscv_evl_runtime_trace_enabled = false;
 	return 0;
 }
 early_param("evl_debug", setup_riscv_evl_early_debug);

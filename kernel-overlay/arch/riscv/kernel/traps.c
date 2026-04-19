@@ -43,7 +43,7 @@ static DEFINE_SPINLOCK(die_lock);
 #ifdef CONFIG_IRQ_PIPELINE
 static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
 {
-	if (*done)
+	if (*done || !riscv_evl_trace_enabled())
 		return;
 
 	*done = true;
