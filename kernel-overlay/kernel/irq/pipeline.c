@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
+#include <linux/string.h>
 #include <asm/evl_debug.h>
 #include <asm/ptrace.h>
 #include <dovetail/irq.h>
@@ -159,6 +160,9 @@ static void irq_pipeline_request_urgent_ipi_sync(void)
 
 asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 {
+	unsigned long current_sp;
+	register unsigned long sp_reg asm("sp");
+
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
@@ -173,8 +177,26 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 
 	__this_cpu_write(urgent_ipi_sync_request, false);
 	riscv_evl_trace("EVLDBG ret_from_exception ipi_sync\n");
+	if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1")) {
+		current_sp = sp_reg;
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG ret_from_exception before_sync",
+			raw_smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_sp,
+			current->thread_info.kernel_sp,
+			current->thread.sp, task_pt_regs(current));
+	}
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
+	if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1")) {
+		current_sp = sp_reg;
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG ret_from_exception after_sync",
+			raw_smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_sp,
+			current->thread_info.kernel_sp,
+			current->thread.sp, task_pt_regs(current));
+	}
 }
 
 asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
