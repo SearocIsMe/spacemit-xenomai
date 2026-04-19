@@ -1346,7 +1346,29 @@ static void cpuhp_thread_fun(unsigned int cpu)
 	if (cpuhp_is_atomic_state(state)) {
 		local_irq_disable();
 		st->result = cpuhp_invoke_callback(cpu, state, bringup, st->node, &st->last);
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu >= 1 && cpu <= 3)
+			riscv_evl_trace_task_stack_state("EVLDBG cpuhp_thread_fun before local_irq_enable",
+							 cpu, current,
+							 task_pid_nr(current),
+							 task_cpu(current),
+							 current_stack_pointer,
+							 current->thread_info.kernel_sp,
+							 current->thread.sp,
+							 task_pt_regs(current));
+#endif
 		local_irq_enable();
+#ifdef CONFIG_IRQ_PIPELINE
+		if (cpu >= 1 && cpu <= 3)
+			riscv_evl_trace_task_stack_state("EVLDBG cpuhp_thread_fun after local_irq_enable",
+							 cpu, current,
+							 task_pid_nr(current),
+							 task_cpu(current),
+							 current_stack_pointer,
+							 current->thread_info.kernel_sp,
+							 current->thread.sp,
+							 task_pt_regs(current));
+#endif
 
 		/*
 		 * STARTING/DYING must not fail!
