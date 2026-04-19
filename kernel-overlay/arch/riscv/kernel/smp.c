@@ -21,6 +21,7 @@
 #include <linux/delay.h>
 #include <linux/irq.h>
 #include <linux/irq_work.h>
+#include <linux/string.h>
 
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
@@ -119,9 +120,13 @@ void arch_irq_work_raise(void)
 static irqreturn_t handle_IPI(int irq, void *data)
 {
 	int ipi = irq - ipi_virq_base;
+	unsigned long current_sp;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_ipi_count;
 #endif
+
+	register unsigned long sp_reg asm("sp");
+	current_sp = sp_reg;
 
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_ipi_count < 32) {
@@ -138,8 +143,26 @@ static irqreturn_t handle_IPI(int irq, void *data)
 		riscv_evl_trace_ulong("EVLDBG handle_IPI resched cpu=",
 				      smp_processor_id());
 		riscv_evl_trace_ulong("EVLDBG handle_IPI resched irq=", irq);
+		if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1"))
+			riscv_evl_trace_task_stack_state(
+				"EVLDBG handle_IPI resched before",
+				smp_processor_id(), current, task_pid_nr(current),
+				task_cpu(current), current_sp,
+				current->thread_info.kernel_sp,
+				current->thread.sp, task_pt_regs(current));
 #endif
 		scheduler_ipi();
+#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled() && !strcmp(current->comm, "cpuhp/1")) {
+			current_sp = sp_reg;
+			riscv_evl_trace_task_stack_state(
+				"EVLDBG handle_IPI resched after",
+				smp_processor_id(), current, task_pid_nr(current),
+				task_cpu(current), current_sp,
+				current->thread_info.kernel_sp,
+				current->thread.sp, task_pt_regs(current));
+		}
+#endif
 		break;
 	case IPI_CALL_FUNC:
 #ifdef CONFIG_IRQ_PIPELINE
