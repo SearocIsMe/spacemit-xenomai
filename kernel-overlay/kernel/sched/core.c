@@ -5501,7 +5501,6 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	__releases(rq->lock)
 {
 #ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int trace_schedule_tail_count;
 	bool ipi_pending = false;
 #endif
 	/*
@@ -5521,40 +5520,18 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	 * stage.
 	 */
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_schedule_tail_count < 16) {
-		trace_schedule_tail_count++;
-		riscv_evl_trace("EVLDBG schedule_tail entry\n");
-	}
-#endif
 	WARN_ON_ONCE(irq_pipeline_debug() && !irqs_disabled());
 	oob_trampoline();
 	finish_task_switch(prev);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_schedule_tail_count <= 16)
-		riscv_evl_trace("EVLDBG schedule_tail after finish_task_switch\n");
-#endif
 	preempt_enable();
 #ifdef CONFIG_IRQ_PIPELINE
-	if (trace_schedule_tail_count <= 16)
-		riscv_evl_trace("EVLDBG schedule_tail after preempt_enable\n");
 #else
 	hard_cond_local_irq_enable();
 #endif
 #ifdef CONFIG_IRQ_PIPELINE
-	if (trace_schedule_tail_count <= 16)
-		riscv_evl_trace("EVLDBG schedule_tail skip hard_cond_local_irq_enable\n");
-
 	if (system_state == SYSTEM_SCHEDULING) {
 		if (irq_pipeline_take_deferred_sync()) {
 			ipi_pending = irq_pipeline_ipi_pending();
-
-			if (trace_schedule_tail_count <= 16) {
-				if (ipi_pending)
-					riscv_evl_trace("EVLDBG schedule_tail ipi_sync\n");
-				else
-					riscv_evl_trace("EVLDBG schedule_tail deferred_sync\n");
-			}
 			sync_current_irq_stage();
 		}
 	}

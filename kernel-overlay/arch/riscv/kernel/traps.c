@@ -475,16 +475,6 @@ asmlinkage void noinstr do_irq(struct pt_regs *regs)
 {
 	irqentry_state_t state = irqentry_enter(regs);
 
-#ifdef CONFIG_IRQ_PIPELINE
-	static bool trace_do_irq_seen;
-	riscv_evl_trace_once(&trace_do_irq_seen, "EVLDBG do_irq entry\n");
-	if (irqs_pipelined()) {
-		riscv_evl_trace("EVLDBG do_irq pipelined\n");
-		riscv_evl_trace_ulong("EVLDBG do_irq status=", regs->status);
-		riscv_evl_trace_ulong("EVLDBG do_irq cause=", regs->cause);
-	}
-#endif
-
 	if (IS_ENABLED(CONFIG_IRQ_STACKS) && on_thread_stack())
 		call_on_irq_stack(regs, handle_riscv_irq);
 	else

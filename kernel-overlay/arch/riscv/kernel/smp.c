@@ -120,38 +120,12 @@ void arch_irq_work_raise(void)
 static irqreturn_t handle_IPI(int irq, void *data)
 {
 	int ipi = irq - ipi_virq_base;
-	unsigned long current_sp;
-#ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int trace_ipi_count;
-#endif
-
-	register unsigned long sp_reg asm("sp");
-	current_sp = sp_reg;
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_ipi_count < 32) {
-		trace_ipi_count++;
-		riscv_evl_trace_ulong("EVLDBG handle_IPI irq=", irq);
-		riscv_evl_trace_ulong("EVLDBG handle_IPI ipi=", ipi);
-		riscv_evl_trace_ulong("EVLDBG handle_IPI cpu=", smp_processor_id());
-	}
-#endif
 
 	switch (ipi) {
 	case IPI_RESCHEDULE:
-#ifdef CONFIG_IRQ_PIPELINE
-		riscv_evl_trace_ulong("EVLDBG handle_IPI resched cpu=",
-				      smp_processor_id());
-		riscv_evl_trace_ulong("EVLDBG handle_IPI resched irq=", irq);
-#endif
 		scheduler_ipi();
 		break;
 	case IPI_CALL_FUNC:
-#ifdef CONFIG_IRQ_PIPELINE
-		riscv_evl_trace("EVLDBG handle_IPI call_func\n");
-		riscv_evl_trace_ulong("EVLDBG handle_IPI call_func cpu=",
-				      smp_processor_id());
-#endif
 		generic_smp_call_function_interrupt();
 		break;
 	case IPI_CPU_STOP:

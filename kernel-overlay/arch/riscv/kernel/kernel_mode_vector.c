@@ -155,34 +155,17 @@ asmlinkage void riscv_v_context_nesting_end(struct pt_regs *regs)
 
 	WARN_ON(!irqs_disabled());
 
-	if (riscv_evl_trace_enabled()) {
-		riscv_evl_trace_hex("EVLDBG riscv_v_context_nesting_end cpu=",
-				    raw_smp_processor_id());
-		riscv_evl_trace_ptr("EVLDBG riscv_v_context_nesting_end current=",
-				    current);
-		riscv_evl_trace_hex("EVLDBG riscv_v_context_nesting_end flags_before=",
-				    READ_ONCE(current->thread.riscv_v_flags));
-		riscv_evl_trace_hex("EVLDBG riscv_v_context_nesting_end sp=",
-				    regs->sp);
-	}
-
 	if (!riscv_preempt_v_started(current))
 		return;
 
 	riscv_v_ctx_depth_dec();
 	depth = riscv_v_ctx_get_depth();
 
-	if (riscv_evl_trace_enabled())
-		riscv_evl_trace_hex("EVLDBG riscv_v_context_nesting_end depth_after=",
-				    depth);
-
 	if (depth == 0) {
 		if (riscv_preempt_v_restore(current)) {
 			__riscv_v_vstate_restore(vstate, vstate->datap);
 			__riscv_v_vstate_clean(regs);
 			riscv_preempt_v_reset_flags();
-			if (riscv_evl_trace_enabled())
-				riscv_evl_trace("EVLDBG riscv_v_context_nesting_end restored");
 		}
 	}
 }

@@ -160,9 +160,6 @@ static void irq_pipeline_request_urgent_ipi_sync(void)
 
 asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 {
-	unsigned long current_sp;
-	register unsigned long sp_reg asm("sp");
-
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
@@ -171,12 +168,10 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 
 	if (!irq_pipeline_smp_init_in_progress()) {
 		__this_cpu_write(urgent_ipi_sync_request, false);
-		riscv_evl_trace("EVLDBG ret_from_exception skip_urgent_after_smp\n");
 		return;
 	}
 
 	__this_cpu_write(urgent_ipi_sync_request, false);
-	riscv_evl_trace("EVLDBG ret_from_exception ipi_sync\n");
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
 }
@@ -194,20 +189,15 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 
 	if (!irq_pipeline_smp_init_in_progress()) {
 		__this_cpu_write(urgent_ipi_sync_request, false);
-		riscv_evl_trace("EVLDBG thread_stack_tail skip_after_smp\n");
 		return;
 	}
 
 	cpu = smp_processor_id();
-	if (cpu != 0) {
-		riscv_evl_trace_ulong("EVLDBG thread_stack_tail skip_cpu=", cpu);
+	if (cpu != 0)
 		return;
-	}
 
 	__this_cpu_write(urgent_ipi_sync_request, false);
 	stalled = test_inband_stall();
-	riscv_evl_trace("EVLDBG thread_stack_tail ipi_sync\n");
-	riscv_evl_trace_ulong("EVLDBG thread_stack_tail cpu=", cpu);
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
 	if (stalled)
@@ -259,9 +249,6 @@ void handle_synthetic_irq(struct irq_desc *desc)
 	struct irqaction *action;
 	irqreturn_t ret;
 	void *dev_id;
-
-	if (irq == inband_work_sirq)
-		riscv_evl_trace("EVLDBG handle_synthetic_irq inband_work_sirq\n");
 
 	if (on_pipeline_entry()) {
 		handle_oob_irq(desc);
@@ -390,7 +377,6 @@ void synchronize_pipeline(void) /* hardirqs off */
 void irq_pipeline_request_deferred_sync(void)
 {
 	__this_cpu_write(deferred_sync_request, true);
-	riscv_evl_trace("EVLDBG irq_pipeline_request_deferred_sync\n");
 }
 EXPORT_SYMBOL_GPL(irq_pipeline_request_deferred_sync);
 
@@ -851,17 +837,6 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 	if (irq_post_check(stage, irq))
 		return;
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (irq >= 3 && irq <= 8 && trace_ipi_post_count_l4 < 32) {
-		trace_ipi_post_count_l4++;
-		riscv_evl_trace_ulong("EVLDBG irq_post_stage ipi_irq=", irq);
-		riscv_evl_trace_ulong("EVLDBG irq_post_stage stage=",
-				      (unsigned long)stage);
-		riscv_evl_trace_ulong("EVLDBG irq_post_stage cpu=",
-				      smp_processor_id());
-	}
-#endif
-
 	l0b = irq / (BITS_PER_LONG * BITS_PER_LONG * BITS_PER_LONG);
 	l1b = irq / (BITS_PER_LONG * BITS_PER_LONG);
 	l2b = irq / BITS_PER_LONG;
@@ -923,17 +898,6 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 				__clear_bit(l0b, &p->log.index_0);
 		}
 	}
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (irq >= 3 && irq <= 8 && trace_ipi_pull_count_l4 < 32) {
-		trace_ipi_pull_count_l4++;
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=", irq);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
-				      (unsigned long)p->stage);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
-				      smp_processor_id());
-	}
-#endif
 
 	return irq;
 }
@@ -1039,17 +1003,6 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 			__clear_bit(l0b, &p->log.index_0);
 	}
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (irq >= 3 && irq <= 8 && trace_ipi_pull_count_l3 < 32) {
-		trace_ipi_pull_count_l3++;
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=", irq);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
-				      (unsigned long)p->stage);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
-				      smp_processor_id());
-	}
-#endif
-
 	return irq;
 }
 
@@ -1131,20 +1084,6 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	__clear_bit(l1b, &p->log.map->flat[l0b]);
 	if (p->log.map->flat[l0b] == 0)
 		__clear_bit(l0b, &p->log.index_0);
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if ((l0b * BITS_PER_LONG + l1b) >= 3 &&
-	    (l0b * BITS_PER_LONG + l1b) <= 8 &&
-	    trace_ipi_pull_count < 32) {
-		trace_ipi_pull_count++;
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq ipi_irq=",
-				      l0b * BITS_PER_LONG + l1b);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq stage=",
-				      (unsigned long)p->stage);
-		riscv_evl_trace_ulong("EVLDBG pull_next_irq cpu=",
-				      smp_processor_id());
-	}
-#endif
 
 	return l0b * BITS_PER_LONG + l1b;
 }
@@ -1634,13 +1573,8 @@ struct irq_stage_data *handle_irq_pipelined_prepare(struct pt_regs *regs)
 int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				struct pt_regs *regs)
 {
-	static bool trace_finish_seen;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_finish_sync_count;
-	static unsigned int trace_finish_ipi_pending_count;
-	static unsigned int trace_finish_sync_call_count;
-	static unsigned int trace_finish_sync_ret_count;
-	static unsigned int trace_finish_ipi_defer_count;
 #endif
 
 	/*
@@ -1697,22 +1631,11 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 			}
 		}
 
-		if (ipi_pending && trace_finish_ipi_pending_count < 16) {
-			trace_finish_ipi_pending_count++;
-			riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish ipi_pending=",
-					      i);
-		}
-
 		if (ipi_pending) {
 			if (!irq_pipeline_smp_init_in_progress()) {
-				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_normal\n");
 				if (!irq_pipeline_deferred_sync_pending())
 					irq_pipeline_request_deferred_sync();
 				goto out;
-			}
-			if (trace_finish_ipi_defer_count < 16) {
-				trace_finish_ipi_defer_count++;
-				riscv_evl_trace("EVLDBG handle_irq_pipelined_finish defer_ipi_sync\n");
 			}
 			irq_pipeline_request_urgent_ipi_sync();
 			goto out;
@@ -1721,34 +1644,15 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		if (system_state == SYSTEM_SCHEDULING &&
 		    stage_irqs_pending(inbd) &&
 		    !ipi_pending) {
-			riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish skip_sync state=",
-					      system_state);
 			if (!irq_pipeline_deferred_sync_pending())
 				irq_pipeline_request_deferred_sync();
 			goto out;
 		}
 	}
 #endif
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_finish_sync_call_count < 16) {
-		trace_finish_sync_call_count++;
-		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish call_sync\n");
-	}
-#endif
 	synchronize_pipeline_on_irq();
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_finish_sync_ret_count < 16) {
-		trace_finish_sync_ret_count++;
-		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish ret_sync\n");
-	}
-#endif
 
 out:
-	if (!trace_finish_seen) {
-		trace_finish_seen = true;
-		riscv_evl_trace("EVLDBG handle_irq_pipelined_finish\n");
-	}
-
 #ifdef CONFIG_DOVETAIL
 	/*
 	 * Sending MAYDAY is in essence a rare case, so prefer test
@@ -1959,14 +1863,6 @@ respin:
 	} else {
 		unstall_oob();
 	}
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_sync_call_count <= 24) {
-		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage exit stage=",
-				      (unsigned long)stage);
-		riscv_evl_trace_ulong("EVLDBG sync_current_irq_stage exit inband_pending=",
-				      stage_irqs_pending(this_inband_staged()));
-	}
-#endif
 }
 
 #ifndef CONFIG_GENERIC_ENTRY

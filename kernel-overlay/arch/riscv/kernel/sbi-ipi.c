@@ -21,19 +21,6 @@ static int sbi_ipi_virq;
 static void sbi_ipi_handle(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
-#ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int trace_sbi_ipi_handle_count;
-#endif
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_sbi_ipi_handle_count < 32) {
-		trace_sbi_ipi_handle_count++;
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle irq=",
-				      irq_desc_get_irq(desc));
-		riscv_evl_trace_ulong("EVLDBG sbi_ipi_handle cpu=",
-				      smp_processor_id());
-	}
-#endif
 
 	chained_irq_enter(chip, desc);
 
