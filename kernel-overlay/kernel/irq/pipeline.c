@@ -185,6 +185,10 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 			task_cpu(current), current_sp,
 			current->thread_info.kernel_sp,
 			current->thread.sp, task_pt_regs(current));
+		riscv_evl_trace_ulong("EVLDBG ret_from_exception pt_sp=",
+				      regs->sp);
+		riscv_evl_trace_ulong("EVLDBG ret_from_exception pt_epc=",
+				      regs->epc);
 	}
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
@@ -196,6 +200,10 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 			task_cpu(current), current_sp,
 			current->thread_info.kernel_sp,
 			current->thread.sp, task_pt_regs(current));
+		riscv_evl_trace_ulong("EVLDBG ret_from_exception after pt_sp=",
+				      regs->sp);
+		riscv_evl_trace_ulong("EVLDBG ret_from_exception after pt_epc=",
+				      regs->epc);
 	}
 }
 
