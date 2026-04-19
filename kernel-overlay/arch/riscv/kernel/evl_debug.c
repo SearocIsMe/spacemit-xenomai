@@ -65,20 +65,34 @@ void riscv_evl_trace_sched_switch(unsigned long cpu,
 				  const char *next_comm)
 {
 	unsigned long flags;
-	char buf[256];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"EVLDBG __schedule switch cpu=%#lx prev=%px prev_pid=%ld prev_task_cpu=%#lx prev_on_cpu=%#lx prev_comm=%s next=%px next_pid=%ld next_task_cpu=%#lx next_on_cpu=%#lx next_comm=%s\n",
-			cpu, prev, prev_pid, prev_cpu, prev_on_cpu, prev_comm,
-			next, next_pid, next_cpu, next_on_cpu, next_comm);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts("EVLDBG __schedule switch cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" prev=");
+	riscv_evl_early_puthex_ulong((unsigned long)prev);
+	riscv_evl_early_puts(" prev_pid=");
+	riscv_evl_early_puthex_ulong((unsigned long)prev_pid);
+	riscv_evl_early_puts(" prev_task_cpu=");
+	riscv_evl_early_puthex_ulong(prev_cpu);
+	riscv_evl_early_puts(" prev_on_cpu=");
+	riscv_evl_early_puthex_ulong(prev_on_cpu);
+	riscv_evl_early_puts(" prev_comm=");
+	riscv_evl_early_puts(prev_comm);
+	riscv_evl_early_puts(" next=");
+	riscv_evl_early_puthex_ulong((unsigned long)next);
+	riscv_evl_early_puts(" next_pid=");
+	riscv_evl_early_puthex_ulong((unsigned long)next_pid);
+	riscv_evl_early_puts(" next_task_cpu=");
+	riscv_evl_early_puthex_ulong(next_cpu);
+	riscv_evl_early_puts(" next_on_cpu=");
+	riscv_evl_early_puthex_ulong(next_on_cpu);
+	riscv_evl_early_puts(" next_comm=");
+	riscv_evl_early_puts(next_comm);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
@@ -91,19 +105,25 @@ void riscv_evl_trace_cpuhp_state(const char *tag,
 				 unsigned long result)
 {
 	unsigned long flags;
-	char buf[192];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s cpu=%#lx bringup=%#lx state=%#lx target=%#lx should_run=%#lx result=%#lx\n",
-			tag, cpu, bringup, state, target, should_run, result);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" bringup=");
+	riscv_evl_early_puthex_ulong(bringup);
+	riscv_evl_early_puts(" state=");
+	riscv_evl_early_puthex_ulong(state);
+	riscv_evl_early_puts(" target=");
+	riscv_evl_early_puthex_ulong(target);
+	riscv_evl_early_puts(" should_run=");
+	riscv_evl_early_puthex_ulong(should_run);
+	riscv_evl_early_puts(" result=");
+	riscv_evl_early_puthex_ulong(result);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
@@ -117,20 +137,27 @@ void riscv_evl_trace_worker_state(const char *tag,
 				  unsigned long worker_flags)
 {
 	unsigned long flags;
-	char buf[224];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s pool_cpu=%#lx pool_id=%#lx pool=%px task=%px task_cpu=%#lx task_state=%#lx worker_flags=%#lx\n",
-			tag, pool_cpu, pool_id, pool, task, task_cpu, task_state,
-			worker_flags);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" pool_cpu=");
+	riscv_evl_early_puthex_ulong(pool_cpu);
+	riscv_evl_early_puts(" pool_id=");
+	riscv_evl_early_puthex_ulong(pool_id);
+	riscv_evl_early_puts(" pool=");
+	riscv_evl_early_puthex_ulong((unsigned long)pool);
+	riscv_evl_early_puts(" task=");
+	riscv_evl_early_puthex_ulong((unsigned long)task);
+	riscv_evl_early_puts(" task_cpu=");
+	riscv_evl_early_puthex_ulong(task_cpu);
+	riscv_evl_early_puts(" task_state=");
+	riscv_evl_early_puthex_ulong(task_state);
+	riscv_evl_early_puts(" worker_flags=");
+	riscv_evl_early_puthex_ulong(worker_flags);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
@@ -142,19 +169,23 @@ void riscv_evl_trace_smpboot_state(const char *tag,
 				   unsigned long should_run)
 {
 	unsigned long flags;
-	char buf[192];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s cpu=%#lx status=%#lx selfparking=%#lx should_park=%#lx should_run=%#lx\n",
-			tag, cpu, status, selfparking, should_park, should_run);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" status=");
+	riscv_evl_early_puthex_ulong(status);
+	riscv_evl_early_puts(" selfparking=");
+	riscv_evl_early_puthex_ulong(selfparking);
+	riscv_evl_early_puts(" should_park=");
+	riscv_evl_early_puthex_ulong(should_park);
+	riscv_evl_early_puts(" should_run=");
+	riscv_evl_early_puthex_ulong(should_run);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
@@ -204,20 +235,25 @@ void riscv_evl_trace_idle_state(const char *tag,
 				unsigned long preempt_need_resched)
 {
 	unsigned long flags;
-	char buf[224];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s cpu=%#lx task=%px pid=%ld need_resched=%#lx polling=%#lx preempt_need_resched=%#lx\n",
-			tag, cpu, task, pid, need_resched, polling,
-			preempt_need_resched);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" task=");
+	riscv_evl_early_puthex_ulong((unsigned long)task);
+	riscv_evl_early_puts(" pid=");
+	riscv_evl_early_puthex_ulong((unsigned long)pid);
+	riscv_evl_early_puts(" need_resched=");
+	riscv_evl_early_puthex_ulong(need_resched);
+	riscv_evl_early_puts(" polling=");
+	riscv_evl_early_puthex_ulong(polling);
+	riscv_evl_early_puts(" preempt_need_resched=");
+	riscv_evl_early_puthex_ulong(preempt_need_resched);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
@@ -230,19 +266,24 @@ void riscv_evl_trace_resched_state(const char *tag,
 				   unsigned long irqs_disabled)
 {
 	unsigned long flags;
-	char buf[224];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s cpu=%#lx task=%px pid=%ld need_resched=%#lx preempt_count=%#lx irqs_disabled=%#lx\n",
-			tag, cpu, task, pid, need_resched, preempt_count_value,
-			irqs_disabled);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" task=");
+	riscv_evl_early_puthex_ulong((unsigned long)task);
+	riscv_evl_early_puts(" pid=");
+	riscv_evl_early_puthex_ulong((unsigned long)pid);
+	riscv_evl_early_puts(" need_resched=");
+	riscv_evl_early_puthex_ulong(need_resched);
+	riscv_evl_early_puts(" preempt_count=");
+	riscv_evl_early_puthex_ulong(preempt_count_value);
+	riscv_evl_early_puts(" irqs_disabled=");
+	riscv_evl_early_puthex_ulong(irqs_disabled);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
