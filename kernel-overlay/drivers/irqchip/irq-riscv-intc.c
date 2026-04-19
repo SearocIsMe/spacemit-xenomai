@@ -16,6 +16,7 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/string.h>
 #include <linux/smp.h>
 #include <linux/soc/andes/irq.h>
 #include <asm/evl_debug.h>
@@ -83,7 +84,30 @@ static void riscv_intc_irq_mask(struct irq_data *d)
 
 static void riscv_intc_irq_unmask(struct irq_data *d)
 {
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	    !strcmp(current->comm, "cpuhp/1")) {
+		riscv_evl_trace_ulong("EVLDBG riscv_intc_irq_unmask hwirq=",
+				      d->hwirq);
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG riscv_intc_irq_unmask before",
+			smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_stack_pointer,
+			current->thread_info.kernel_sp, current->thread.sp,
+			task_pt_regs(current));
+	}
+#endif
 	csr_set(CSR_IE, BIT(d->hwirq));
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	    !strcmp(current->comm, "cpuhp/1"))
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG riscv_intc_irq_unmask after",
+			smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_stack_pointer,
+			current->thread_info.kernel_sp, current->thread.sp,
+			task_pt_regs(current));
+#endif
 }
 
 static void andes_intc_irq_mask(struct irq_data *d)
