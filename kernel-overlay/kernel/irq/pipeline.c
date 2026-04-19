@@ -218,7 +218,7 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 			"EVLDBG irq_stack_tail_sync entry",
 			raw_smp_processor_id(), current, current->pid,
 			need_resched(), preempt_count(), irqs_disabled());
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	if (riscv_evl_trace_enabled() && current && raw_smp_processor_id() == 1 &&
 	    !strcmp(current->comm, "cpuhp/1"))
 		riscv_evl_trace_task_stack_state(
 			"EVLDBG irq_stack_tail_sync cpuhp entry",
@@ -244,7 +244,7 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 	if (cpu != 0) {
 		riscv_evl_trace_ulong("EVLDBG thread_stack_tail skip_cpu=", cpu);
 #ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+		if (riscv_evl_trace_enabled() && current && raw_smp_processor_id() == 1 &&
 		    !strcmp(current->comm, "cpuhp/1"))
 			riscv_evl_trace_task_stack_state(
 				"EVLDBG irq_stack_tail_sync cpuhp skip_cpu",
@@ -268,7 +268,7 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 			"EVLDBG irq_stack_tail_sync after_sync",
 			raw_smp_processor_id(), current, current->pid,
 			need_resched(), preempt_count(), irqs_disabled());
-	if (riscv_evl_trace_enabled() && current && task_cpu(current) == 1 &&
+	if (riscv_evl_trace_enabled() && current && raw_smp_processor_id() == 1 &&
 	    !strcmp(current->comm, "cpuhp/1"))
 		riscv_evl_trace_task_stack_state(
 			"EVLDBG irq_stack_tail_sync cpuhp after_sync",
