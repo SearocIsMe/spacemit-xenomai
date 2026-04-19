@@ -456,24 +456,14 @@ asmlinkage __visible noinstr void do_page_fault(struct pt_regs *regs)
 static void noinstr handle_riscv_irq(struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
-#ifdef CONFIG_IRQ_PIPELINE
-	static bool trace_handle_irq_seen;
-	static bool trace_pipelined_seen;
-#endif
 
 #ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace_once(&trace_handle_irq_seen,
-			     "EVLDBG handle_riscv_irq entry\n");
 	/*
 	 * When the Dovetail IRQ pipeline is active, route the interrupt
 	 * through handle_irq_pipelined() which handles set_irq_regs()
 	 * internally and delivers pending in-band IRQs on exit.
 	 */
 	if (irqs_pipelined()) {
-		riscv_evl_trace_once(&trace_pipelined_seen,
-				     "EVLDBG handle_riscv_irq pipelined\n");
-		riscv_evl_trace_ulong("EVLDBG handle_riscv_irq cause=",
-				      regs->cause);
 		handle_irq_pipelined(regs);
 		return;
 	}
@@ -525,20 +515,6 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long fp = frame_pointer(regs);
 	unsigned long saved_fp = 0, saved_ra = 0;
 	unsigned long caller_fp = 0, caller_ra = 0;
-	unsigned long caller2_fp = 0, caller2_ra = 0;
-	unsigned long caller3_fp = 0, caller3_ra = 0;
-	unsigned long caller4_fp = 0, caller4_ra = 0;
-	unsigned long caller5_fp = 0, caller5_ra = 0;
-	unsigned long caller6_fp = 0, caller6_ra = 0;
-	unsigned long caller7_fp = 0, caller7_ra = 0;
-	unsigned long caller8_fp = 0, caller8_ra = 0;
-	unsigned long caller9_fp = 0, caller9_ra = 0;
-	unsigned long caller10_fp = 0, caller10_ra = 0;
-	unsigned long caller11_fp = 0, caller11_ra = 0;
-	unsigned long caller12_fp = 0, caller12_ra = 0;
-	unsigned long caller13_fp = 0, caller13_ra = 0;
-	unsigned long caller14_fp = 0, caller14_ra = 0;
-	unsigned long caller15_fp = 0, caller15_ra = 0;
 
 	if (fp >= tsk_stk + 16 && fp <= stk_hi) {
 		saved_fp = *(unsigned long *)(fp - 16);
@@ -546,75 +522,6 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		if (saved_fp >= tsk_stk + 16 && saved_fp <= stk_hi) {
 			caller_fp = *(unsigned long *)(saved_fp - 16);
 			caller_ra = *(unsigned long *)(saved_fp - 8);
-			if (caller_fp >= tsk_stk + 16 && caller_fp <= stk_hi) {
-				caller2_fp = *(unsigned long *)(caller_fp - 16);
-				caller2_ra = *(unsigned long *)(caller_fp - 8);
-				if (caller2_fp >= tsk_stk + 16 &&
-				    caller2_fp <= stk_hi) {
-					caller3_fp = *(unsigned long *)(caller2_fp - 16);
-					caller3_ra = *(unsigned long *)(caller2_fp - 8);
-					if (caller3_fp >= tsk_stk + 16 &&
-					    caller3_fp <= stk_hi) {
-						caller4_fp = *(unsigned long *)(caller3_fp - 16);
-						caller4_ra = *(unsigned long *)(caller3_fp - 8);
-						if (caller4_fp >= tsk_stk + 16 &&
-						    caller4_fp <= stk_hi) {
-							caller5_fp = *(unsigned long *)(caller4_fp - 16);
-							caller5_ra = *(unsigned long *)(caller4_fp - 8);
-							if (caller5_fp >= tsk_stk + 16 &&
-							    caller5_fp <= stk_hi) {
-								caller6_fp = *(unsigned long *)(caller5_fp - 16);
-								caller6_ra = *(unsigned long *)(caller5_fp - 8);
-								if (caller6_fp >= tsk_stk + 16 &&
-								    caller6_fp <= stk_hi) {
-									caller7_fp = *(unsigned long *)(caller6_fp - 16);
-									caller7_ra = *(unsigned long *)(caller6_fp - 8);
-									if (caller7_fp >= tsk_stk + 16 &&
-									    caller7_fp <= stk_hi) {
-										caller8_fp = *(unsigned long *)(caller7_fp - 16);
-										caller8_ra = *(unsigned long *)(caller7_fp - 8);
-										if (caller8_fp >= tsk_stk + 16 &&
-										    caller8_fp <= stk_hi) {
-											caller9_fp = *(unsigned long *)(caller8_fp - 16);
-											caller9_ra = *(unsigned long *)(caller8_fp - 8);
-											if (caller9_fp >= tsk_stk + 16 &&
-											    caller9_fp <= stk_hi) {
-												caller10_fp = *(unsigned long *)(caller9_fp - 16);
-												caller10_ra = *(unsigned long *)(caller9_fp - 8);
-												if (caller10_fp >= tsk_stk + 16 &&
-												    caller10_fp <= stk_hi) {
-													caller11_fp = *(unsigned long *)(caller10_fp - 16);
-													caller11_ra = *(unsigned long *)(caller10_fp - 8);
-													if (caller11_fp >= tsk_stk + 16 &&
-													    caller11_fp <= stk_hi) {
-														caller12_fp = *(unsigned long *)(caller11_fp - 16);
-														caller12_ra = *(unsigned long *)(caller11_fp - 8);
-														if (caller12_fp >= tsk_stk + 16 &&
-														    caller12_fp <= stk_hi) {
-															caller13_fp = *(unsigned long *)(caller12_fp - 16);
-															caller13_ra = *(unsigned long *)(caller12_fp - 8);
-															if (caller13_fp >= tsk_stk + 16 &&
-															    caller13_fp <= stk_hi) {
-																caller14_fp = *(unsigned long *)(caller13_fp - 16);
-																caller14_ra = *(unsigned long *)(caller13_fp - 8);
-																if (caller14_fp >= tsk_stk + 16 &&
-																    caller14_fp <= stk_hi) {
-																	caller15_fp = *(unsigned long *)(caller14_fp - 16);
-																	caller15_ra = *(unsigned long *)(caller14_fp - 8);
-																}
-															}
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
 		}
 	}
 
@@ -664,12 +571,6 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("EVLDBG handle_bad_stack task_stack_high=");
 		riscv_evl_early_puthex_ulong(tsk_stk + THREAD_SIZE);
 		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack overflow_low=");
-		riscv_evl_early_puthex_ulong(ovf_stk);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack overflow_high=");
-		riscv_evl_early_puthex_ulong(ovf_stk + OVERFLOW_STACK_SIZE);
-		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack frame_saved_fp=");
 		riscv_evl_early_puthex_ulong(saved_fp);
 		riscv_evl_early_puts("\n");
@@ -681,90 +582,6 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack caller_ra=");
 		riscv_evl_early_puthex_ulong(caller_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller2_fp=");
-		riscv_evl_early_puthex_ulong(caller2_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller2_ra=");
-		riscv_evl_early_puthex_ulong(caller2_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller3_fp=");
-		riscv_evl_early_puthex_ulong(caller3_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller3_ra=");
-		riscv_evl_early_puthex_ulong(caller3_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller4_fp=");
-		riscv_evl_early_puthex_ulong(caller4_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller4_ra=");
-		riscv_evl_early_puthex_ulong(caller4_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller5_fp=");
-		riscv_evl_early_puthex_ulong(caller5_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller5_ra=");
-		riscv_evl_early_puthex_ulong(caller5_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller6_fp=");
-		riscv_evl_early_puthex_ulong(caller6_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller6_ra=");
-		riscv_evl_early_puthex_ulong(caller6_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller7_fp=");
-		riscv_evl_early_puthex_ulong(caller7_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller7_ra=");
-		riscv_evl_early_puthex_ulong(caller7_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller8_fp=");
-		riscv_evl_early_puthex_ulong(caller8_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller8_ra=");
-		riscv_evl_early_puthex_ulong(caller8_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller9_fp=");
-		riscv_evl_early_puthex_ulong(caller9_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller9_ra=");
-		riscv_evl_early_puthex_ulong(caller9_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller10_fp=");
-		riscv_evl_early_puthex_ulong(caller10_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller10_ra=");
-		riscv_evl_early_puthex_ulong(caller10_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller11_fp=");
-		riscv_evl_early_puthex_ulong(caller11_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller11_ra=");
-		riscv_evl_early_puthex_ulong(caller11_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller12_fp=");
-		riscv_evl_early_puthex_ulong(caller12_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller12_ra=");
-		riscv_evl_early_puthex_ulong(caller12_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller13_fp=");
-		riscv_evl_early_puthex_ulong(caller13_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller13_ra=");
-		riscv_evl_early_puthex_ulong(caller13_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller14_fp=");
-		riscv_evl_early_puthex_ulong(caller14_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller14_ra=");
-		riscv_evl_early_puthex_ulong(caller14_ra);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller15_fp=");
-		riscv_evl_early_puthex_ulong(caller15_fp);
-		riscv_evl_early_puts("\n");
-		riscv_evl_early_puts("EVLDBG handle_bad_stack caller15_ra=");
-		riscv_evl_early_puthex_ulong(caller15_ra);
 		riscv_evl_early_puts("\n");
 	}
 

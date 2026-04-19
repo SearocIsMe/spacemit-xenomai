@@ -1048,52 +1048,22 @@ void resched_curr(struct rq *rq)
 
 	lockdep_assert_rq_held(rq);
 
-	if (riscv_evl_trace_enabled() && curr->pid == 0)
-		riscv_evl_trace_resched_state("EVLDBG resched_curr entry",
-					      cpu_of(rq), curr, curr->pid,
-					      test_tsk_need_resched(curr),
-					      preempt_count(),
-					      irqs_disabled());
-
 	if (test_tsk_need_resched(curr)) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && curr->pid == 0)
-			riscv_evl_trace("EVLDBG resched_curr already_need_resched\n");
-#endif
 		return;
 	}
 
 	cpu = cpu_of(rq);
 
 	if (cpu == smp_processor_id()) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && curr->pid == 0)
-			riscv_evl_trace_ulong("EVLDBG resched_curr local_cpu=", cpu);
-#endif
 		set_tsk_need_resched(curr);
 		set_preempt_need_resched();
 		return;
 	}
 
 	sent_ipi = set_nr_and_not_polling(curr);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && curr->pid == 0) {
-		riscv_evl_trace_ulong("EVLDBG resched_curr remote_cpu=", cpu);
-		riscv_evl_trace_ulong("EVLDBG resched_curr set_nr_and_not_polling=",
-				      sent_ipi);
-	}
-#endif
 	if (sent_ipi) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && curr->pid == 0)
-			riscv_evl_trace("EVLDBG resched_curr send_ipi\n");
-#endif
 		smp_send_reschedule(cpu);
 	} else {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && curr->pid == 0)
-			riscv_evl_trace("EVLDBG resched_curr no_ipi_polling\n");
-#endif
 		trace_sched_wake_idle_without_ipi(cpu);
 	}
 }
@@ -2253,34 +2223,6 @@ static inline void check_class_changed(struct rq *rq, struct task_struct *p,
 
 void check_preempt_curr(struct rq *rq, struct task_struct *p, int flags)
 {
-	bool trace_special_kthread = false;
-
-#ifdef CONFIG_IRQ_PIPELINE
-	trace_special_kthread = riscv_evl_trace_enabled() &&
-		(!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"));
-	if (trace_special_kthread) {
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr cpu=", cpu_of(rq));
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr curr=", rq->curr);
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr idle=", rq->idle);
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr curr_class=",
-				    rq->curr->sched_class);
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr idle_class=",
-				    rq->idle->sched_class);
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr p_class=",
-				    p->sched_class);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_pid=",
-				      rq->curr ? rq->curr->pid : 0);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr idle_pid=",
-				      rq->idle ? rq->idle->pid : 0);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr p_pid=", p->pid);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_eq_idle=",
-				      rq->curr == rq->idle);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr same_class=",
-				      p->sched_class == rq->curr->sched_class);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr curr_is_idle=",
-				      rq->curr->sched_class == &idle_sched_class);
-	}
-#endif
 	if (p->sched_class == rq->curr->sched_class)
 		rq->curr->sched_class->check_preempt_curr(rq, p, flags);
 	else if (sched_class_above(p->sched_class, rq->curr->sched_class))
@@ -2833,24 +2775,6 @@ __do_set_cpus_allowed(struct task_struct *p, struct affinity_context *ctx)
 	queued = task_on_rq_queued(p);
 	running = task_current(rq, p);
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
-		riscv_evl_trace_ptr("EVLDBG __do_set_cpus_allowed task=", p);
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed rq_cpu=",
-				      cpu_of(rq));
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed task_cpu_before=",
-				      task_cpu(p));
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed queued=",
-				      queued);
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed running=",
-				      running);
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed mask_first=",
-				      cpumask_first(ctx->new_mask));
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed mask_weight=",
-				      cpumask_weight(ctx->new_mask));
-	}
-#endif
-
 	if (queued) {
 		/*
 		 * Because __kthread_bind() calls this on blocked tasks without
@@ -2863,17 +2787,6 @@ __do_set_cpus_allowed(struct task_struct *p, struct affinity_context *ctx)
 		put_prev_task(rq, p);
 
 	p->sched_class->set_cpus_allowed(p, ctx);
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed task_cpu_after=",
-				      task_cpu(p));
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed cpus_ptr_first=",
-				      cpumask_first(p->cpus_ptr));
-		riscv_evl_trace_ulong("EVLDBG __do_set_cpus_allowed cpus_ptr_weight=",
-				      cpumask_weight(p->cpus_ptr));
-	}
-#endif
 
 	if (queued)
 		enqueue_task(rq, p, ENQUEUE_RESTORE | ENQUEUE_NOCLOCK);
@@ -3969,17 +3882,6 @@ void sched_ttwu_pending(void *arg)
 	struct rq *rq = this_rq();
 	struct task_struct *p, *t;
 	struct rq_flags rf;
-#ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int trace_ttwu_pending_count;
-
-	if (trace_ttwu_pending_count < 16) {
-		trace_ttwu_pending_count++;
-		riscv_evl_trace("EVLDBG sched_ttwu_pending\n");
-		riscv_evl_trace_ulong("EVLDBG sched_ttwu_pending cpu=",
-				      smp_processor_id());
-	}
-#endif
-
 	irq_pipeline_set_ttwu_window(true);
 
 	if (!llist)
@@ -4439,19 +4341,6 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		smp_cond_load_acquire(&p->on_cpu, !VAL);
 
 		cpu = select_task_rq(p, p->wake_cpu, wake_flags | WF_TTWU);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6)) {
-			riscv_evl_trace_ptr("EVLDBG ttwu task=", p);
-			riscv_evl_trace_ulong("EVLDBG ttwu wake_cpu=", p->wake_cpu);
-			riscv_evl_trace_ulong("EVLDBG ttwu selected_cpu=", cpu);
-			riscv_evl_trace_ulong("EVLDBG ttwu task_cpu_before=",
-					      task_cpu(p));
-			riscv_evl_trace_ulong("EVLDBG ttwu cpus_ptr_first=",
-					      cpumask_first(p->cpus_ptr));
-			riscv_evl_trace_ulong("EVLDBG ttwu cpus_ptr_weight=",
-					      cpumask_weight(p->cpus_ptr));
-		}
-#endif
 		if (task_cpu(p) != cpu) {
 			if (p->in_iowait) {
 				delayacct_blkio_end(p);
@@ -4461,11 +4350,6 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 			wake_flags |= WF_MIGRATED;
 			psi_ttwu_dequeue(p);
 			set_task_cpu(p, cpu);
-#ifdef CONFIG_IRQ_PIPELINE
-			if (riscv_evl_trace_enabled() && !strncmp(p->comm, "cpuhp/", 6))
-				riscv_evl_trace_ulong("EVLDBG ttwu task_cpu_after=",
-						      task_cpu(p));
-#endif
 		}
 #else
 		cpu = task_cpu(p);
@@ -5000,72 +4884,14 @@ void wake_up_new_task(struct task_struct *p)
 	 */
 	p->recent_used_cpu = task_cpu(p);
 	rseq_migrate(p);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread) {
-		riscv_evl_trace_ptr("EVLDBG wake_up_new_task task=", p);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_before=",
-				      task_cpu(p));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task wake_cpu=",
-				      p->wake_cpu);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task cpus_ptr_first=",
-				      cpumask_first(p->cpus_ptr));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task cpus_ptr_weight=",
-				      cpumask_weight(p->cpus_ptr));
-	}
-#endif
 	__set_task_cpu(p, select_task_rq(p, task_cpu(p), WF_FORK));
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread)
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task task_cpu_after=",
-				      task_cpu(p));
-#endif
 #endif
 	rq = __task_rq_lock(p, &rf);
 	update_rq_clock(rq);
 	post_init_entity_util_avg(p);
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread)
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_cpu=",
-				      cpu_of(rq));
-#endif
 	activate_task(rq, p, ENQUEUE_NOCLOCK);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread) {
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task p_on_rq=",
-				      READ_ONCE(p->on_rq));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task p_on_cpu=",
-				      READ_ONCE(p->on_cpu));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_nr_running=",
-				      rq->nr_running);
-		riscv_evl_trace_ptr("EVLDBG wake_up_new_task rq_curr=",
-				    rq->curr);
-		riscv_evl_trace_ptr("EVLDBG wake_up_new_task rq_idle=",
-				    rq->idle);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_curr_pid=",
-				      rq->curr ? rq->curr->pid : 0);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task rq_idle_pid=",
-				      rq->idle ? rq->idle->pid : 0);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_eq_idle=",
-				      rq->curr == rq->idle);
-		riscv_evl_trace("EVLDBG wake_up_new_task before check_preempt_curr\n");
-	}
-#endif
 	trace_sched_wakeup_new(p);
 	check_preempt_curr(rq, p, WF_FORK);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread) {
-		riscv_evl_trace("EVLDBG wake_up_new_task after check_preempt_curr\n");
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_need_resched=",
-				      test_tsk_need_resched(rq->curr));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_on_rq=",
-				      task_on_rq_queued(rq->curr));
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task curr_prio=",
-				      rq->curr->prio);
-		riscv_evl_trace_ulong("EVLDBG wake_up_new_task p_prio=",
-				      p->prio);
-	}
-#endif
 #ifdef CONFIG_SMP
 	if (p->sched_class->task_woken) {
 		/*
@@ -7281,17 +7107,6 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 {
 	enum ctx_state prev_state;
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && current->pid == 0 &&
-	    raw_smp_processor_id() > 0)
-		riscv_evl_trace_resched_state("EVLDBG preempt_schedule_irq entry",
-					      raw_smp_processor_id(),
-					      current, current->pid,
-					      need_resched(),
-					      preempt_count(),
-					      irqs_disabled());
-#endif
-
 	if (irq_pipeline_debug()) {
 		/* Catch any weirdness in pipelined entry code. */
 		if (WARN_ON_ONCE(!running_inband()))
@@ -7310,15 +7125,6 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 		preempt_disable();
 		local_irq_enable();
 		__schedule(SM_PREEMPT);
-#ifdef CONFIG_IRQ_PIPELINE
-		if (riscv_evl_trace_enabled() && current->pid == 0 &&
-		    raw_smp_processor_id() > 0)
-			riscv_evl_trace_resched_state(
-				"EVLDBG preempt_schedule_irq after_schedule",
-				raw_smp_processor_id(), current, current->pid,
-				need_resched(), preempt_count(),
-				irqs_disabled());
-#endif
 		sync_inband_irqs();
 		local_irq_disable();
 		sched_preempt_enable_no_resched();

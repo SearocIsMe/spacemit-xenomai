@@ -306,15 +306,6 @@ static void do_idle(void)
 	tick_nohz_idle_exit();
 	__current_clr_polling();
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && cpu > 0)
-		riscv_evl_trace_idle_state("EVLDBG idle loop exit",
-					 cpu, current, current->pid,
-					 need_resched(),
-					 riscv_evl_idle_polling_flag(),
-					 test_preempt_need_resched());
-#endif
-
 	/*
 	 * We promise to call sched_ttwu_pending() and reschedule if
 	 * need_resched() is set while polling is set. That means that clearing
@@ -328,24 +319,7 @@ static void do_idle(void)
 	 */
 	flush_smp_call_function_queue();
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && cpu > 0)
-		riscv_evl_trace_idle_state("EVLDBG idle before schedule_idle",
-					 cpu, current, current->pid,
-					 need_resched(),
-					 riscv_evl_idle_polling_flag(),
-					 test_preempt_need_resched());
-#endif
 	schedule_idle();
-
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() && cpu > 0)
-		riscv_evl_trace_idle_state("EVLDBG idle after schedule_idle",
-					 cpu, current, current->pid,
-					 need_resched(),
-					 riscv_evl_idle_polling_flag(),
-					 test_preempt_need_resched());
-#endif
 
 	if (unlikely(klp_patch_pending(current)))
 		klp_update_patch_state(current);
@@ -441,17 +415,6 @@ balance_idle(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
  */
 static void check_preempt_curr_idle(struct rq *rq, struct task_struct *p, int flags)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled() &&
-	    (!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"))) {
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle cpu=", cpu_of(rq));
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr_idle curr=", rq->curr);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle curr_pid=",
-				      rq->curr ? rq->curr->pid : 0);
-		riscv_evl_trace_ptr("EVLDBG check_preempt_curr_idle p=", p);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_curr_idle p_pid=", p->pid);
-	}
-#endif
 	resched_curr(rq);
 }
 

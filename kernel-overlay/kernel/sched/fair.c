@@ -8255,19 +8255,6 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	struct cfs_rq *cfs_rq = task_cfs_rq(curr);
 	int next_buddy_marked = 0;
 	int cse_is_idle, pse_is_idle;
-	bool trace_special_kthread = false;
-
-#ifdef CONFIG_IRQ_PIPELINE
-	trace_special_kthread = riscv_evl_trace_enabled() &&
-		(!strncmp(p->comm, "kworker/u", 9) || !strcmp(p->comm, "kdevtmpfs"));
-	if (trace_special_kthread) {
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup cpu=", cpu_of(rq));
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup curr_pid=",
-				      curr ? curr->pid : 0);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup p_pid=", p->pid);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup wake_flags=", wake_flags);
-	}
-#endif
 
 	if (unlikely(se == pse))
 		return;
@@ -8307,14 +8294,6 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 
 	cse_is_idle = se_is_idle(se);
 	pse_is_idle = se_is_idle(pse);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread) {
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup curr_is_idle=",
-				      cse_is_idle);
-		riscv_evl_trace_ulong("EVLDBG check_preempt_wakeup p_is_idle=",
-				      pse_is_idle);
-	}
-#endif
 
 	/*
 	 * Preempt an idle entity in favor of a non-idle entity (and don't preempt
@@ -8342,10 +8321,6 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 	return;
 
 preempt:
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_special_kthread)
-		riscv_evl_trace("EVLDBG check_preempt_wakeup preempt\n");
-#endif
 	resched_curr(rq);
 }
 

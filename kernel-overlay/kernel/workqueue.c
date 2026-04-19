@@ -4048,31 +4048,13 @@ static struct worker_pool *get_unbound_pool(const struct workqueue_attrs *attrs)
 	u32 hash = wqattrs_hash(attrs);
 	struct worker_pool *pool;
 	int pod, node = NUMA_NO_NODE;
-#ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int trace_count;
-#define WQ_TRACE_OK() (trace_count < 32 && riscv_evl_trace_enabled())
-#endif
 
 	lockdep_assert_held(&wq_pool_mutex);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK()) {
-		trace_count++;
-		riscv_evl_trace("EVLDBG get_unbound_pool entry\n");
-	}
-#endif
 
 	/* do we already have a matching pool? */
 	hash_for_each_possible(unbound_pool_hash, pool, hash_node, hash) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (WQ_TRACE_OK())
-			riscv_evl_trace_ptr("EVLDBG get_unbound_pool hash_pool=", pool);
-#endif
 		if (wqattrs_equal(pool->attrs, attrs)) {
 			pool->refcnt++;
-#ifdef CONFIG_IRQ_PIPELINE
-			if (WQ_TRACE_OK())
-				riscv_evl_trace("EVLDBG get_unbound_pool reuse_pool\n");
-#endif
 			return pool;
 		}
 	}
@@ -4081,77 +4063,35 @@ static struct worker_pool *get_unbound_pool(const struct workqueue_attrs *attrs)
 	for (pod = 0; pod < pt->nr_pods; pod++) {
 		if (cpumask_subset(attrs->__pod_cpumask, pt->pod_cpus[pod])) {
 			node = pt->pod_node[pod];
-#ifdef CONFIG_IRQ_PIPELINE
-			if (WQ_TRACE_OK())
-				riscv_evl_trace_ulong("EVLDBG get_unbound_pool node=", node);
-#endif
 			break;
 		}
 	}
 
 	/* nope, create a new one */
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool before kzalloc_node\n");
-#endif
 	pool = kzalloc_node(sizeof(*pool), GFP_KERNEL, node);
 	if (!pool)
 		goto fail;
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace_ptr("EVLDBG get_unbound_pool new_pool=", pool);
-#endif
 	if (init_worker_pool(pool) < 0)
 		goto fail;
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool after init_worker_pool\n");
-#endif
 
 	pool->node = node;
 	copy_workqueue_attrs(pool->attrs, attrs);
 	wqattrs_clear_for_pool(pool->attrs);
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool before worker_pool_assign_id\n");
-#endif
 	if (worker_pool_assign_id(pool) < 0)
 		goto fail;
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool after worker_pool_assign_id\n");
-#endif
 
 	/* create and start the initial worker */
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool before create_worker\n");
-#endif
 	if (wq_online && !create_worker(pool))
 		goto fail;
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool after create_worker\n");
-#endif
 
 	/* install */
 	hash_add(unbound_pool_hash, &pool->hash_node, hash);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (WQ_TRACE_OK())
-		riscv_evl_trace("EVLDBG get_unbound_pool exit\n");
-#undef WQ_TRACE_OK
-#endif
 
 	return pool;
 fail:
 	if (pool)
 		put_unbound_pool(pool);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (riscv_evl_trace_enabled())
-		riscv_evl_trace("EVLDBG get_unbound_pool fail\n");
-#undef WQ_TRACE_OK
-#endif
 	return NULL;
 }
 
@@ -4291,47 +4231,20 @@ static struct pool_workqueue *alloc_unbound_pwq(struct workqueue_struct *wq,
 {
 	struct worker_pool *pool;
 	struct pool_workqueue *pwq;
-#ifdef CONFIG_IRQ_PIPELINE
-	bool trace_target = !strcmp(wq->name, "events_unbound");
-#endif
 
 	lockdep_assert_held(&wq_pool_mutex);
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG alloc_unbound_pwq events_unbound entry\n");
-#endif
 	pool = get_unbound_pool(attrs);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG alloc_unbound_pwq events_unbound pool=", pool);
-#endif
 	if (!pool)
 		return NULL;
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG alloc_unbound_pwq events_unbound before kmem_cache_alloc\n");
-#endif
 	pwq = kmem_cache_alloc_node(pwq_cache, GFP_KERNEL, pool->node);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG alloc_unbound_pwq events_unbound pwq=", pwq);
-#endif
 	if (!pwq) {
 		put_unbound_pool(pool);
 		return NULL;
 	}
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG alloc_unbound_pwq events_unbound before init_pwq\n");
-#endif
 	init_pwq(pwq, wq, pool);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG alloc_unbound_pwq events_unbound exit\n");
-#endif
 	return pwq;
 }
 
@@ -4518,7 +4431,6 @@ static int apply_workqueue_attrs_locked(struct workqueue_struct *wq,
 					const struct workqueue_attrs *attrs)
 {
 	struct apply_wqattrs_ctx *ctx;
-	bool trace_target = !strcmp(wq->name, "events_unbound");
 
 	/* only unbound workqueues can change attributes */
 	if (WARN_ON(!(wq->flags & WQ_UNBOUND)))
@@ -4532,35 +4444,14 @@ static int apply_workqueue_attrs_locked(struct workqueue_struct *wq,
 		wq->flags &= ~__WQ_ORDERED;
 	}
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG apply_workqueue_attrs_locked events_unbound entry\n");
-#endif
 	ctx = apply_wqattrs_prepare(wq, attrs, wq_unbound_cpumask);
 	if (IS_ERR(ctx)) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace_target)
-			riscv_evl_trace_hex("EVLDBG apply_workqueue_attrs_locked events_unbound prepare_err=",
-					    PTR_ERR(ctx));
-#endif
 		return PTR_ERR(ctx);
-#ifdef CONFIG_IRQ_PIPELINE
 	}
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG apply_workqueue_attrs_locked events_unbound ctx=", ctx);
-#endif
 
 	/* the ctx has been prepared successfully, let's commit it */
 	apply_wqattrs_commit(ctx);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG apply_workqueue_attrs_locked events_unbound after commit\n");
-#endif
 	apply_wqattrs_cleanup(ctx);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG apply_workqueue_attrs_locked events_unbound exit\n");
-#endif
 
 	return 0;
 }
@@ -4645,36 +4536,14 @@ static void wq_update_pod(struct workqueue_struct *wq, int cpu,
 
 	/* nothing to do if the target cpumask matches the current pwq */
 	wq_calc_pod_cpumask(target_attrs, cpu, off_cpu);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after calc_cpumask\n");
-#endif
 	pwq = rcu_dereference_protected(*per_cpu_ptr(wq->cpu_pwq, cpu),
 					lockdep_is_held(&wq_pool_mutex));
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 current_pwq=", pwq);
-#endif
 	if (wqattrs_equal(target_attrs, pwq->pool->attrs)) {
-#ifdef CONFIG_IRQ_PIPELINE
-		if (trace_target)
-			riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 attrs_equal\n");
-#endif
 		return;
 	}
 
 	/* create a new pwq */
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 before alloc_unbound_pwq\n");
-#endif
 	pwq = alloc_unbound_pwq(wq, target_attrs);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after alloc_unbound_pwq\n");
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 new_pwq=", pwq);
-#endif
 	if (!pwq) {
 		pr_warn("workqueue: allocation failed while updating CPU pod affinity of \"%s\"\n",
 			wq->name);
@@ -4682,31 +4551,11 @@ static void wq_update_pod(struct workqueue_struct *wq, int cpu,
 	}
 
 	/* Install the new pwq. */
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 before mutex_lock\n");
-#endif
 	mutex_lock(&wq->mutex);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after mutex_lock\n");
-#endif
 	old_pwq = install_unbound_pwq(wq, cpu, pwq);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after install_unbound_pwq\n");
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 installed_pwq=", pwq);
-#endif
 	goto out_unlock;
 
 use_dfl_pwq:
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 use_dfl_pwq\n");
-	if (trace_target)
-		riscv_evl_trace_ptr("EVLDBG wq_update_pod events_unbound cpu0 dfl_pwq=", wq->dfl_pwq);
-#endif
 	mutex_lock(&wq->mutex);
 	raw_spin_lock_irq(&wq->dfl_pwq->pool->lock);
 	get_pwq(wq->dfl_pwq);
@@ -4714,15 +4563,7 @@ use_dfl_pwq:
 	old_pwq = install_unbound_pwq(wq, cpu, wq->dfl_pwq);
 out_unlock:
 	mutex_unlock(&wq->mutex);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 after mutex_unlock\n");
-#endif
 	put_pwq_unlocked(old_pwq);
-#ifdef CONFIG_IRQ_PIPELINE
-	if (trace_target)
-		riscv_evl_trace("EVLDBG wq_update_pod events_unbound cpu0 exit\n");
-#endif
 }
 
 static int alloc_and_link_pwqs(struct workqueue_struct *wq)
@@ -6961,34 +6802,13 @@ void __init workqueue_init_topology(void)
 {
 	struct workqueue_struct *wq;
 	int cpu;
-#ifdef CONFIG_IRQ_PIPELINE
-	static unsigned int wq_trace_count;
-#endif
 
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology entry\n");
-#endif
 	init_pod_type(&wq_pod_types[WQ_AFFN_CPU], cpus_dont_share);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology after affn_cpu\n");
-#endif
 	init_pod_type(&wq_pod_types[WQ_AFFN_SMT], cpus_share_smt);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology after affn_smt\n");
-#endif
 	init_pod_type(&wq_pod_types[WQ_AFFN_CACHE], cpus_share_cache);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology after affn_cache\n");
-#endif
 	init_pod_type(&wq_pod_types[WQ_AFFN_NUMA], cpus_share_numa);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology after affn_numa\n");
-#endif
 
 	mutex_lock(&wq_pool_mutex);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology after mutex_lock\n");
-#endif
 
 	/*
 	 * Workqueues allocated earlier would have all CPUs sharing the default
@@ -6996,34 +6816,12 @@ void __init workqueue_init_topology(void)
 	 * combinations to apply per-pod sharing.
 	 */
 	list_for_each_entry(wq, &workqueues, list) {
-#ifdef CONFIG_IRQ_PIPELINE
-		riscv_evl_trace("EVLDBG workqueue_init_topology enter wq_update_loop\n");
-		riscv_evl_trace_ptr("EVLDBG workqueue_init_topology wq=", wq);
-		if (riscv_evl_trace_enabled()) {
-			riscv_evl_early_puts("EVLDBG workqueue_init_topology name=");
-			riscv_evl_early_puts(wq->name);
-			riscv_evl_early_puts("\n");
-		}
-#endif
 		for_each_online_cpu(cpu) {
-#ifdef CONFIG_IRQ_PIPELINE
-			if (wq_trace_count < 32) {
-				wq_trace_count++;
-				riscv_evl_trace_ulong("EVLDBG workqueue_init_topology cpu=", cpu);
-			}
-#endif
 			wq_update_pod(wq, cpu, cpu, true);
-#ifdef CONFIG_IRQ_PIPELINE
-			if (wq_trace_count < 32)
-				riscv_evl_trace("EVLDBG workqueue_init_topology after wq_update_pod\n");
-#endif
 		}
 	}
 
 	mutex_unlock(&wq_pool_mutex);
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG workqueue_init_topology exit\n");
-#endif
 }
 
 void __warn_flushing_systemwide_wq(void)

@@ -197,14 +197,6 @@ void riscv_ipi_set_virq_range(int virq, int nr, bool use_for_rfence)
 	ipi_irq_base = virq;
 #endif
 
-#ifdef CONFIG_IRQ_PIPELINE
-	if (!trace_ipi_range_seen) {
-		trace_ipi_range_seen = true;
-		riscv_evl_trace_ulong("EVLDBG riscv_ipi_set_virq_range base=", virq);
-		riscv_evl_trace_ulong("EVLDBG riscv_ipi_set_virq_range nr=", nr_ipi);
-	}
-#endif
-
 	/* Request IPIs */
 	for (i = 0; i < nr_ipi; i++) {
 		err = request_percpu_irq(ipi_virq_base + i, handle_IPI,
@@ -349,9 +341,6 @@ bool smp_crash_stop_failed(void)
 
 void arch_smp_send_reschedule(int cpu)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace_ulong("EVLDBG arch_smp_send_reschedule cpu=", cpu);
-#endif
 	send_ipi_single(cpu, IPI_RESCHEDULE);
 }
 EXPORT_SYMBOL_GPL(arch_smp_send_reschedule);

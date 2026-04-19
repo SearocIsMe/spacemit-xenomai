@@ -104,7 +104,6 @@
 #include <net/net_namespace.h>
 
 #include <asm/io.h>
-#include <asm/evl_debug.h>
 #include <asm/setup.h>
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
@@ -730,11 +729,7 @@ noinline void __ref __noreturn rest_init(void)
 	 * CONFIG_PREEMPT_VOLUNTARY=y the init task might have scheduled
 	 * already, but it's stuck on the kthreadd_done completion.
 	 */
-	riscv_evl_trace_ulong("EVLDBG rest_init system_state before scheduling=",
-			      system_state);
 	system_state = SYSTEM_SCHEDULING;
-	riscv_evl_trace_ulong("EVLDBG rest_init system_state after scheduling=",
-			      system_state);
 
 	complete(&kthreadd_done);
 
@@ -742,7 +737,6 @@ noinline void __ref __noreturn rest_init(void)
 	 * The boot idle thread must execute schedule()
 	 * at least once to get things moving:
 	 */
-	riscv_evl_trace("EVLDBG rest_init before schedule_preempt_disabled\n");
 	schedule_preempt_disabled();
 	/* Call into cpu_idle with preempt disabled */
 	cpu_startup_entry(CPUHP_ONLINE);
@@ -918,7 +912,6 @@ void start_kernel(void)
 	setup_nr_cpu_ids();
 	setup_per_cpu_areas();
 	irq_pipeline_init_early();
-	riscv_evl_trace("EVLDBG start_kernel after irq_pipeline_init_early\n");
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 	boot_cpu_hotplug_init();
 
@@ -995,7 +988,6 @@ void start_kernel(void)
 	early_irq_init();
 	init_IRQ();
 	irq_pipeline_init();
-	riscv_evl_trace("EVLDBG start_kernel after irq_pipeline_init\n");
 	tick_init();
 	rcu_init_nohz();
 	init_timers();
@@ -1004,7 +996,6 @@ void start_kernel(void)
 	softirq_init();
 	timekeeping_init();
 	time_init();
-	riscv_evl_trace("EVLDBG start_kernel after time_init\n");
 
 	/* This must be after timekeeping is initialized */
 	random_init();
@@ -1017,11 +1008,9 @@ void start_kernel(void)
 	profile_init();
 	call_function_init();
 	WARN(!irqs_disabled(), "Interrupts were enabled early\n");
-	riscv_evl_trace("EVLDBG start_kernel before local_irq_enable\n");
 
 	early_boot_irqs_disabled = false;
 	local_irq_enable();
-	riscv_evl_trace("EVLDBG start_kernel after local_irq_enable\n");
 
 	kmem_cache_init_late();
 
@@ -1030,15 +1019,12 @@ void start_kernel(void)
 	 * we've done PCI setups etc, and console_init() must be aware of
 	 * this. But we do want output early, in case something goes wrong.
 	 */
-	riscv_evl_trace("EVLDBG start_kernel before console_init\n");
 	console_init();
-	riscv_evl_trace("EVLDBG start_kernel after console_init\n");
 	if (panic_later)
 		panic("Too many boot %s vars at `%s'", panic_later,
 		      panic_param);
 
 	lockdep_init();
-	riscv_evl_trace("EVLDBG start_kernel after lockdep_init\n");
 
 	/*
 	 * Need to run this when irqs are enabled, because it wants
@@ -1057,7 +1043,6 @@ void start_kernel(void)
 	}
 #endif
 	setup_per_cpu_pageset();
-	riscv_evl_trace("EVLDBG start_kernel after setup_per_cpu_pageset\n");
 	numa_policy_init();
 	acpi_early_init();
 	if (late_time_init)
@@ -1098,7 +1083,6 @@ void start_kernel(void)
 	kcsan_init();
 
 	/* Do the rest non-__init'ed, we're now alive */
-	riscv_evl_trace("EVLDBG start_kernel before rest_init\n");
 	arch_call_rest_init();
 
 	/*
