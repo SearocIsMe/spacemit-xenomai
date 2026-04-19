@@ -517,6 +517,9 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long caller5_fp = 0, caller5_ra = 0;
 	unsigned long caller6_fp = 0, caller6_ra = 0;
 	unsigned long caller7_fp = 0, caller7_ra = 0;
+	unsigned long caller8_fp = 0, caller8_ra = 0;
+	unsigned long caller9_fp = 0, caller9_ra = 0;
+	unsigned long caller10_fp = 0, caller10_ra = 0;
 
 	if (fp >= tsk_stk + 16 && fp <= stk_hi) {
 		saved_fp = *(unsigned long *)(fp - 16);
@@ -547,6 +550,21 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 								    caller6_fp <= stk_hi) {
 									caller7_fp = *(unsigned long *)(caller6_fp - 16);
 									caller7_ra = *(unsigned long *)(caller6_fp - 8);
+									if (caller7_fp >= tsk_stk + 16 &&
+									    caller7_fp <= stk_hi) {
+										caller8_fp = *(unsigned long *)(caller7_fp - 16);
+										caller8_ra = *(unsigned long *)(caller7_fp - 8);
+										if (caller8_fp >= tsk_stk + 16 &&
+										    caller8_fp <= stk_hi) {
+											caller9_fp = *(unsigned long *)(caller8_fp - 16);
+											caller9_ra = *(unsigned long *)(caller8_fp - 8);
+											if (caller9_fp >= tsk_stk + 16 &&
+											    caller9_fp <= stk_hi) {
+												caller10_fp = *(unsigned long *)(caller9_fp - 16);
+												caller10_ra = *(unsigned long *)(caller9_fp - 8);
+											}
+										}
+									}
 								}
 							}
 						}
@@ -655,6 +673,24 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack caller7_ra=");
 		riscv_evl_early_puthex_ulong(caller7_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller8_fp=");
+		riscv_evl_early_puthex_ulong(caller8_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller8_ra=");
+		riscv_evl_early_puthex_ulong(caller8_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller9_fp=");
+		riscv_evl_early_puthex_ulong(caller9_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller9_ra=");
+		riscv_evl_early_puthex_ulong(caller9_ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller10_fp=");
+		riscv_evl_early_puthex_ulong(caller10_fp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack caller10_ra=");
+		riscv_evl_early_puthex_ulong(caller10_ra);
 		riscv_evl_early_puts("\n");
 	}
 
