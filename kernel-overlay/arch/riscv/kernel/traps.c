@@ -562,6 +562,12 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 		riscv_evl_early_puts("\n");
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_cpu=",
 				    task_cpu(current));
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_epc=",
+				    regs->epc);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_ra=",
+				    regs->ra);
+		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_cause=",
+				    regs->cause);
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_sp=", regs->sp);
 		riscv_evl_trace_hex("EVLDBG handle_bad_stack ti_kernel_sp=",
 				    current->thread_info.kernel_sp);
