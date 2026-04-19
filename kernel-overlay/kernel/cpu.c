@@ -295,18 +295,42 @@ static inline void complete_ap_thread(struct cpuhp_cpu_state *st, bool bringup)
 {
 	struct completion *done = bringup ? &st->done_up : &st->done_down;
 
-#ifdef CONFIG_IRQ_PIPELINE
+	#ifdef CONFIG_IRQ_PIPELINE
+		if (riscv_evl_trace_enabled()) {
+			int cpu = smp_processor_id();
+
+			if (cpu >= 0 && cpu <= 3) {
+				riscv_evl_trace_cpuhp_state("EVLDBG complete_ap_thread",
+							    cpu, bringup, st->state,
+							    st->target, st->should_run,
+							    st->result);
+				riscv_evl_trace_task_stack_state("EVLDBG complete_ap_thread before complete",
+								 cpu, current,
+								 task_pid_nr(current),
+								 task_cpu(current),
+								 current_stack_pointer,
+								 current->thread_info.kernel_sp,
+								 current->thread.sp,
+								 task_pt_regs(current));
+			}
+		}
+	#endif
+	complete(done);
+	#ifdef CONFIG_IRQ_PIPELINE
 	if (riscv_evl_trace_enabled()) {
 		int cpu = smp_processor_id();
 
 		if (cpu >= 0 && cpu <= 3)
-			riscv_evl_trace_cpuhp_state("EVLDBG complete_ap_thread",
-						    cpu, bringup, st->state,
-						    st->target, st->should_run,
-						    st->result);
+			riscv_evl_trace_task_stack_state("EVLDBG complete_ap_thread after complete",
+							 cpu, current,
+							 task_pid_nr(current),
+							 task_cpu(current),
+							 current_stack_pointer,
+							 current->thread_info.kernel_sp,
+							 current->thread.sp,
+							 task_pt_regs(current));
 	}
-#endif
-	complete(done);
+	#endif
 }
 
 /*
