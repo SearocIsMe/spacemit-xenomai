@@ -169,20 +169,29 @@ void riscv_evl_trace_task_stack_state(const char *tag,
 				      const void *task_regs)
 {
 	unsigned long flags;
-	char buf[256];
-	int len;
 
 	if (!riscv_evl_early_debug_enabled)
 		return;
 
-	len = scnprintf(buf, sizeof(buf),
-			"%s cpu=%#lx task=%px pid=%ld task_cpu=%#lx current_sp=%#lx ti_kernel_sp=%#lx thread_sp=%#lx task_pt_regs=%px\n",
-			tag, cpu, task, pid, task_cpu, current_sp,
-			ti_kernel_sp, thread_sp, task_regs);
-
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
-	buf[len] = '\0';
-	riscv_evl_early_puts(buf);
+	riscv_evl_early_puts(tag);
+	riscv_evl_early_puts(" cpu=");
+	riscv_evl_early_puthex_ulong(cpu);
+	riscv_evl_early_puts(" task=");
+	riscv_evl_early_puthex_ulong((unsigned long)task);
+	riscv_evl_early_puts(" pid=");
+	riscv_evl_early_puthex_ulong((unsigned long)pid);
+	riscv_evl_early_puts(" task_cpu=");
+	riscv_evl_early_puthex_ulong(task_cpu);
+	riscv_evl_early_puts(" current_sp=");
+	riscv_evl_early_puthex_ulong(current_sp);
+	riscv_evl_early_puts(" ti_kernel_sp=");
+	riscv_evl_early_puthex_ulong(ti_kernel_sp);
+	riscv_evl_early_puts(" thread_sp=");
+	riscv_evl_early_puthex_ulong(thread_sp);
+	riscv_evl_early_puts(" task_pt_regs=");
+	riscv_evl_early_puthex_ulong((unsigned long)task_regs);
+	riscv_evl_early_puts("\n");
 	raw_spin_unlock_irqrestore(&riscv_evl_trace_lock, flags);
 }
 
