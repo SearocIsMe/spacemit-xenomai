@@ -1357,25 +1357,10 @@ static void __init do_initcalls(void)
 static void __init do_basic_setup(void)
 {
 	cpuset_init_smp();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG do_basic_setup after cpuset_init_smp\n");
-#endif
 	driver_init();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG do_basic_setup after driver_init\n");
-#endif
 	init_irq_proc();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG do_basic_setup after init_irq_proc\n");
-#endif
 	do_ctors();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG do_basic_setup after do_ctors\n");
-#endif
 	do_initcalls();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG do_basic_setup after do_initcalls\n");
-#endif
 }
 
 static void __init do_pre_smp_initcalls(void)
@@ -1476,9 +1461,6 @@ void __weak free_initmem(void)
 
 static int __ref kernel_init(void *unused)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init entry\n");
-#endif
 	int ret;
 
 	/*
@@ -1569,9 +1551,6 @@ void __init console_on_rootfs(void)
 
 static noinline void __init kernel_init_freeable(void)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable entry\n");
-#endif
 	/* Now the scheduler is fully set up and can do blocking allocations */
 	gfp_allowed_mask = __GFP_BITS_MASK;
 
@@ -1585,67 +1564,30 @@ static noinline void __init kernel_init_freeable(void)
 	smp_prepare_cpus(setup_max_cpus);
 
 	workqueue_init();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after workqueue_init\n");
-#endif
 
 	init_mm_internals();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after init_mm_internals\n");
-#endif
 
 	rcu_init_tasks_generic();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after rcu_init_tasks_generic\n");
-#endif
 	do_pre_smp_initcalls();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after do_pre_smp_initcalls\n");
-#endif
 	lockup_detector_init();
 #ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after lockup_detector_init\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before smp_init\n");
 	WRITE_ONCE(irq_pipeline_smp_init_busy, true);
 #endif
 
 	smp_init();
 #ifdef CONFIG_IRQ_PIPELINE
 	WRITE_ONCE(irq_pipeline_smp_init_busy, false);
-	riscv_evl_trace("EVLDBG kernel_init_freeable after smp_init\n");
 #endif
 	sched_init_smp();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after sched_init_smp\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before padata_init\n");
-#endif
 	padata_init();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after padata_init\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before page_alloc_init_late\n");
-#endif
 	page_alloc_init_late();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after page_alloc_init_late\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before do_basic_setup\n");
-#endif
 
 	do_basic_setup();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after do_basic_setup\n");
-#endif
 
 	kunit_run_all_tests();
 
 	wait_for_initramfs();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after wait_for_initramfs\n");
-#endif
 	console_on_rootfs();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after console_on_rootfs\n");
-	riscv_evl_trace("EVLDBG kernel_init_freeable before deferred workqueue_init_topology\n");
-#endif
 
 	/*
 	 * Before workqueue_init_topology(), unbound workqueues still operate
@@ -1655,9 +1597,6 @@ static noinline void __init kernel_init_freeable(void)
 	 * still fragile.
 	 */
 	workqueue_init_topology();
-#ifdef CONFIG_IRQ_PIPELINE
-	riscv_evl_trace("EVLDBG kernel_init_freeable after deferred workqueue_init_topology\n");
-#endif
 
 	/*
 	 * check if there is an early userspace init.  If yes, let it do all

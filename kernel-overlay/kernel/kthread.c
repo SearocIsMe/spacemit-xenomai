@@ -51,16 +51,6 @@ struct kthread_create_info
 	struct list_head list;
 };
 
-static __always_inline bool evl_trace_kworker_u(const struct kthread_create_info *create)
-{
-	return create->full_name && !strncmp(create->full_name, "kworker/u", 9);
-}
-
-static __always_inline bool evl_trace_kdevtmpfs(const struct kthread_create_info *create)
-{
-	return create->full_name && !strcmp(create->full_name, "kdevtmpfs");
-}
-
 static __always_inline bool evl_trace_cpuhp_task(const struct task_struct *task)
 {
 	return task && !strncmp(task->comm, "cpuhp/", 6);
@@ -388,10 +378,6 @@ static int kthread(void *_create)
 	self->full_name = create->full_name;
 	self->threadfn = threadfn;
 	self->data = data;
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG kthread kworker_u child_entry\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG kthread kdevtmpfs child_entry\n");
 
 	/*
 	 * The new thread inherited kthreadd's priority and CPU mask. Reset
@@ -409,10 +395,6 @@ static int kthread(void *_create)
 	 */
 	preempt_disable();
 	complete(done);
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG kthread kworker_u child_complete\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG kthread kdevtmpfs child_complete\n");
 	schedule_preempt_disabled();
 	preempt_enable();
 
@@ -439,21 +421,12 @@ static void create_kthread(struct kthread_create_info *create)
 {
 	int pid;
 
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG create_kthread kworker_u entry\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG create_kthread kdevtmpfs entry\n");
-
 #ifdef CONFIG_NUMA
 	current->pref_node_fork = create->node;
 #endif
 	/* We want our own signal handler (we take no signals by default). */
 	pid = kernel_thread(kthread, create, create->full_name,
 			    CLONE_FS | CLONE_FILES | SIGCHLD);
-	if (evl_trace_kworker_u(create))
-		riscv_evl_trace_hex("EVLDBG create_kthread kworker_u pid=", pid);
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_trace_hex("EVLDBG create_kthread kdevtmpfs pid=", pid);
 	if (pid < 0) {
 		/* Release the structure when caller killed by a fatal signal. */
 		struct completion *done = xchg(&create->done, NULL);
@@ -494,30 +467,14 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	spin_lock(&kthread_create_lock);
 	list_add_tail(&create->list, &kthread_create_list);
 	spin_unlock(&kthread_create_lock);
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u queued\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kdevtmpfs queued\n");
 
 	wake_up_process(kthreadd_task);
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wake_kthreadd\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kdevtmpfs wake_kthreadd\n");
 	/*
 	 * Wait for completion in killable state, for I might be chosen by
 	 * the OOM killer while kthreadd is trying to allocate memory for
 	 * new kernel thread.
 	 */
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_begin\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kdevtmpfs wait_done_begin\n");
 	if (unlikely(wait_for_completion_killable(&done))) {
-		if (evl_trace_kworker_u(create))
-			riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_killable\n");
-		if (evl_trace_kdevtmpfs(create))
-			riscv_evl_early_puts("EVLDBG __kthread_create_on_node kdevtmpfs wait_done_killable\n");
 		/*
 		 * If I was killed by a fatal signal before kthreadd (or new
 		 * kernel thread) calls complete(), leave the cleanup of this
@@ -531,15 +488,7 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 		 */
 		wait_for_completion(&done);
 	}
-	if (evl_trace_kworker_u(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kworker_u wait_done_end\n");
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_early_puts("EVLDBG __kthread_create_on_node kdevtmpfs wait_done_end\n");
 	task = create->result;
-	if (evl_trace_kworker_u(create))
-		riscv_evl_trace_ptr("EVLDBG __kthread_create_on_node kworker_u result=", task);
-	if (evl_trace_kdevtmpfs(create))
-		riscv_evl_trace_ptr("EVLDBG __kthread_create_on_node kdevtmpfs result=", task);
 free_create:
 	kfree(create);
 	return task;
@@ -901,16 +850,8 @@ int kthreadd(void *unused)
 					    struct kthread_create_info, list);
 			list_del_init(&create->list);
 			spin_unlock(&kthread_create_lock);
-			if (evl_trace_kworker_u(create))
-				riscv_evl_early_puts("EVLDBG kthreadd kworker_u dequeue\n");
-			if (evl_trace_kdevtmpfs(create))
-				riscv_evl_early_puts("EVLDBG kthreadd kdevtmpfs dequeue\n");
 
 			create_kthread(create);
-			if (evl_trace_kworker_u(create))
-				riscv_evl_early_puts("EVLDBG kthreadd kworker_u create_done\n");
-			if (evl_trace_kdevtmpfs(create))
-				riscv_evl_early_puts("EVLDBG kthreadd kdevtmpfs create_done\n");
 
 			spin_lock(&kthread_create_lock);
 		}

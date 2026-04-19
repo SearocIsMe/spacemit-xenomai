@@ -414,22 +414,16 @@ static noinline int __init devtmpfs_setup(void *p)
 {
 	int err;
 
-	riscv_evl_trace("EVLDBG devtmpfs_setup entry\n");
 	err = ksys_unshare(CLONE_NEWNS);
 	if (err)
 		goto out;
-	riscv_evl_trace("EVLDBG devtmpfs_setup after unshare\n");
 	err = init_mount("devtmpfs", "/", "devtmpfs", DEVTMPFS_MFLAGS, NULL);
 	if (err)
 		goto out;
-	riscv_evl_trace("EVLDBG devtmpfs_setup after init_mount\n");
 	init_chdir("/.."); /* will traverse into overmounted root */
-	riscv_evl_trace("EVLDBG devtmpfs_setup after init_chdir\n");
 	init_chroot(".");
-	riscv_evl_trace("EVLDBG devtmpfs_setup after init_chroot\n");
 out:
 	*(int *)p = err;
-	riscv_evl_trace("EVLDBG devtmpfs_setup exit\n");
 	return err;
 }
 
@@ -440,12 +434,9 @@ out:
  */
 static int __ref devtmpfsd(void *p)
 {
-	riscv_evl_trace("EVLDBG devtmpfsd entry\n");
 	int err = devtmpfs_setup(p);
 
-	riscv_evl_trace("EVLDBG devtmpfsd after setup\n");
 	complete(&setup_done);
-	riscv_evl_trace("EVLDBG devtmpfsd after complete\n");
 	if (err)
 		return err;
 	devtmpfs_work_loop();
@@ -461,25 +452,20 @@ int __init devtmpfs_init(void)
 	char opts[] = "mode=0755";
 	int err;
 
-	riscv_evl_trace("EVLDBG devtmpfs_init entry\n");
 	mnt = vfs_kern_mount(&internal_fs_type, 0, "devtmpfs", opts);
 	if (IS_ERR(mnt)) {
 		pr_err("unable to create devtmpfs %ld\n", PTR_ERR(mnt));
 		return PTR_ERR(mnt);
 	}
-	riscv_evl_trace("EVLDBG devtmpfs_init after vfs_kern_mount\n");
 	err = register_filesystem(&dev_fs_type);
 	if (err) {
 		pr_err("unable to register devtmpfs type %d\n", err);
 		return err;
 	}
-	riscv_evl_trace("EVLDBG devtmpfs_init after register_filesystem\n");
 
 	thread = kthread_run(devtmpfsd, &err, "kdevtmpfs");
 	if (!IS_ERR(thread)) {
-		riscv_evl_trace("EVLDBG devtmpfs_init after kthread_run\n");
 		wait_for_completion(&setup_done);
-		riscv_evl_trace("EVLDBG devtmpfs_init after setup_done\n");
 	} else {
 		err = PTR_ERR(thread);
 		thread = NULL;
@@ -493,6 +479,5 @@ int __init devtmpfs_init(void)
 	}
 
 	pr_info("initialized\n");
-	riscv_evl_trace("EVLDBG devtmpfs_init exit\n");
 	return 0;
 }
