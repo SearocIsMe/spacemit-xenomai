@@ -490,6 +490,17 @@ asmlinkage void noinstr do_irq(struct pt_regs *regs)
 	else
 		handle_riscv_irq(regs);
 
+#ifdef CONFIG_IRQ_PIPELINE
+	if (riscv_evl_trace_enabled() && current && raw_smp_processor_id() == 1 &&
+	    !strcmp(current->comm, "cpuhp/1"))
+		riscv_evl_trace_task_stack_state(
+			"EVLDBG do_irq after irq_stack",
+			raw_smp_processor_id(), current, task_pid_nr(current),
+			task_cpu(current), current_stack_pointer,
+			current->thread_info.kernel_sp, current->thread.sp,
+			task_pt_regs(current));
+#endif
+
 	irqentry_exit(regs, state);
 }
 
