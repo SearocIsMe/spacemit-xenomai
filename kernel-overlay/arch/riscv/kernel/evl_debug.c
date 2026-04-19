@@ -7,6 +7,7 @@
 #include <asm/sbi.h>
 
 bool riscv_evl_early_debug_enabled;
+bool riscv_evl_runtime_trace_enabled;
 static DEFINE_RAW_SPINLOCK(riscv_evl_trace_lock);
 
 #ifndef SBI_EXT_0_1_CONSOLE_PUTCHAR
@@ -66,7 +67,7 @@ void riscv_evl_trace_sched_switch(unsigned long cpu,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -106,7 +107,7 @@ void riscv_evl_trace_cpuhp_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -138,7 +139,7 @@ void riscv_evl_trace_worker_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -170,7 +171,7 @@ void riscv_evl_trace_smpboot_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -201,7 +202,7 @@ void riscv_evl_trace_task_stack_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -236,7 +237,7 @@ void riscv_evl_trace_idle_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);
@@ -267,7 +268,7 @@ void riscv_evl_trace_resched_state(const char *tag,
 {
 	unsigned long flags;
 
-	if (!riscv_evl_early_debug_enabled)
+	if (!riscv_evl_early_debug_enabled || !riscv_evl_runtime_trace_enabled)
 		return;
 
 	raw_spin_lock_irqsave(&riscv_evl_trace_lock, flags);

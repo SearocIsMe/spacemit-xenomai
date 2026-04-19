@@ -508,36 +508,55 @@ asmlinkage void handle_bad_stack(struct pt_regs *regs)
 	unsigned long tsk_stk = (unsigned long)current->stack;
 	unsigned long ovf_stk = (unsigned long)this_cpu_ptr(overflow_stack);
 
-	if (riscv_evl_trace_enabled()) {
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack cpu=",
-				    raw_smp_processor_id());
-		riscv_evl_trace_ptr("EVLDBG handle_bad_stack current=", current);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack current_pid=",
-				    task_pid_nr(current));
+	if (riscv_evl_early_debug_enabled) {
+		riscv_evl_early_puts("EVLDBG handle_bad_stack cpu=");
+		riscv_evl_early_puthex_ulong(raw_smp_processor_id());
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack current=");
+		riscv_evl_early_puthex_ulong((unsigned long)current);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack current_pid=");
+		riscv_evl_early_puthex_ulong(task_pid_nr(current));
+		riscv_evl_early_puts("\n");
 		riscv_evl_early_puts("EVLDBG handle_bad_stack current_comm=");
 		riscv_evl_early_puts(current->comm);
 		riscv_evl_early_puts("\n");
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_cpu=",
-				    task_cpu(current));
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_epc=",
-				    regs->epc);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_ra=",
-				    regs->ra);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_cause=",
-				    regs->cause);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack regs_sp=", regs->sp);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack ti_kernel_sp=",
-				    current->thread_info.kernel_sp);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack thread_sp=",
-				    current->thread.sp);
-		riscv_evl_trace_ptr("EVLDBG handle_bad_stack task_pt_regs=",
-				    task_pt_regs(current));
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_low=", tsk_stk);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack task_stack_high=",
-				    tsk_stk + THREAD_SIZE);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack overflow_low=", ovf_stk);
-		riscv_evl_trace_hex("EVLDBG handle_bad_stack overflow_high=",
-				    ovf_stk + OVERFLOW_STACK_SIZE);
+		riscv_evl_early_puts("EVLDBG handle_bad_stack task_cpu=");
+		riscv_evl_early_puthex_ulong(task_cpu(current));
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_epc=");
+		riscv_evl_early_puthex_ulong(regs->epc);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_ra=");
+		riscv_evl_early_puthex_ulong(regs->ra);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_cause=");
+		riscv_evl_early_puthex_ulong(regs->cause);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack regs_sp=");
+		riscv_evl_early_puthex_ulong(regs->sp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack ti_kernel_sp=");
+		riscv_evl_early_puthex_ulong(current->thread_info.kernel_sp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack thread_sp=");
+		riscv_evl_early_puthex_ulong(current->thread.sp);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack task_pt_regs=");
+		riscv_evl_early_puthex_ulong((unsigned long)task_pt_regs(current));
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack task_stack_low=");
+		riscv_evl_early_puthex_ulong(tsk_stk);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack task_stack_high=");
+		riscv_evl_early_puthex_ulong(tsk_stk + THREAD_SIZE);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack overflow_low=");
+		riscv_evl_early_puthex_ulong(ovf_stk);
+		riscv_evl_early_puts("\n");
+		riscv_evl_early_puts("EVLDBG handle_bad_stack overflow_high=");
+		riscv_evl_early_puthex_ulong(ovf_stk + OVERFLOW_STACK_SIZE);
+		riscv_evl_early_puts("\n");
 	}
 
 	console_verbose();
