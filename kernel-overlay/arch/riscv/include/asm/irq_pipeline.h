@@ -200,8 +200,20 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
  * Out-of-band IPI assignments for RISC-V.
  * ipi_irq_base is set during SMP init; OOB IPIs are offset from it.
  */
+/*
+ * RISC-V currently uses six in-band virtual IPI slots:
+ * reschedule, call-function, cpu-stop, cpu-crash-stop, irq-work, timer.
+ */
+#define RISCV_NR_IPI		6
 #define OOB_NR_IPI		3
-#define OOB_IPI_OFFSET		1
+/*
+ * Keep OOB IPIs out of the in-band RISC-V IPI range.
+ *
+ * The generic SMP IPI setup consumes slots [0 .. RISCV_NR_IPI - 1] from the
+ * muxed IPI range. Reserve the next three slots for the IRQ pipeline/EVL
+ * IPIs so request_percpu_irq() does not collide on the same virq.
+ */
+#define OOB_IPI_OFFSET		RISCV_NR_IPI
 extern int ipi_irq_base;
 #define TIMER_OOB_IPI		(ipi_irq_base + OOB_IPI_OFFSET)
 #define RESCHEDULE_OOB_IPI	(TIMER_OOB_IPI + 1)

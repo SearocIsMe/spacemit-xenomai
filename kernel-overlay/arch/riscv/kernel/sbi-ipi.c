@@ -69,7 +69,7 @@ void __init sbi_ipi_init(void)
 		return;
 	}
 
-	virq = ipi_mux_create(BITS_PER_BYTE, sbi_send_ipi);
+	virq = ipi_mux_create(RISCV_NR_IPI + OOB_NR_IPI, sbi_send_ipi);
 	if (virq <= 0) {
 		pr_err("unable to create muxed IPIs\n");
 		irq_dispose_mapping(sbi_ipi_virq);
@@ -92,7 +92,7 @@ void __init sbi_ipi_init(void)
 			  sbi_clint_ipi_starting_cpu, NULL);
 #endif
 
-	riscv_ipi_set_virq_range(virq, BITS_PER_BYTE, false);
+	riscv_ipi_set_virq_range(virq, RISCV_NR_IPI + OOB_NR_IPI, false);
 #ifdef CONFIG_IRQ_PIPELINE
 	if (!trace_sbi_ipi_init_seen) {
 		trace_sbi_ipi_init_seen = true;

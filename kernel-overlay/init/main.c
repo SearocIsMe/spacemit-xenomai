@@ -1341,10 +1341,15 @@ static void __init do_initcalls(void)
 static void __init do_basic_setup(void)
 {
 	cpuset_init_smp();
+	pr_info("BOOTDBG do_basic_setup after cpuset_init_smp\n");
 	driver_init();
+	pr_info("BOOTDBG do_basic_setup after driver_init\n");
 	init_irq_proc();
+	pr_info("BOOTDBG do_basic_setup after init_irq_proc\n");
 	do_ctors();
+	pr_info("BOOTDBG do_basic_setup after do_ctors\n");
 	do_initcalls();
+	pr_info("BOOTDBG do_basic_setup after do_initcalls\n");
 }
 
 static void __init do_pre_smp_initcalls(void)
@@ -1546,8 +1551,10 @@ static noinline void __init kernel_init_freeable(void)
 	cad_pid = get_pid(task_pid(current));
 
 	smp_prepare_cpus(setup_max_cpus);
+	pr_info("BOOTDBG kernel_init_freeable after smp_prepare_cpus\n");
 
 	workqueue_init();
+	pr_info("BOOTDBG kernel_init_freeable after workqueue_init\n");
 
 	init_mm_internals();
 
@@ -1559,14 +1566,18 @@ static noinline void __init kernel_init_freeable(void)
 #endif
 
 	smp_init();
+	pr_info("BOOTDBG kernel_init_freeable after smp_init\n");
 #ifdef CONFIG_IRQ_PIPELINE
 	WRITE_ONCE(irq_pipeline_smp_init_busy, false);
 #endif
 	sched_init_smp();
+	pr_info("BOOTDBG kernel_init_freeable after sched_init_smp\n");
 	padata_init();
 	page_alloc_init_late();
+	pr_info("BOOTDBG kernel_init_freeable before do_basic_setup\n");
 
 	do_basic_setup();
+	pr_info("BOOTDBG kernel_init_freeable after do_basic_setup\n");
 
 	kunit_run_all_tests();
 
@@ -1581,6 +1592,7 @@ static noinline void __init kernel_init_freeable(void)
 	 * still fragile.
 	 */
 	workqueue_init_topology();
+	pr_info("BOOTDBG kernel_init_freeable after workqueue_init_topology\n");
 
 	/*
 	 * check if there is an early userspace init.  If yes, let it do all

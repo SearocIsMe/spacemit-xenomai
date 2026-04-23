@@ -62,7 +62,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${1:-${REPO_ROOT}/.build/build-k1}"
 OUTPUT_DIR="${2:-${REPO_ROOT}/.build/images}"
 
-IMG_NAME="evl-boot-k1-$(date +%Y%m%d).img"
+IMG_NAME="evl-boot-k1-$(date +%Y%m%d-%H%M%S).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
 
 KERNEL_IMAGE="${BUILD_DIR}/arch/riscv/boot/Image"

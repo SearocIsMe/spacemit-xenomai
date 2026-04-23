@@ -221,7 +221,7 @@ IMG_SUFFIX="${TEST_PROFILE}"
 if [[ -n "${IMAGE_TAG}" ]]; then
   IMG_SUFFIX="${IMG_SUFFIX}-${IMAGE_TAG}"
 fi
-IMG_NAME="evl-sdcard-k1-${IMG_SUFFIX}-$(date +%Y%m%d).img"
+IMG_NAME="evl-sdcard-k1-${IMG_SUFFIX}-$(date +%Y%m%d-%H%M%S).img"
 IMG="${OUTPUT_DIR}/${IMG_NAME}"
 
 info "Base image : ${BASE_IMAGE} ($(du -sh "${BASE_IMAGE}" | cut -f1))"
@@ -564,22 +564,29 @@ else
       ok "kernel_addr_r already set in raw env"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk keep_bootcon ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 fbcon=nodefer vt.global_cursor_default=0 logo.nologo systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if grep -q '^commonargs=' "${ENV_TXT}"; then
       sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_TXT}"
-      ok "Replaced commonargs in raw env"
+      ok "Replaced commonargs in raw env with a minimal initcall-debug builder"
     else
       printf '%s\n' "${CLEAN_COMMONARGS}" >> "${ENV_TXT}"
-      ok "Added commonargs to raw env"
+      ok "Added minimal commonargs to raw env"
     fi
 
-    SET_CONSOLE='set_console=setenv bootargs ${bootargs} console=tty0 console=ttyS0,115200'
-    if grep -q '^set_console=' "${ENV_TXT}"; then
-      sed -i "s|^set_console=.*|${SET_CONSOLE}|" "${ENV_TXT}"
-      ok "Updated set_console in raw env"
+    if grep -q '^console=' "${ENV_TXT}"; then
+      sed -i 's|^console=.*|console=tty0 console=ttyS0,115200|' "${ENV_TXT}"
+      ok "Updated console= in raw env to HDMI tty0 + serial ttyS0"
     else
-      printf '%s\n' "${SET_CONSOLE}" >> "${ENV_TXT}"
-      ok "Added set_console to raw env"
+      printf '%s\n' 'console=tty0 console=ttyS0,115200' >> "${ENV_TXT}"
+      ok "Added console=tty0 console=ttyS0,115200 to raw env"
+    fi
+
+    if grep -q '^loglevel=' "${ENV_TXT}"; then
+      sed -i 's|^loglevel=.*|loglevel=8|' "${ENV_TXT}"
+      ok "Updated loglevel=8 in raw env"
+    else
+      printf '%s\n' 'loglevel=8' >> "${ENV_TXT}"
+      ok "Added loglevel=8 to raw env"
     fi
 
     for stream_var in stdout stderr; do
@@ -611,11 +618,9 @@ else
 
     rm -f "${ENV_TXT}" "${ENV_BIN}"
 
-    if [[ -f "${ENV_FILE}" ]]; then
-      info "Also mirroring debug bootargs into bootfs/env_k1-x.txt for consistency"
-      sudo sed -i 's|knl_name=Image\.itb|knl_name=Image|g' "${ENV_FILE}" 2>/dev/null || true
-    fi
-  elif [[ -f "${ENV_FILE}" ]]; then
+  fi
+
+  if [[ -f "${ENV_FILE}" ]]; then
     sep
     info "Original env_k1-x.txt:"
     sudo cat "${ENV_FILE}"
@@ -639,13 +644,17 @@ else
       ok "kernel_addr_r already set — no change needed"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk keep_bootcon ignore_loglevel loglevel=8 initcall_debug no_console_suspend consoleblank=0 fbcon=nodefer vt.global_cursor_default=0 logo.nologo systemd.show_status=1 systemd.log_level=debug rd.udev.log_priority=debug nosplash plymouth.enable=0 rd.plymouth=0 clk_ignore_unused swiotlb=65536'
+    # Keep the imported env command short and close to the board default.
+    # Longer "setenv bootargs ..." lines proved fragile on Jupiter and triggered
+    # U-Boot's "setenv" usage path during mmc_boot. For initcall triage we only
+    # need a minimal set of debug args to survive into the final bootargs.
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
       sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
-      ok "Replaced commonargs: removed quiet/splash/plymouth, added debug verbosity"
+      ok "Replaced commonargs with a minimal initcall-debug bootargs builder"
     else
       printf '%s\n' "${CLEAN_COMMONARGS}" | sudo tee -a "${ENV_FILE}" > /dev/null
-      ok "Added commonargs to env_k1-x.txt (no splash, full debug verbosity)"
+      ok "Added minimal commonargs to env_k1-x.txt"
     fi
 
     for key_pattern in 'bootargs=' 'extraargs=' 'othbootargs='; do
@@ -662,13 +671,22 @@ else
       fi
     done
 
-    SET_CONSOLE='set_console=setenv bootargs ${bootargs} console=tty0 console=ttyS0,115200'
-    if ! sudo grep -q '^set_console=' "${ENV_FILE}" 2>/dev/null; then
-      printf '%s\n' "${SET_CONSOLE}" | sudo tee -a "${ENV_FILE}" > /dev/null
-      ok "Added set_console to env_k1-x.txt (HDMI tty0 + serial ttyS0)"
+    # Prefer updating the plain "console=" variable instead of overriding the
+    # command-style set_console helper imported by U-Boot.
+    if sudo grep -q '^console=' "${ENV_FILE}" 2>/dev/null; then
+      sudo sed -i 's|^console=.*|console=tty0 console=ttyS0,115200|' "${ENV_FILE}"
+      ok "Updated console= to HDMI tty0 + serial ttyS0"
     else
-      sudo sed -i "s|^set_console=.*|${SET_CONSOLE}|" "${ENV_FILE}"
-      ok "Updated set_console in env_k1-x.txt"
+      printf '%s\n' 'console=tty0 console=ttyS0,115200' | sudo tee -a "${ENV_FILE}" > /dev/null
+      ok "Added console=tty0 console=ttyS0,115200"
+    fi
+
+    if sudo grep -q '^loglevel=' "${ENV_FILE}" 2>/dev/null; then
+      sudo sed -i 's|^loglevel=.*|loglevel=8|' "${ENV_FILE}"
+      ok "Updated loglevel=8 in env_k1-x.txt"
+    else
+      printf '%s\n' 'loglevel=8' | sudo tee -a "${ENV_FILE}" > /dev/null
+      ok "Added loglevel=8 to env_k1-x.txt"
     fi
 
     for stream_var in stdout stderr; do
