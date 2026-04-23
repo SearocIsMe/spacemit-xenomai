@@ -1249,6 +1249,13 @@ static bool spacemit_i2c_bootdbg_target(struct spacemit_i2c_dev *spacemit_i2c,
 	return spacemit_i2c->adapt.nr == 8 && num > 0 && msgs[0].addr == 0x41;
 }
 
+static bool spacemit_i2c_force_pio_debug(struct spacemit_i2c_dev *spacemit_i2c,
+					 struct i2c_msg msgs[], int num)
+{
+	return spacemit_i2c_bootdbg_target(spacemit_i2c, msgs, num) &&
+	       hard_irqs_disabled();
+}
+
 static int spacemit_i2c_notifier_poweroff_call(struct sys_off_data *data)
 {
 	spacemit_i2c_poweroff_notify = true;
@@ -1269,6 +1276,7 @@ spacemit_i2c_xfer(struct i2c_adapter *adapt, struct i2c_msg msgs[], int num)
 	unsigned long time_left;
 	bool clk_directly = false;
 	bool bootdbg_target = spacemit_i2c_bootdbg_target(spacemit_i2c, msgs, num);
+	bool force_pio_debug = spacemit_i2c_force_pio_debug(spacemit_i2c, msgs, num);
 
 	if (bootdbg_target)
 		dev_info(spacemit_i2c->dev,
@@ -1293,6 +1301,7 @@ spacemit_i2c_xfer(struct i2c_adapter *adapt, struct i2c_msg msgs[], int num)
 #ifdef CONFIG_DEBUG_FS
 		|| spacemit_i2c->dbgfs_mode == SPACEMIT_I2C_MODE_PIO
 #endif
+		|| force_pio_debug
 		)) {
 
 		spacemit_i2c->msgs = msgs;
@@ -1300,7 +1309,7 @@ spacemit_i2c_xfer(struct i2c_adapter *adapt, struct i2c_msg msgs[], int num)
 
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
-				 "BOOTDBG spacemit_i2c_xfer force_pio_path adap=%d addr0=0x%02x restart=%d poweroff=%d dbgfs_mode=%d\n",
+				 "BOOTDBG spacemit_i2c_xfer force_pio_path adap=%d addr0=0x%02x restart=%d poweroff=%d dbgfs_mode=%d hard_irqs_disabled=%d debug_force=%d\n",
 				 adapt->nr, msgs[0].addr, spacemit_i2c_restart_notify,
 				 spacemit_i2c_poweroff_notify,
 #ifdef CONFIG_DEBUG_FS
@@ -1308,6 +1317,7 @@ spacemit_i2c_xfer(struct i2c_adapter *adapt, struct i2c_msg msgs[], int num)
 #else
 				 -1
 #endif
+				 , hard_irqs_disabled(), force_pio_debug
 				);
 
 		return spacemit_i2c_pio_xfer(spacemit_i2c);
