@@ -27,6 +27,8 @@
 #include <linux/ptrace.h>
 #include <linux/uaccess.h>
 #include <linux/numa.h>
+#include <linux/irq_pipeline.h>
+#include <linux/irqstage.h>
 #include <linux/sched/isolation.h>
 #include <trace/events/sched.h>
 
@@ -489,6 +491,32 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	if (kthread_bootdbg_target(create))
 		pr_info("BOOTDBG __kthread_create_on_node before_wait name=%s done=%p\n",
 			create->full_name, &done);
+	if (kthread_bootdbg_target(create) &&
+	    hard_irqs_disabled() && irq_pipeline_deferred_sync_pending()) {
+		bool took_sync;
+
+		pr_info("BOOTDBG __kthread_create_on_node delayed_sync_enter name=%s irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
+			create->full_name, irqs_disabled(), hard_irqs_disabled(),
+			irq_pipeline_deferred_sync_pending(), inband_irqs_disabled());
+		took_sync = irq_pipeline_take_deferred_sync();
+		pr_info("BOOTDBG __kthread_create_on_node delayed_sync_after_take name=%s took_sync=%d irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
+			create->full_name, took_sync, irqs_disabled(),
+			hard_irqs_disabled(), irq_pipeline_deferred_sync_pending(),
+			inband_irqs_disabled());
+		if (took_sync) {
+			pr_info("BOOTDBG __kthread_create_on_node delayed_sync_stage_enter name=%s irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
+				create->full_name, irqs_disabled(),
+				hard_irqs_disabled(),
+				irq_pipeline_deferred_sync_pending(),
+				inband_irqs_disabled());
+			sync_current_irq_stage();
+			pr_info("BOOTDBG __kthread_create_on_node delayed_sync_stage_exit name=%s irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
+				create->full_name, irqs_disabled(),
+				hard_irqs_disabled(),
+				irq_pipeline_deferred_sync_pending(),
+				inband_irqs_disabled());
+		}
+	}
 	if (unlikely(wait_for_completion_killable(&done))) {
 		/*
 		 * If I was killed by a fatal signal before kthreadd (or new
