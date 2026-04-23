@@ -738,6 +738,7 @@ int regmap_add_irq_chip_fwnode(struct fwnode_handle *fwnode,
 
 	d->irq_chip = regmap_irq_chip;
 	d->irq_chip.name = chip->name;
+	d->irq_chip.flags |= IRQCHIP_PIPELINE_SAFE;
 	d->irq = irq;
 	d->map = map;
 	d->chip = chip;
