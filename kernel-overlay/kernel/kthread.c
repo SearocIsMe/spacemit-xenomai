@@ -491,11 +491,14 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	if (kthread_bootdbg_target(create))
 		pr_info("BOOTDBG __kthread_create_on_node before_wait name=%s done=%p\n",
 			create->full_name, &done);
-	if (kthread_bootdbg_target(create) &&
-	    hard_irqs_disabled() && irq_pipeline_deferred_sync_pending()) {
+	if (kthread_bootdbg_target(create) && hard_irqs_disabled()) {
 		bool took_sync;
 
 		pr_info("BOOTDBG __kthread_create_on_node delayed_sync_enter name=%s irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
+			create->full_name, irqs_disabled(), hard_irqs_disabled(),
+			irq_pipeline_deferred_sync_pending(), inband_irqs_disabled());
+		irq_pipeline_request_deferred_sync();
+		pr_info("BOOTDBG __kthread_create_on_node delayed_sync_after_request name=%s irqs_disabled=%d hard_irqs_disabled=%d deferred_sync=%d stall=%d\n",
 			create->full_name, irqs_disabled(), hard_irqs_disabled(),
 			irq_pipeline_deferred_sync_pending(), inband_irqs_disabled());
 		took_sync = irq_pipeline_take_deferred_sync();
