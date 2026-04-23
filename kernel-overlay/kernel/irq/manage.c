@@ -25,6 +25,11 @@
 
 #include "internals.h"
 
+static bool irq_bootdbg_target(unsigned int irq, const char *name)
+{
+	return irq == 21 || (name && !strcmp(name, "spm8821"));
+}
+
 #if defined(CONFIG_IRQ_FORCED_THREADING) && !defined(CONFIG_PREEMPT_RT)
 DEFINE_STATIC_KEY_FALSE(force_irqthreads_key);
 
@@ -1507,6 +1512,10 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 {
 	struct task_struct *t;
 
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG setup_irq_thread enter irq=%u name=%s secondary=%d\n",
+			irq, new && new->name ? new->name : "<none>", secondary);
+
 	if (!secondary) {
 		t = kthread_create(irq_thread, new, "irq/%d-%s", irq,
 				   new->name);
@@ -1517,6 +1526,11 @@ setup_irq_thread(struct irqaction *new, unsigned int irq, bool secondary)
 
 	if (IS_ERR(t))
 		return PTR_ERR(t);
+
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG setup_irq_thread after_create irq=%u name=%s secondary=%d task=%p comm=%s\n",
+			irq, new && new->name ? new->name : "<none>", secondary,
+			t, t->comm);
 
 	/*
 	 * We keep the reference to the task struct even if
@@ -1557,6 +1571,12 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	struct irqaction *old, **old_ptr;
 	unsigned long flags, thread_mask = 0;
 	int ret, nested, shared = 0;
+
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG __setup_irq enter irq=%u name=%s flags=0x%lx thread_fn=%p handler=%p\n",
+			irq, new && new->name ? new->name : "<none>",
+			new ? new->flags : 0UL, new ? new->thread_fn : NULL,
+			new ? new->handler : NULL);
 
 	if (!desc)
 		return -EINVAL;
@@ -1626,6 +1646,11 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			if (ret)
 				goto out_thread;
 		}
+		if (irq_bootdbg_target(irq, new ? new->name : NULL))
+			pr_info("BOOTDBG __setup_irq after_thread_create irq=%u name=%s thread=%p secondary_thread=%p\n",
+				irq, new && new->name ? new->name : "<none>",
+				new->thread,
+				new->secondary ? new->secondary->thread : NULL);
 	}
 
 	/*
@@ -1649,6 +1674,10 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 */
 	mutex_lock(&desc->request_mutex);
 
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG __setup_irq after_request_mutex irq=%u name=%s\n",
+			irq, new && new->name ? new->name : "<none>");
+
 	/*
 	 * Acquire bus lock as the irq_request_resources() callback below
 	 * might rely on the serialization or the magic power management
@@ -1664,6 +1693,9 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			       new->name, irq, desc->irq_data.chip->name);
 			goto out_bus_unlock;
 		}
+		if (irq_bootdbg_target(irq, new ? new->name : NULL))
+			pr_info("BOOTDBG __setup_irq after_request_resources irq=%u name=%s\n",
+				irq, new && new->name ? new->name : "<none>");
 	}
 
 	/*
@@ -1812,6 +1844,10 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 		if (ret)
 			goto out_unlock;
 
+		if (irq_bootdbg_target(irq, new ? new->name : NULL))
+			pr_info("BOOTDBG __setup_irq after_activate irq=%u name=%s\n",
+				irq, new && new->name ? new->name : "<none>");
+
 		desc->istate &= ~(IRQS_AUTODETECT | IRQS_SPURIOUS_DISABLED | \
 				  IRQS_ONESHOT | IRQS_WAITING);
 		irqd_clear(&desc->irq_data, IRQD_IRQ_INPROGRESS);
@@ -1840,7 +1876,13 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 
 		if (!(new->flags & IRQF_NO_AUTOEN) &&
 		    irq_settings_can_autoenable(desc)) {
+			if (irq_bootdbg_target(irq, new ? new->name : NULL))
+				pr_info("BOOTDBG __setup_irq before_startup irq=%u name=%s\n",
+					irq, new && new->name ? new->name : "<none>");
 			irq_startup(desc, IRQ_RESEND, IRQ_START_COND);
+			if (irq_bootdbg_target(irq, new ? new->name : NULL))
+				pr_info("BOOTDBG __setup_irq after_startup irq=%u name=%s\n",
+					irq, new && new->name ? new->name : "<none>");
 		} else {
 			/*
 			 * Shared interrupts do not go well with disabling
@@ -1884,10 +1926,21 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	chip_bus_sync_unlock(desc);
 	mutex_unlock(&desc->request_mutex);
 
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG __setup_irq before_thread_ready_wait irq=%u name=%s thread=%p secondary_thread=%p\n",
+			irq, new && new->name ? new->name : "<none>",
+			new->thread, new->secondary ? new->secondary->thread : NULL);
+
 	irq_setup_timings(desc, new);
 
 	wake_up_and_wait_for_irq_thread_ready(desc, new);
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG __setup_irq after_thread_ready_wait_primary irq=%u name=%s\n",
+			irq, new && new->name ? new->name : "<none>");
 	wake_up_and_wait_for_irq_thread_ready(desc, new->secondary);
+	if (irq_bootdbg_target(irq, new ? new->name : NULL))
+		pr_info("BOOTDBG __setup_irq after_thread_ready_wait_secondary irq=%u name=%s\n",
+			irq, new && new->name ? new->name : "<none>");
 
 	register_irq_proc(irq, desc);
 	new->dir = NULL;
@@ -2261,13 +2314,26 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	action->name = devname;
 	action->dev_id = dev_id;
 
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq enter irq=%u name=%s flags=0x%lx handler=%p thread_fn=%p dev_id=%p\n",
+			irq, devname ? devname : "<none>", irqflags,
+			handler, thread_fn, dev_id);
+
 	retval = irq_chip_pm_get(&desc->irq_data);
 	if (retval < 0) {
 		kfree(action);
 		return retval;
 	}
 
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq after_pm_get irq=%u name=%s retval=%d\n",
+			irq, devname ? devname : "<none>", retval);
+
 	retval = __setup_irq(irq, desc, action);
+
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq after___setup_irq irq=%u name=%s retval=%d thread=%p\n",
+			irq, devname ? devname : "<none>", retval, action->thread);
 
 	if (retval) {
 		irq_chip_pm_put(&desc->irq_data);
