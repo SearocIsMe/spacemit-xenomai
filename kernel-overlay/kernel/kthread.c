@@ -50,6 +50,12 @@ struct kthread_create_info
 	struct list_head list;
 };
 
+static bool kthread_bootdbg_target(const struct kthread_create_info *create)
+{
+	return create && create->full_name &&
+	       strstr(create->full_name, "spm8821");
+}
+
 struct kthread {
 	unsigned long flags;
 	unsigned int cpu;
@@ -362,6 +368,10 @@ static int kthread(void *_create)
 	self->threadfn = threadfn;
 	self->data = data;
 
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG kthread entry name=%s current=%s pid=%d done=%p\n",
+			create->full_name, current->comm, task_pid_nr(current), done);
+
 	/*
 	 * The new thread inherited kthreadd's priority and CPU mask. Reset
 	 * back to default in case they have been changed.
@@ -377,6 +387,10 @@ static int kthread(void *_create)
 	 * or the creator may spend more time in wait_task_inactive().
 	 */
 	preempt_disable();
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG kthread before_complete name=%s current=%s pid=%d result=%p\n",
+			create->full_name, current->comm, task_pid_nr(current),
+			create->result);
 	complete(done);
 	schedule_preempt_disabled();
 	preempt_enable();
@@ -404,12 +418,19 @@ static void create_kthread(struct kthread_create_info *create)
 {
 	int pid;
 
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG create_kthread enter name=%s node=%d done=%p\n",
+			create->full_name ?: "<null>", create->node, create->done);
+
 #ifdef CONFIG_NUMA
 	current->pref_node_fork = create->node;
 #endif
 	/* We want our own signal handler (we take no signals by default). */
 	pid = kernel_thread(kthread, create, create->full_name,
 			    CLONE_FS | CLONE_FILES | SIGCHLD);
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG create_kthread after_kernel_thread name=%s pid=%d\n",
+			create->full_name ?: "<null>", pid);
 	if (pid < 0) {
 		/* Release the structure when caller killed by a fatal signal. */
 		struct completion *done = xchg(&create->done, NULL);
@@ -451,12 +472,23 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 	list_add_tail(&create->list, &kthread_create_list);
 	spin_unlock(&kthread_create_lock);
 
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG __kthread_create_on_node after_enqueue name=%s node=%d create=%p kthreadd=%p\n",
+			create->full_name, node, create, kthreadd_task);
+
 	wake_up_process(kthreadd_task);
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG __kthread_create_on_node after_wake name=%s kthreadd_pid=%d\n",
+			create->full_name,
+			kthreadd_task ? task_pid_nr(kthreadd_task) : -1);
 	/*
 	 * Wait for completion in killable state, for I might be chosen by
 	 * the OOM killer while kthreadd is trying to allocate memory for
 	 * new kernel thread.
 	 */
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG __kthread_create_on_node before_wait name=%s done=%p\n",
+			create->full_name, &done);
 	if (unlikely(wait_for_completion_killable(&done))) {
 		/*
 		 * If I was killed by a fatal signal before kthreadd (or new
@@ -471,6 +503,9 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 		 */
 		wait_for_completion(&done);
 	}
+	if (kthread_bootdbg_target(create))
+		pr_info("BOOTDBG __kthread_create_on_node after_wait name=%s result=%p\n",
+			create->full_name, create->result);
 	task = create->result;
 free_create:
 	kfree(create);
@@ -762,6 +797,11 @@ int kthreadd(void *unused)
 					    struct kthread_create_info, list);
 			list_del_init(&create->list);
 			spin_unlock(&kthread_create_lock);
+
+			if (kthread_bootdbg_target(create))
+				pr_info("BOOTDBG kthreadd dequeue name=%s create=%p current=%s pid=%d\n",
+					create->full_name ?: "<null>", create,
+					current->comm, task_pid_nr(current));
 
 			create_kthread(create);
 
