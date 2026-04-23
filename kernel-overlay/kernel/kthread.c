@@ -478,11 +478,19 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 		pr_info("BOOTDBG __kthread_create_on_node after_enqueue name=%s node=%d create=%p kthreadd=%p\n",
 			create->full_name, node, create, kthreadd_task);
 
-	wake_up_process(kthreadd_task);
+	{
+		int wake_ret = wake_up_process(kthreadd_task);
+
 	if (kthread_bootdbg_target(create))
-		pr_info("BOOTDBG __kthread_create_on_node after_wake name=%s kthreadd_pid=%d\n",
+		pr_info("BOOTDBG __kthread_create_on_node after_wake name=%s kthreadd_pid=%d wake_ret=%d state=%ld on_rq=%d on_cpu=%d cpu=%d\n",
 			create->full_name,
-			kthreadd_task ? task_pid_nr(kthreadd_task) : -1);
+			kthreadd_task ? task_pid_nr(kthreadd_task) : -1,
+			wake_ret,
+			kthreadd_task ? READ_ONCE(kthreadd_task->__state) : -1L,
+			kthreadd_task ? READ_ONCE(kthreadd_task->on_rq) : -1,
+			kthreadd_task ? READ_ONCE(kthreadd_task->on_cpu) : -1,
+			kthreadd_task ? task_cpu(kthreadd_task) : -1);
+	}
 	/*
 	 * Wait for completion in killable state, for I might be chosen by
 	 * the OOM killer while kthreadd is trying to allocate memory for

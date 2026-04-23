@@ -4212,6 +4212,14 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 {
 	guard(preempt)();
 	int cpu, success = 0;
+	bool wake_kthreadd = p && !strcmp(p->comm, "kthreadd");
+
+	if (wake_kthreadd)
+		pr_info("BOOTDBG try_to_wake_up enter comm=%s pid=%d state=%u pstate=%ld on_rq=%d on_cpu=%d cpu=%d wake_flags=0x%x offstage=%d current=%s[%d]\n",
+			p->comm, task_pid_nr(p), state, READ_ONCE(p->__state),
+			READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu), task_cpu(p),
+			wake_flags, task_is_off_stage(p), current->comm,
+			task_pid_nr(current));
 
 	if (p == current) {
 		/*
@@ -4225,8 +4233,13 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 *  - we're serialized against set_special_state() by virtue of
 		 *    it disabling IRQs (this allows not taking ->pi_lock).
 		 */
-		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
+		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p)) {
+			if (wake_kthreadd)
+				pr_info("BOOTDBG try_to_wake_up self_blocked comm=%s pid=%d success=%d pstate=%ld offstage=%d\n",
+					p->comm, task_pid_nr(p), success,
+					READ_ONCE(p->__state), task_is_off_stage(p));
 			goto out;
+		}
 
 		trace_sched_waking(p);
 		ttwu_do_wakeup(p);
@@ -4241,8 +4254,14 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	 */
 	scoped_guard (raw_spinlock_irqsave, &p->pi_lock) {
 		smp_mb__after_spinlock();
-		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p))
+		if (!ttwu_state_match(p, state, &success) || task_is_off_stage(p)) {
+			if (wake_kthreadd)
+				pr_info("BOOTDBG try_to_wake_up blocked comm=%s pid=%d success=%d pstate=%ld on_rq=%d on_cpu=%d offstage=%d\n",
+					p->comm, task_pid_nr(p), success,
+					READ_ONCE(p->__state), READ_ONCE(p->on_rq),
+					READ_ONCE(p->on_cpu), task_is_off_stage(p));
 			break;
+		}
 
 		trace_sched_waking(p);
 
@@ -4269,8 +4288,14 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 * A similar smb_rmb() lives in try_invoke_on_locked_down_task().
 		 */
 		smp_rmb();
-		if (READ_ONCE(p->on_rq) && ttwu_runnable(p, wake_flags))
+		if (READ_ONCE(p->on_rq) && ttwu_runnable(p, wake_flags)) {
+			if (wake_kthreadd)
+				pr_info("BOOTDBG try_to_wake_up runnable comm=%s pid=%d success=%d on_rq=%d on_cpu=%d cpu=%d\n",
+					p->comm, task_pid_nr(p), success,
+					READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu),
+					task_cpu(p));
 			break;
+		}
 
 #ifdef CONFIG_SMP
 		/*
@@ -4326,8 +4351,13 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		 * scheduling.
 		 */
 		if (smp_load_acquire(&p->on_cpu) &&
-		    ttwu_queue_wakelist(p, task_cpu(p), wake_flags))
+		    ttwu_queue_wakelist(p, task_cpu(p), wake_flags)) {
+			if (wake_kthreadd)
+				pr_info("BOOTDBG try_to_wake_up queued_wakelist comm=%s pid=%d cpu=%d on_cpu=%d\n",
+					p->comm, task_pid_nr(p), task_cpu(p),
+					READ_ONCE(p->on_cpu));
 			break;
+		}
 
 		/*
 		 * If the owning (remote) CPU is still in the middle of schedule() with
@@ -4355,9 +4385,16 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		cpu = task_cpu(p);
 #endif /* CONFIG_SMP */
 
+		if (wake_kthreadd)
+			pr_info("BOOTDBG try_to_wake_up before_ttwu_queue comm=%s pid=%d cpu=%d wake_flags=0x%x\n",
+				p->comm, task_pid_nr(p), cpu, wake_flags);
 		ttwu_queue(p, cpu, wake_flags);
 	}
 out:
+	if (wake_kthreadd)
+		pr_info("BOOTDBG try_to_wake_up out comm=%s pid=%d success=%d pstate=%ld on_rq=%d on_cpu=%d cpu=%d\n",
+			p->comm, task_pid_nr(p), success, READ_ONCE(p->__state),
+			READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu), task_cpu(p));
 	if (success)
 		ttwu_stat(p, task_cpu(p), wake_flags);
 
