@@ -58,6 +58,58 @@ static bool kthread_bootdbg_target(const struct kthread_create_info *create)
 	       strstr(create->full_name, "spm8821");
 }
 
+static int kthread_bootdbg_wait_for_completion_killable(struct completion *x,
+							const char *name)
+{
+	long timeout = MAX_SCHEDULE_TIMEOUT;
+	int ret = 0;
+	DECLARE_SWAITQUEUE(wait);
+
+	might_sleep();
+	complete_acquire(x);
+
+	if (!READ_ONCE(x->done)) {
+		do {
+			long intr;
+
+			pr_info("BOOTDBG kthread_wait loop_enter name=%s x=%p done=%u current_state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+				name, x, READ_ONCE(x->done),
+				(long)READ_ONCE(current->__state), irqs_disabled(),
+				hard_irqs_disabled());
+			intr = prepare_to_swait_event(&x->wait, &wait,
+						      TASK_KILLABLE);
+			if (READ_ONCE(x->done))
+				break;
+			if (intr) {
+				timeout = intr;
+				ret = intr;
+				break;
+			}
+			pr_info("BOOTDBG kthread_wait before_schedule name=%s x=%p done=%u current_state=%ld timeout=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+				name, x, READ_ONCE(x->done),
+				(long)READ_ONCE(current->__state), timeout,
+				irqs_disabled(), hard_irqs_disabled());
+			timeout = schedule_timeout(timeout);
+			pr_info("BOOTDBG kthread_wait after_schedule name=%s x=%p done=%u current_state=%ld timeout=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+				name, x, READ_ONCE(x->done),
+				(long)READ_ONCE(current->__state), timeout,
+				irqs_disabled(), hard_irqs_disabled());
+		} while (!READ_ONCE(x->done) && timeout);
+
+		finish_swait(&x->wait, &wait);
+		pr_info("BOOTDBG kthread_wait after_finish name=%s x=%p done=%u timeout=%ld current_state=%ld\n",
+			name, x, READ_ONCE(x->done), timeout,
+			(long)READ_ONCE(current->__state));
+	}
+
+	raw_spin_lock_irq(&x->wait.lock);
+	if (x->done != UINT_MAX && x->done)
+		x->done--;
+	raw_spin_unlock_irq(&x->wait.lock);
+	complete_release(x);
+	return ret;
+}
+
 struct kthread {
 	unsigned long flags;
 	unsigned int cpu;
@@ -528,7 +580,10 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 				inband_irqs_disabled());
 		}
 	}
-	if (unlikely(wait_for_completion_killable(&done))) {
+	if (unlikely(kthread_bootdbg_target(create) ?
+		     kthread_bootdbg_wait_for_completion_killable(&done,
+						create->full_name) :
+		     wait_for_completion_killable(&done))) {
 		/*
 		 * If I was killed by a fatal signal before kthreadd (or new
 		 * kernel thread) calls complete(), leave the cleanup of this
