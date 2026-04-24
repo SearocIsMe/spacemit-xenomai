@@ -1363,6 +1363,21 @@ void do_inband_irq(struct irq_desc *desc)
 	static unsigned int trace_inband_irq_count;
 #endif
 
+	if (desc && (irq_desc_get_irq(desc) == 20 ||
+		     desc->irq_data.hwirq == 19)) {
+		pr_info("BOOTDBG do_inband_irq enter irq=%u hwirq=%lu istate=0x%lx deferred=%d forwarded=%d pending=%d masked=%d disabled=%d inprogress=%d action=%px handler=%ps\n",
+			irq_desc_get_irq(desc), desc->irq_data.hwirq,
+			(unsigned long)desc->istate,
+			!!(desc->istate & IRQS_DEFERRED),
+			!!(desc->istate & IRQS_FORWARDED),
+			!!(desc->istate & IRQS_PENDING),
+			irqd_irq_masked(&desc->irq_data),
+			irqd_irq_disabled(&desc->irq_data),
+			irqd_irq_inprogress(&desc->irq_data),
+			desc->action,
+			desc->action ? desc->action->handler : NULL);
+	}
+
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_inband_irq_count < 32) {
 		trace_inband_irq_count++;
@@ -1413,6 +1428,15 @@ bool handle_oob_irq(struct irq_desc *desc)
 	 */
 	if (!oob_stage_present() || !irq_settings_is_oob(desc)) {
 		desc->istate |= IRQS_DEFERRED;
+		if (irq == 20 || desc->irq_data.hwirq == 19)
+			pr_info("BOOTDBG handle_oob_irq defer irq=%u hwirq=%lu istate=0x%lx masked=%d disabled=%d inprogress=%d action=%px handler=%ps\n",
+				irq, desc->irq_data.hwirq,
+				(unsigned long)desc->istate,
+				irqd_irq_masked(&desc->irq_data),
+				irqd_irq_disabled(&desc->irq_data),
+				irqd_irq_inprogress(&desc->irq_data),
+				desc->action,
+				desc->action ? desc->action->handler : NULL);
 #ifdef CONFIG_IRQ_PIPELINE
 		if (trace_defer_count < 32) {
 			trace_defer_count++;
@@ -1427,6 +1451,13 @@ bool handle_oob_irq(struct irq_desc *desc)
 		}
 #endif
 		irq_post_stage(&inband_stage, irq);
+		if (irq == 20 || desc->irq_data.hwirq == 19)
+			pr_info("BOOTDBG handle_oob_irq posted_inband irq=%u hwirq=%lu istate=0x%lx masked=%d disabled=%d inprogress=%d\n",
+				irq, desc->irq_data.hwirq,
+				(unsigned long)desc->istate,
+				irqd_irq_masked(&desc->irq_data),
+				irqd_irq_disabled(&desc->irq_data),
+				irqd_irq_inprogress(&desc->irq_data));
 		return false;
 	}
 
