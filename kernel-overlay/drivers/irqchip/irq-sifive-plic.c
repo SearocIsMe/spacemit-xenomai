@@ -258,6 +258,9 @@ static void plic_irq_mask(struct irq_data *d)
 {
 	struct plic_priv *priv = irq_data_get_irq_chip_data(d);
 
+	if (bootdbg_plic_trace_this_irq(d))
+		pr_info("BOOTDBG plic_irq_mask_caller virq=%u hwirq=%lu caller=%pS\n",
+			d->irq, d->hwirq, __builtin_return_address(0));
 	writel(0, priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
 	bootdbg_plic_dump_irq_state(d, "mask");
 }
