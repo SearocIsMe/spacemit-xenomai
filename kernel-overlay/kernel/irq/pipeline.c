@@ -1536,6 +1536,8 @@ struct irq_stage_data *switch_stage_on_irq(void)
 static __always_inline
 void restore_stage_on_irq(struct irq_stage_data *prevd)
 {
+	struct irq_stage_data *curd = current_irq_staged;
+
 	/*
 	 * CPU migration and/or stage switching over
 	 * irq_exit_pipeline() are allowed.  Our exit logic is as
@@ -1549,8 +1551,26 @@ void restore_stage_on_irq(struct irq_stage_data *prevd)
 	 *    inband     inband    nop
 	 */
 	if (prevd->stage == &inband_stage &&
+	    curd == this_oob_staged() &&
+	    stage_irqs_pending(this_inband_staged()) &&
+	    peek_next_irq(this_inband_staged()) == 20) {
+		pr_info("BOOTDBG restore_stage_on_irq before_switch prev_stage=inband current_stage=oob next_inband_irq=%d hard_irqs_disabled=%d\n",
+			peek_next_irq(this_inband_staged()),
+			hard_irqs_disabled());
+	}
+
+	if (prevd->stage == &inband_stage &&
 		current_irq_staged == this_oob_staged())
 		switch_inband(this_inband_staged());
+
+	if (stage_irqs_pending(this_inband_staged()) &&
+	    peek_next_irq(this_inband_staged()) == 20) {
+		pr_info("BOOTDBG restore_stage_on_irq after_switch current_stage=%s next_inband_irq=%d running_inband=%d hard_irqs_disabled=%d\n",
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			peek_next_irq(this_inband_staged()),
+			running_inband(), hard_irqs_disabled());
+	}
 }
 
 /**
@@ -1655,6 +1675,10 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_finish_sync_count;
 #endif
+	int next_inband_irq = -1;
+	bool inband_pending;
+	bool oob_pending;
+	bool should_sync;
 
 	/*
 	 * Leave the (pseudo-)NMI entry for RCU before the out-of-band
@@ -1676,6 +1700,21 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 
 	/* Back to the preempted stage. */
 	restore_stage_on_irq(prevd);
+
+	inband_pending = stage_irqs_pending(this_inband_staged());
+	oob_pending = stage_irqs_pending(this_oob_staged());
+	if (inband_pending)
+		next_inband_irq = peek_next_irq(this_inband_staged());
+	should_sync = running_inband() || oob_pending;
+
+	if (next_inband_irq == 20) {
+		pr_info("BOOTDBG handle_irq_pipelined_finish before_sync next_inband_irq=%d running_inband=%d current_stage=%s should_sync=%d inband_pending=%d oob_pending=%d hard_irqs_disabled=%d\n",
+			next_inband_irq, running_inband(),
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			should_sync, inband_pending, oob_pending,
+			hard_irqs_disabled());
+	}
 
 	/*
 	 * We have to synchronize interrupts because some might have
@@ -1730,6 +1769,18 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	}
 #endif
 	synchronize_pipeline_on_irq();
+
+	if (stage_irqs_pending(this_inband_staged()) &&
+	    peek_next_irq(this_inband_staged()) == 20) {
+		pr_info("BOOTDBG handle_irq_pipelined_finish after_sync next_inband_irq=%d running_inband=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d\n",
+			peek_next_irq(this_inband_staged()),
+			running_inband(),
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			stage_irqs_pending(this_inband_staged()),
+			stage_irqs_pending(this_oob_staged()),
+			hard_irqs_disabled());
+	}
 
 out:
 #ifdef CONFIG_DOVETAIL
