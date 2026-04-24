@@ -100,6 +100,8 @@ static DEFINE_PER_CPU(bool, deferred_sync_request);
 static DEFINE_PER_CPU(bool, ttwu_window_active);
 static DEFINE_PER_CPU(bool, urgent_ipi_sync_request);
 
+static inline int peek_next_irq(struct irq_stage_data *p);
+
 static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
 {
 	smp_flush_oob_call_function_queue();
@@ -409,6 +411,16 @@ void synchronize_pipeline(void) /* hardirqs off */
 
 void irq_pipeline_request_deferred_sync(void)
 {
+	struct irq_stage_data *p = this_inband_staged();
+	int next_irq = peek_next_irq(p);
+
+	if (next_irq == 20) {
+		pr_info("BOOTDBG irq_pipeline_request_deferred_sync next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			next_irq, stage_irqs_pending(p),
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+	}
+
 	__this_cpu_write(deferred_sync_request, true);
 }
 EXPORT_SYMBOL_GPL(irq_pipeline_request_deferred_sync);
@@ -422,9 +434,18 @@ EXPORT_SYMBOL_GPL(irq_pipeline_deferred_sync_pending);
 bool irq_pipeline_take_deferred_sync(void)
 {
 	bool pending = __this_cpu_read(deferred_sync_request);
+	struct irq_stage_data *p = this_inband_staged();
+	int next_irq = peek_next_irq(p);
 
 	if (pending)
 		__this_cpu_write(deferred_sync_request, false);
+
+	if (pending && next_irq == 20) {
+		pr_info("BOOTDBG irq_pipeline_take_deferred_sync next_irq=%d pending=%d inband_pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			next_irq, pending, stage_irqs_pending(p),
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+	}
 
 	if (pending)
 		riscv_evl_trace("EVLDBG irq_pipeline_take_deferred_sync\n");
@@ -1593,6 +1614,13 @@ int generic_pipeline_irq_desc(struct irq_desc *desc)
 
 	irq = irq_desc_get_irq(desc);
 
+	if (irq == 20) {
+		pr_info("BOOTDBG generic_pipeline_irq_desc enter irq=%d desc=%px istate=0x%lx hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			irq, desc, (unsigned long)desc->istate,
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+	}
+
 	if (irq_pipeline_debug() && !hard_irqs_disabled()) {
 		hard_local_irq_disable();
 		pr_err("IRQ pipeline: interrupts enabled on entry (IRQ%u)\n", irq);
@@ -1602,6 +1630,13 @@ int generic_pipeline_irq_desc(struct irq_desc *desc)
 	copy_timer_regs(desc, regs);
 	generic_handle_irq_desc(desc);
 	trace_irq_pipeline_exit(irq);
+
+	if (irq == 20) {
+		pr_info("BOOTDBG generic_pipeline_irq_desc exit irq=%d desc=%px istate=0x%lx hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			irq, desc, (unsigned long)desc->istate,
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+	}
 
 	return 0;
 }
@@ -1926,6 +1961,14 @@ respin:
 		barrier();
 
 		desc = irq_to_desc(irq);
+		if (stage == &inband_stage && irq == 20) {
+			pr_info("BOOTDBG sync_current_irq_stage about_to_dispatch irq=%d desc=%px istate=0x%lx deferred_sync=%d pending=%d hard_irqs_disabled=%d stalled=%d current=%s[%d]\n",
+				irq, desc, desc ? (unsigned long)desc->istate : 0,
+				irq_pipeline_deferred_sync_pending(),
+				stage_irqs_pending(this_inband_staged()),
+				hard_irqs_disabled(), test_inband_stall(),
+				current->comm, task_pid_nr(current));
+		}
 		if (stage == &inband_stage && irq == 20) {
 			pr_info("BOOTDBG sync_current_irq_stage pulled irq=%d stage=inband desc=%px istate=0x%lx pending=%d stalled=%d hard_irqs_disabled=%d\n",
 				irq, desc, desc ? (unsigned long)desc->istate : 0,
