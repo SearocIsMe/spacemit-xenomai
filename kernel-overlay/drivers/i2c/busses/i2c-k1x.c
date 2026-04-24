@@ -48,6 +48,7 @@ static const struct of_device_id r_spacemit_i2c_dt_match[];
 #endif
 
 static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid);
+extern void bootdbg_plic_dump_external_irq_state(unsigned int virq, const char *tag);
 
 static inline u32 spacemit_i2c_read_reg(struct spacemit_i2c_dev *spacemit_i2c, int reg)
 {
@@ -1636,6 +1637,7 @@ xfer_retry:
 				 adapt->nr, spacemit_i2c->timeout);
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
+		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
 		bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
 							spacemit_i2c->timeout);
@@ -1646,6 +1648,7 @@ xfer_retry:
 				 spacemit_i2c->i2c_err, spacemit_i2c->num);
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "after_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "after_wait");
+		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_after_wait");
 		if (unlikely(time_left == 0)) {
 			if (bootdbg_target)
 				dev_info(spacemit_i2c->dev,
