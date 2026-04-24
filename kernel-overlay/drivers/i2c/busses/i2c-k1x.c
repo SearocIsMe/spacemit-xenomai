@@ -971,14 +971,14 @@ static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid)
 	struct spacemit_i2c_dev *spacemit_i2c = devid;
 	u32 status, ctrl;
 	int ret = 0;
-	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adap.nr == 8;
+	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
 
 	/* record i2c status */
 	status = spacemit_i2c_read_reg(spacemit_i2c, REG_SR);
 	spacemit_i2c->i2c_status = status;
 	if (bootdbg_target)
 		dev_info(spacemit_i2c->dev,
-			 "BOOTDBG spacemit_i2c_irq enter irq=%d status=0x%x phase=%d mode=%d msg_idx=%d rx_cnt=%d tx_cnt=%d err=0x%x hard_irqs_disabled=%d\n",
+			 "BOOTDBG spacemit_i2c_irq enter irq=%d status=0x%x phase=%d mode=%d msg_idx=%d rx_cnt=%zu tx_cnt=%zu err=0x%x hard_irqs_disabled=%d\n",
 			 irq, status, spacemit_i2c->phase, spacemit_i2c->xfer_mode,
 			 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
 			 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err,
@@ -1016,7 +1016,7 @@ static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid)
 		ret = spacemit_i2c_byte_xfer(spacemit_i2c);
 	if (bootdbg_target)
 		dev_info(spacemit_i2c->dev,
-			 "BOOTDBG spacemit_i2c_irq after_byte_xfer irq=%d ret=%d status=0x%x phase=%d msg_idx=%d rx_cnt=%d tx_cnt=%d err=0x%x\n",
+			 "BOOTDBG spacemit_i2c_irq after_byte_xfer irq=%d ret=%d status=0x%x phase=%d msg_idx=%d rx_cnt=%zu tx_cnt=%zu err=0x%x\n",
 			 irq, ret, spacemit_i2c->i2c_status, spacemit_i2c->phase,
 			 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
 			 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err);
@@ -1466,7 +1466,7 @@ xfer_retry:
 		if (unlikely(time_left == 0)) {
 			if (bootdbg_target)
 				dev_info(spacemit_i2c->dev,
-					 "BOOTDBG spacemit_i2c_xfer wait_timeout_dump adap=%d sr=0x%x cr=0x%x isr=0x%x msg_idx=%d phase=%d rx_cnt=%d tx_cnt=%d err=0x%x\n",
+				 "BOOTDBG spacemit_i2c_xfer wait_timeout_dump adap=%d sr=0x%x cr=0x%x isr=0x%x msg_idx=%d phase=%d rx_cnt=%zu tx_cnt=%zu err=0x%x\n",
 					 adapt->nr,
 					 spacemit_i2c_read_reg(spacemit_i2c, REG_SR),
 					 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
