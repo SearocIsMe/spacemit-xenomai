@@ -971,13 +971,25 @@ static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid)
 	struct spacemit_i2c_dev *spacemit_i2c = devid;
 	u32 status, ctrl;
 	int ret = 0;
+	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adap.nr == 8;
 
 	/* record i2c status */
 	status = spacemit_i2c_read_reg(spacemit_i2c, REG_SR);
 	spacemit_i2c->i2c_status = status;
+	if (bootdbg_target)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_irq enter irq=%d status=0x%x phase=%d mode=%d msg_idx=%d rx_cnt=%d tx_cnt=%d err=0x%x hard_irqs_disabled=%d\n",
+			 irq, status, spacemit_i2c->phase, spacemit_i2c->xfer_mode,
+			 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
+			 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err,
+			 hard_irqs_disabled());
 
 	/* check if a valid interrupt status */
 	if(!status) {
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_irq zero_status irq=%d\n",
+				 irq);
 		/* nothing need be done */
 		return IRQ_HANDLED;
 	}
@@ -1002,6 +1014,12 @@ static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid)
 	/* process interrupt mode */
 	if (likely(spacemit_i2c->xfer_mode == SPACEMIT_I2C_MODE_INTERRUPT))
 		ret = spacemit_i2c_byte_xfer(spacemit_i2c);
+	if (bootdbg_target)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_irq after_byte_xfer irq=%d ret=%d status=0x%x phase=%d msg_idx=%d rx_cnt=%d tx_cnt=%d err=0x%x\n",
+			 irq, ret, spacemit_i2c->i2c_status, spacemit_i2c->phase,
+			 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
+			 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err);
 
 err_out:
 	/*
@@ -1021,8 +1039,17 @@ err_out:
 		spacemit_i2c_write_reg(spacemit_i2c, REG_CR, ctrl);
 
 		spacemit_i2c_clear_int_status(spacemit_i2c, SPACEMIT_I2C_INT_STATUS_MASK);
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_irq before_complete irq=%d status=0x%x ret=%d err=0x%x ctrl=0x%x msg_idx=%d phase=%d\n",
+				 irq, status, ret, spacemit_i2c->i2c_err, ctrl,
+				 spacemit_i2c->msg_idx, spacemit_i2c->phase);
 
 		complete(&spacemit_i2c->complete);
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_irq after_complete irq=%d status=0x%x ret=%d err=0x%x\n",
+				 irq, status, ret, spacemit_i2c->i2c_err);
 	}
 
 	return IRQ_HANDLED;
@@ -1437,6 +1464,15 @@ xfer_retry:
 				 adapt->nr, time_left, spacemit_i2c->i2c_status,
 				 spacemit_i2c->i2c_err, spacemit_i2c->num);
 		if (unlikely(time_left == 0)) {
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_xfer wait_timeout_dump adap=%d sr=0x%x cr=0x%x isr=0x%x msg_idx=%d phase=%d rx_cnt=%d tx_cnt=%d err=0x%x\n",
+					 adapt->nr,
+					 spacemit_i2c_read_reg(spacemit_i2c, REG_SR),
+					 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->phase, spacemit_i2c->rx_cnt,
+					 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err);
 			dev_alert(spacemit_i2c->dev, "msg completion timeout\n");
 			spacemit_i2c_bus_reset(spacemit_i2c);
 			spacemit_i2c_reset(spacemit_i2c);
