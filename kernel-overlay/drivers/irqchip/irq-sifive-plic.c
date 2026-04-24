@@ -105,6 +105,64 @@ static DEFINE_PER_CPU(struct plic_handler, plic_handlers);
 
 static int plic_irq_set_type(struct irq_data *d, unsigned int type);
 
+static bool bootdbg_plic_trace_this_irq(struct irq_data *d)
+{
+	if (!d)
+		return false;
+
+	return d->irq == 20 || d->hwirq == 19 || d->hwirq == 20;
+}
+
+static void bootdbg_plic_dump_irq_state(struct irq_data *d, const char *tag)
+{
+	struct plic_priv *priv;
+	const struct cpumask *mask;
+	u32 prio, pending_word;
+	unsigned int word, bit;
+	int cpu;
+
+	if (!bootdbg_plic_trace_this_irq(d))
+		return;
+
+	priv = irq_data_get_irq_chip_data(d);
+	if (!priv || !priv->regs) {
+		pr_info("BOOTDBG plic_irq_state tag=%s virq=%u hwirq=%lu priv=%px regs=%px\n",
+			tag, d->irq, d->hwirq, priv, priv ? priv->regs : NULL);
+		return;
+	}
+
+	word = d->hwirq / 32;
+	bit = d->hwirq % 32;
+	prio = readl(priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
+	pending_word = readl(priv->regs + PENDING_BASE + word * sizeof(u32));
+	mask = irq_data_get_effective_affinity_mask(d);
+
+	pr_info("BOOTDBG plic_irq_state tag=%s virq=%u hwirq=%lu started=%d disabled=%d masked=%d affinity=%*pb prio=%u pending_word=0x%x pending_bit=%u parent_irq=%d\n",
+		tag, d->irq, d->hwirq,
+		irqd_is_started(d), irqd_irq_disabled(d), irqd_irq_masked(d),
+		cpumask_pr_args(mask), prio, pending_word, !!(pending_word & BIT(bit)),
+		plic_parent_irq);
+
+	for_each_cpu(cpu, mask) {
+		struct plic_handler *handler = per_cpu_ptr(&plic_handlers, cpu);
+		u32 enable_word, threshold;
+
+		if (!handler->present) {
+			pr_info("BOOTDBG plic_irq_state_cpu tag=%s virq=%u hwirq=%lu cpu=%d present=0\n",
+				tag, d->irq, d->hwirq, cpu);
+			continue;
+		}
+
+		enable_word = readl(handler->enable_base + word * sizeof(u32));
+		threshold = readl(handler->hart_base + CONTEXT_THRESHOLD);
+
+		pr_info("BOOTDBG plic_irq_state_cpu tag=%s virq=%u hwirq=%lu cpu=%d hart_base=%px enable_base=%px enable_word=0x%x enable_bit=%u threshold=0x%x\n",
+			tag, d->irq, d->hwirq, cpu, handler->hart_base,
+			handler->enable_base, enable_word,
+			!!(enable_word & BIT(bit)), threshold);
+	}
+}
+
 static void __plic_toggle(void __iomem *enable_base, int hwirq, int enable)
 {
 	u32 __iomem *reg = enable_base + (hwirq / 32) * sizeof(u32);
@@ -152,6 +210,7 @@ static void plic_irq_unmask(struct irq_data *d)
 	struct plic_priv *priv = irq_data_get_irq_chip_data(d);
 
 	writel(1, priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
+	bootdbg_plic_dump_irq_state(d, "unmask");
 }
 
 static void plic_irq_mask(struct irq_data *d)
@@ -159,17 +218,20 @@ static void plic_irq_mask(struct irq_data *d)
 	struct plic_priv *priv = irq_data_get_irq_chip_data(d);
 
 	writel(0, priv->regs + PRIORITY_BASE + d->hwirq * PRIORITY_PER_ID);
+	bootdbg_plic_dump_irq_state(d, "mask");
 }
 
 static void plic_irq_enable(struct irq_data *d)
 {
 	plic_irq_toggle(irq_data_get_effective_affinity_mask(d), d, 1);
 	plic_irq_unmask(d);
+	bootdbg_plic_dump_irq_state(d, "enable");
 }
 
 static void plic_irq_disable(struct irq_data *d)
 {
 	plic_irq_toggle(irq_data_get_effective_affinity_mask(d), d, 0);
+	bootdbg_plic_dump_irq_state(d, "disable");
 }
 
 static void plic_irq_eoi(struct irq_data *d)
@@ -183,6 +245,8 @@ static void plic_irq_eoi(struct irq_data *d)
 	} else {
 		writel(d->hwirq, handler->hart_base + CONTEXT_CLAIM);
 	}
+
+	bootdbg_plic_dump_irq_state(d, "eoi");
 }
 
 #ifdef CONFIG_SMP
@@ -209,6 +273,8 @@ static int plic_set_affinity(struct irq_data *d,
 
 	if (!irqd_irq_disabled(d))
 		plic_irq_enable(d);
+
+	bootdbg_plic_dump_irq_state(d, "set_affinity");
 
 	return IRQ_SET_MASK_OK_DONE;
 }
@@ -349,6 +415,9 @@ static int plic_irqdomain_map(struct irq_domain *d, unsigned int irq,
 			    handle_fasteoi_irq, NULL, NULL);
 	irq_set_noprobe(irq);
 	irq_set_affinity(irq, &priv->lmask);
+	if (irq == 20 || hwirq == 19 || hwirq == 20)
+		pr_info("BOOTDBG plic_irq_map virq=%u hwirq=%lu lmask=%*pb\n",
+			irq, hwirq, cpumask_pr_args(&priv->lmask));
 	return 0;
 }
 
@@ -410,6 +479,9 @@ static void plic_handle_irq(struct irq_desc *desc)
 	chained_irq_enter(chip, desc);
 
 	while ((hwirq = readl(claim))) {
+		if (hwirq == 19 || hwirq == 20)
+			pr_info("BOOTDBG plic_handle_irq cpu=%d hwirq=%lu claim=%px\n",
+				smp_processor_id(), hwirq, claim);
 		int err = generic_handle_domain_irq(handler->priv->irqdomain,
 						    hwirq);
 		if (unlikely(err))
@@ -448,6 +520,10 @@ static int plic_starting_cpu(unsigned int cpu)
 	else
 		pr_warn("cpu%d: parent irq not available\n", cpu);
 	plic_set_threshold(handler, PLIC_ENABLE_THRESHOLD);
+	pr_info("BOOTDBG plic_starting_cpu cpu=%d parent_irq=%d threshold=0x%x hart_base=%px enable_base=%px\n",
+		cpu, plic_parent_irq,
+		readl(handler->hart_base + CONTEXT_THRESHOLD),
+		handler->hart_base, handler->enable_base);
 #ifdef CONFIG_IRQ_PIPELINE
 	if (riscv_evl_trace_enabled()) {
 		riscv_evl_trace_ulong("EVLDBG plic_starting_cpu parent_irq=", plic_parent_irq);
