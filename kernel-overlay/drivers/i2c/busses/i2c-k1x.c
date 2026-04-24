@@ -29,6 +29,7 @@
 #include <linux/of_device.h>
 #include <linux/rpmsg.h>
 #include <linux/irq.h>
+#include <linux/irqdesc.h>
 
 #include "i2c-k1x.h"
 
@@ -79,6 +80,56 @@ static void bootdbg_spacemit_i2c_dump_irqchip_state(struct spacemit_i2c_dev *spa
 		 "BOOTDBG spacemit_i2c_irqchip_state tag=%s irq=%d pending=%d active=%d masked=%d ret_pending=%d ret_active=%d ret_masked=%d\n",
 		 tag, spacemit_i2c->irq, pending, active, masked,
 		 ret_pending, ret_active, ret_masked);
+}
+
+static void bootdbg_spacemit_i2c_dump_irq_desc(struct spacemit_i2c_dev *spacemit_i2c,
+					       const char *tag)
+{
+	struct irq_desc *desc;
+	struct irq_data *data;
+	struct irq_chip *chip;
+	struct irqaction *action;
+	u32 trigger;
+
+	if (!spacemit_i2c || spacemit_i2c->adapt.nr != 8)
+		return;
+
+	desc = irq_to_desc(spacemit_i2c->irq);
+	if (!desc) {
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_irq_desc tag=%s irq=%d desc=NULL\n",
+			 tag, spacemit_i2c->irq);
+		return;
+	}
+
+	data = irq_desc_get_irq_data(desc);
+	chip = irq_desc_get_chip(desc);
+	action = desc->action;
+	trigger = irq_get_trigger_type(spacemit_i2c->irq);
+
+	dev_info(spacemit_i2c->dev,
+		 "BOOTDBG spacemit_i2c_irq_desc tag=%s irq=%d desc=%px parent_irq=%d chip=%s chip_ptr=%px handle=%ps flow_name=%s action=%px action_name=%s action_flags=0x%lx action_handler=%ps trigger=0x%x started=%d disabled=%d masked=%d inprogress=%d level=%d wakeup=%d no_suspend_depth=%u depth=%u wake_depth=%u status=0x%x chip_data=%px handler_data=%px\n",
+		 tag, spacemit_i2c->irq, desc, desc->parent_irq,
+		 chip ? chip->name : "NULL", chip, desc->handle_irq,
+		 desc->name ? desc->name : "NULL",
+		 action, action ? action->name : "NULL",
+		 action ? action->flags : 0UL,
+		 action ? action->handler : NULL,
+		 trigger,
+		 irqd_is_started(data),
+		 irqd_irq_disabled(data),
+		 irqd_irq_masked(data),
+		 irqd_irq_inprogress(data),
+		 irqd_is_level_type(data),
+		 irqd_is_wakeup_set(data),
+#ifdef CONFIG_PM_SLEEP
+		 desc->no_suspend_depth,
+#else
+		 0U,
+#endif
+		 desc->depth, desc->wake_depth, desc->status_use_accessors,
+		 irq_desc_get_chip_data(desc),
+		 irq_desc_get_handler_data(desc));
 }
 
 static void bootdbg_spacemit_i2c_poll_status_after_trigger(struct spacemit_i2c_dev *spacemit_i2c)
@@ -1583,6 +1634,7 @@ xfer_retry:
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
 				 adapt->nr, spacemit_i2c->timeout);
+		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
@@ -1592,6 +1644,7 @@ xfer_retry:
 				 "BOOTDBG spacemit_i2c_xfer after_wait_complete adap=%d time_left=%lu status=0x%x err=0x%x num=%d\n",
 				 adapt->nr, time_left, spacemit_i2c->i2c_status,
 				 spacemit_i2c->i2c_err, spacemit_i2c->num);
+		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "after_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "after_wait");
 		if (unlikely(time_left == 0)) {
 			if (bootdbg_target)
@@ -2192,6 +2245,8 @@ static int spacemit_i2c_probe(struct platform_device *pdev)
 			goto err_out;
 		}
 		pr_info("BOOTDBG spacemit_i2c_probe after_devm_request_irq ret=%d\n", ret);
+		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "after_request_irq");
+		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "after_request_irq");
 	}
 
 	pr_info("BOOTDBG spacemit_i2c_probe before_prepare_dma\n");
