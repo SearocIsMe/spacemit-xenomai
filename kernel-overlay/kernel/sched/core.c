@@ -48,6 +48,7 @@
 #include <linux/irq_pipeline.h>
 #include <linux/ioprio.h>
 #include <linux/kallsyms.h>
+#include <linux/kthread.h>
 #include <linux/kcov.h>
 #include <linux/kprobes.h>
 #include <linux/llist_api.h>
@@ -117,6 +118,14 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_overutilized_tp);
 EXPORT_TRACEPOINT_SYMBOL_GPL(sched_util_est_cfs_tp);
 EXPORT_TRACEPOINT_SYMBOL_GPL(sched_util_est_se_tp);
 EXPORT_TRACEPOINT_SYMBOL_GPL(sched_update_nr_running_tp);
+
+static bool bootdbg_sched_target(struct rq *rq, struct task_struct *p)
+{
+	struct task_struct *k = READ_ONCE(kthreadd_task);
+
+	return rq && p && is_idle_task(p) && cpu_of(rq) == 0 &&
+	       k && task_cpu(k) == cpu_of(rq) && READ_ONCE(k->on_rq);
+}
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 
@@ -6701,6 +6710,13 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 	rq = cpu_rq(cpu);
 	prev = rq->curr;
 
+	if (bootdbg_sched_target(rq, prev))
+		pr_info("BOOTDBG __schedule enter prev=%s[%d] cpu=%d state=%ld sched_mode=0x%x hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d\n",
+			prev->comm, task_pid_nr(prev), cpu,
+			(long)READ_ONCE(prev->__state), sched_mode,
+			hard_irqs_disabled(), preempt_count(),
+			READ_ONCE(kthreadd_task->on_rq));
+
 	schedule_debug(prev, !!sched_mode);
 
 	if (sched_feat(HRTICK) || sched_feat(HRTICK_DL))
@@ -6726,6 +6742,12 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 	 */
 	rq_lock(rq, &rf);
 	smp_mb__after_spinlock();
+
+	if (bootdbg_sched_target(rq, prev))
+		pr_info("BOOTDBG __schedule after_rq_lock prev=%s[%d] cpu=%d state=%ld on_rq=%d hard_irqs_disabled=%d nr_running=%u\n",
+			prev->comm, task_pid_nr(prev), cpu,
+			(long)READ_ONCE(prev->__state), READ_ONCE(prev->on_rq),
+			hard_irqs_disabled(), rq->nr_running);
 
 	/* Promote REQ to ACT */
 	rq->clock_update_flags <<= 1;
@@ -6773,6 +6795,13 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 	}
 
 	next = pick_next_task(rq, prev, &rf);
+	if (bootdbg_sched_target(rq, prev))
+		pr_info("BOOTDBG __schedule after_pick prev=%s[%d] next=%s[%d] cpu=%d prev_state=%ld next_state=%ld hard_irqs_disabled=%d nr_running=%u\n",
+			prev->comm, task_pid_nr(prev),
+			next ? next->comm : "<null>",
+			next ? task_pid_nr(next) : -1, cpu, prev_state,
+			next ? (long)READ_ONCE(next->__state) : -1L,
+			hard_irqs_disabled(), rq->nr_running);
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
 #ifdef CONFIG_SCHED_DEBUG
@@ -6780,6 +6809,12 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 #endif
 
 	if (likely(prev != next)) {
+		if (bootdbg_sched_target(rq, prev))
+			pr_info("BOOTDBG __schedule before_context_switch prev=%s[%d] next=%s[%d] cpu=%d hard_irqs_disabled=%d prev_on_rq=%d next_on_rq=%d\n",
+				prev->comm, task_pid_nr(prev),
+				next->comm, task_pid_nr(next), cpu,
+				hard_irqs_disabled(), READ_ONCE(prev->on_rq),
+				READ_ONCE(next->on_rq));
 		rq->nr_switches++;
 		/*
 		 * RCU users of rcu_dereference(rq->curr) may not see
@@ -6835,6 +6870,10 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 			/* Task moved to the oob stage. */
 			return 1;
 	} else {
+		if (bootdbg_sched_target(rq, prev))
+			pr_info("BOOTDBG __schedule no_switch prev=%s[%d] cpu=%d hard_irqs_disabled=%d nr_running=%u\n",
+				prev->comm, task_pid_nr(prev), cpu,
+				hard_irqs_disabled(), rq->nr_running);
 		rq_unpin_lock(rq, &rf);
 		__balance_callbacks(rq);
 		raw_spin_rq_unlock_irq(rq);
@@ -6905,12 +6944,33 @@ static void sched_update_worker(struct task_struct *tsk)
 asmlinkage __visible void __sched schedule(void)
 {
 	struct task_struct *tsk = current;
+	struct rq *rq;
+	struct task_struct *k;
+
+	rq = cpu_rq(raw_smp_processor_id());
+	k = READ_ONCE(kthreadd_task);
+	if (bootdbg_sched_target(rq, tsk))
+		pr_info("BOOTDBG schedule enter current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
+			tsk->comm, task_pid_nr(tsk), cpu_of(rq),
+			(long)READ_ONCE(tsk->__state), need_resched(),
+			hard_irqs_disabled(), preempt_count(),
+			k ? READ_ONCE(k->on_rq) : -1,
+			k ? (long)READ_ONCE(k->__state) : -1L);
 
 	sched_submit_work(tsk);
 	do {
 		preempt_disable();
 		if (__schedule(SM_NONE))
 			return;
+		rq = cpu_rq(raw_smp_processor_id());
+		k = READ_ONCE(kthreadd_task);
+		if (bootdbg_sched_target(rq, tsk))
+			pr_info("BOOTDBG schedule after___schedule current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
+				tsk->comm, task_pid_nr(tsk), cpu_of(rq),
+				(long)READ_ONCE(tsk->__state), need_resched(),
+				hard_irqs_disabled(), preempt_count(),
+				k ? READ_ONCE(k->on_rq) : -1,
+				k ? (long)READ_ONCE(k->__state) : -1L);
 		sched_preempt_enable_no_resched();
 	} while (need_resched());
 	sched_update_worker(tsk);
