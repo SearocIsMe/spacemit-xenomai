@@ -46,6 +46,8 @@ static unsigned long long private_data[2];
 static const struct of_device_id r_spacemit_i2c_dt_match[];
 #endif
 
+static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid);
+
 static inline u32 spacemit_i2c_read_reg(struct spacemit_i2c_dev *spacemit_i2c, int reg)
 {
 	return readl(spacemit_i2c->mapbase + reg);
@@ -107,6 +109,50 @@ static void bootdbg_spacemit_i2c_poll_status_after_trigger(struct spacemit_i2c_d
 		 spacemit_i2c->adapt.nr, spacemit_i2c_read_reg(spacemit_i2c, REG_SR),
 		 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
 		 spacemit_i2c->phase, spacemit_i2c->msg_idx, 1000);
+}
+
+static void bootdbg_spacemit_i2c_manual_irq_kick(struct spacemit_i2c_dev *spacemit_i2c,
+						 const char *tag)
+{
+	int i;
+
+	if (!spacemit_i2c || spacemit_i2c->adapt.nr != 8 ||
+	    spacemit_i2c->xfer_mode != SPACEMIT_I2C_MODE_INTERRUPT)
+		return;
+
+	for (i = 0; i < 32; i++) {
+		u32 sr = spacemit_i2c_read_reg(spacemit_i2c, REG_SR);
+		u32 pending = sr & SPACEMIT_I2C_INT_STATUS_MASK;
+
+		if (!pending) {
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_manual_irq_kick tag=%s iter=%d no_pending sr=0x%x cr=0x%x phase=%d msg_idx=%d done=%d\n",
+				 tag, i, sr,
+				 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+				 spacemit_i2c->phase, spacemit_i2c->msg_idx,
+				 completion_done(&spacemit_i2c->complete));
+			return;
+		}
+
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_manual_irq_kick tag=%s iter=%d before sr=0x%x cr=0x%x phase=%d msg_idx=%d done=%d\n",
+			 tag, i, sr, spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+			 spacemit_i2c->phase, spacemit_i2c->msg_idx,
+			 completion_done(&spacemit_i2c->complete));
+
+		spacemit_i2c_int_handler(spacemit_i2c->irq, spacemit_i2c);
+
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_manual_irq_kick tag=%s iter=%d after sr=0x%x cr=0x%x phase=%d msg_idx=%d done=%d err=0x%x\n",
+			 tag, i, spacemit_i2c_read_reg(spacemit_i2c, REG_SR),
+			 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+			 spacemit_i2c->phase, spacemit_i2c->msg_idx,
+			 completion_done(&spacemit_i2c->complete),
+			 spacemit_i2c->i2c_err);
+
+		if (completion_done(&spacemit_i2c->complete))
+			return;
+	}
 }
 
 static void spacemit_i2c_enable(struct spacemit_i2c_dev *spacemit_i2c)
@@ -1538,6 +1584,7 @@ xfer_retry:
 				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
 				 adapt->nr, spacemit_i2c->timeout);
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
+		bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
 							spacemit_i2c->timeout);
 		if (bootdbg_target)
