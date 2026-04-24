@@ -1827,6 +1827,15 @@ void sync_current_irq_stage(void) /* hard irqs off */
 	check_hard_irqs_disabled();
 
 	p = current_irq_staged;
+	if (p->stage == &inband_stage) {
+		int next_irq = peek_next_irq(p);
+
+		if (next_irq == 20) {
+			pr_info("BOOTDBG sync_current_irq_stage enter stage=inband next_irq=%d inband_pending=%d hard_irqs_disabled=%d stall=%d\n",
+				next_irq, stage_irqs_pending(this_inband_staged()),
+				hard_irqs_disabled(), test_inband_stall());
+		}
+	}
 #ifdef CONFIG_IRQ_PIPELINE
 	if (trace_sync_call_count < 24) {
 		trace_sync_call_count++;
@@ -1866,6 +1875,12 @@ respin:
 		barrier();
 
 		desc = irq_to_desc(irq);
+		if (stage == &inband_stage && irq == 20) {
+			pr_info("BOOTDBG sync_current_irq_stage pulled irq=%d stage=inband desc=%px istate=0x%lx pending=%d stalled=%d hard_irqs_disabled=%d\n",
+				irq, desc, desc ? (unsigned long)desc->istate : 0,
+				stage_irqs_pending(this_inband_staged()),
+				test_inband_stall(), hard_irqs_disabled());
+		}
 #ifdef CONFIG_IRQ_PIPELINE
 		if (trace_sync_irq_count < 48) {
 			trace_sync_irq_count++;
@@ -1885,6 +1900,12 @@ respin:
 #endif
 
 		if (stage == &inband_stage) {
+			if (irq == 20) {
+				pr_info("BOOTDBG sync_current_irq_stage before_do_inband irq=%d desc=%px istate=0x%lx pending=%d hard_irqs_disabled=%d\n",
+					irq, desc, desc ? (unsigned long)desc->istate : 0,
+					stage_irqs_pending(this_inband_staged()),
+					hard_irqs_disabled());
+			}
 			hard_local_irq_enable();
 			do_inband_irq(desc);
 			hard_local_irq_disable();
