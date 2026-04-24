@@ -110,13 +110,16 @@ static void bootdbg_spacemit_i2c_dump_irq_desc(struct spacemit_i2c_dev *spacemit
 	trigger = irq_get_trigger_type(spacemit_i2c->irq);
 
 	dev_info(spacemit_i2c->dev,
-		 "BOOTDBG spacemit_i2c_irq_desc tag=%s irq=%d desc=%px parent_irq=%d chip=%s chip_ptr=%px handle=%ps flow_name=%s action=%px action_name=%s action_flags=0x%lx action_handler=%ps trigger=0x%x started=%d disabled=%d masked=%d inprogress=%d level=%d wakeup=%d no_suspend_depth=%u depth=%u wake_depth=%u status=0x%x chip_data=%px handler_data=%px\n",
+		 "BOOTDBG spacemit_i2c_irq_desc tag=%s irq=%d desc=%px parent_irq=%d chip=%s chip_ptr=%px handle=%ps flow_name=%s action=%px action_name=%s action_flags=0x%lx action_handler=%ps action_thread_fn=%p action_thread=%p action_thread_mask=0x%lx trigger=0x%x started=%d disabled=%d masked=%d inprogress=%d level=%d wakeup=%d no_suspend_depth=%u depth=%u wake_depth=%u status=0x%x threads_active=%d chip_data=%px handler_data=%px\n",
 		 tag, spacemit_i2c->irq, desc, desc->parent_irq,
 		 chip ? chip->name : "NULL", chip, desc->handle_irq,
 		 desc->name ? desc->name : "NULL",
 		 action, action ? action->name : "NULL",
 		 action ? action->flags : 0UL,
 		 action ? action->handler : NULL,
+		 action ? action->thread_fn : NULL,
+		 action ? action->thread : NULL,
+		 action ? action->thread_mask : 0UL,
 		 trigger,
 		 irqd_is_started(data),
 		 irqd_irq_disabled(data),
@@ -130,6 +133,7 @@ static void bootdbg_spacemit_i2c_dump_irq_desc(struct spacemit_i2c_dev *spacemit
 		 0U,
 #endif
 		 desc->depth, desc->wake_depth, desc->status_use_accessors,
+		 atomic_read(&desc->threads_active),
 		 irq_desc_get_chip_data(desc),
 		 irq_desc_get_handler_data(desc));
 }
@@ -1572,7 +1576,8 @@ xfer_retry:
 	if (bootdbg_target)
 		dev_info(spacemit_i2c->dev,
 			 "BOOTDBG spacemit_i2c_xfer after_choose_mode adap=%d mode=%d timeout_jiffies=%lu msgs=%d\n",
-			 adapt->nr, spacemit_i2c->xfer_mode, spacemit_i2c->timeout,
+			 adapt->nr, spacemit_i2c->xfer_mode,
+			 (unsigned long)spacemit_i2c->timeout,
 			 spacemit_i2c->num);
 
 	/* i2c unit init */
@@ -1639,7 +1644,7 @@ xfer_retry:
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
-				 adapt->nr, spacemit_i2c->timeout);
+				 adapt->nr, (unsigned long)spacemit_i2c->timeout);
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
@@ -2456,7 +2461,7 @@ static int __init spacemit_i2c_init(void)
 			spacemit_i2c_notifier_poweroff_call,
 			NULL);
 	pr_info("BOOTDBG spacemit_i2c_init after_register_sys_off_handler handler=%px err=%ld\n",
-		i2c_poweroff_handler, PTR_ERR_OR_ZERO(i2c_poweroff_handler));
+		i2c_poweroff_handler, (long)PTR_ERR_OR_ZERO(i2c_poweroff_handler));
 
 	pr_info("BOOTDBG spacemit_i2c_init before_platform_driver_register\n");
 	ret = platform_driver_register(&spacemit_i2c_driver);

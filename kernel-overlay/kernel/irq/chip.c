@@ -968,8 +968,9 @@ void handle_fasteoi_irq(struct irq_desc *desc)
 		if (bootdbg_trace_irq_desc(desc))
 			pr_info("BOOTDBG handle_fasteoi_irq noaction_or_disabled irq=%u hwirq=%lu action=%px disabled=%d istate=0x%lx threads_oneshot=0x%lx flow=%d\n",
 				desc->irq_data.irq, desc->irq_data.hwirq, desc->action,
-				irqd_irq_disabled(&desc->irq_data), desc->istate,
-				desc->threads_oneshot, flow);
+				irqd_irq_disabled(&desc->irq_data),
+				(unsigned long)desc->istate,
+				(unsigned long)desc->threads_oneshot, flow);
 		desc->istate |= IRQS_PENDING;
 		mask_irq(desc);
 		goto out;
@@ -979,7 +980,8 @@ void handle_fasteoi_irq(struct irq_desc *desc)
 	if (bootdbg_trace_irq_desc(desc))
 		pr_info("BOOTDBG handle_fasteoi_irq before_event irq=%u hwirq=%lu action=%px istate=0x%lx threads_oneshot=0x%lx masked=%d disabled=%d flow=%d\n",
 			desc->irq_data.irq, desc->irq_data.hwirq, desc->action,
-			desc->istate, desc->threads_oneshot,
+			(unsigned long)desc->istate,
+			(unsigned long)desc->threads_oneshot,
 			irqd_irq_masked(&desc->irq_data),
 			irqd_irq_disabled(&desc->irq_data), flow);
 	if (!irqs_pipelined() && (desc->istate & IRQS_ONESHOT))
@@ -988,8 +990,10 @@ void handle_fasteoi_irq(struct irq_desc *desc)
 	handle_irq_event(desc);
 	if (bootdbg_trace_irq_desc(desc))
 		pr_info("BOOTDBG handle_fasteoi_irq after_event irq=%u hwirq=%lu istate=0x%lx threads_oneshot=0x%lx masked=%d disabled=%d\n",
-			desc->irq_data.irq, desc->irq_data.hwirq, desc->istate,
-			desc->threads_oneshot, irqd_irq_masked(&desc->irq_data),
+			desc->irq_data.irq, desc->irq_data.hwirq,
+			(unsigned long)desc->istate,
+			(unsigned long)desc->threads_oneshot,
+			irqd_irq_masked(&desc->irq_data),
 			irqd_irq_disabled(&desc->irq_data));
 
 	cond_unmask_eoi_irq(desc, chip);
