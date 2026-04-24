@@ -1632,6 +1632,10 @@ xfer_retry:
 	}
 
 	if (likely(spacemit_i2c->xfer_mode == SPACEMIT_I2C_MODE_INTERRUPT)) {
+		unsigned long natural_wait = min_t(unsigned long,
+						     spacemit_i2c->timeout, 1);
+		unsigned long fallback_timeout = spacemit_i2c->timeout;
+
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
@@ -1641,9 +1645,28 @@ xfer_retry:
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
 		bootdbg_plic_force_unmask_external_irq(spacemit_i2c->irq,
 						       "i2c_before_wait_force_unmask");
-		bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
-							spacemit_i2c->timeout);
+							natural_wait);
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_xfer natural_irq_wait adap=%d wait=%lu time_left=%lu done=%d status=0x%x err=0x%x\n",
+				 adapt->nr, natural_wait, time_left,
+				 completion_done(&spacemit_i2c->complete),
+				 spacemit_i2c->i2c_status, spacemit_i2c->i2c_err);
+		if (!time_left) {
+			if (fallback_timeout > natural_wait)
+				fallback_timeout -= natural_wait;
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_xfer fallback_manual_irq adap=%d timeout=%lu\n",
+					 adapt->nr, fallback_timeout);
+			bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c,
+							     "before_wait");
+			time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
+								fallback_timeout);
+		} else {
+			time_left += spacemit_i2c->timeout - natural_wait;
+		}
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_xfer after_wait_complete adap=%d time_left=%lu status=0x%x err=0x%x num=%d\n",
