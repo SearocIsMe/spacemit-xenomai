@@ -160,6 +160,13 @@ static void irq_pipeline_request_urgent_ipi_sync(void)
 
 asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 {
+	if (__this_cpu_read(urgent_ipi_sync_request))
+		pr_info("BOOTDBG irq_pipeline_ret_from_exception_sync enter cpu=%u pending=%d smp_init=%d hard_irqs_disabled=%d inband_stall=%d current=%s[%d]\n",
+			smp_processor_id(), irq_pipeline_ipi_pending(),
+			irq_pipeline_smp_init_in_progress(),
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
@@ -168,12 +175,20 @@ asmlinkage void irq_pipeline_ret_from_exception_sync(struct pt_regs *regs)
 
 	if (!irq_pipeline_smp_init_in_progress()) {
 		__this_cpu_write(urgent_ipi_sync_request, false);
+		pr_info("BOOTDBG irq_pipeline_ret_from_exception_sync clear_no_smp cpu=%u current=%s[%d]\n",
+			smp_processor_id(), current->comm, task_pid_nr(current));
 		return;
 	}
 
 	__this_cpu_write(urgent_ipi_sync_request, false);
+	pr_info("BOOTDBG irq_pipeline_ret_from_exception_sync before_sync cpu=%u current=%s[%d] hard_irqs_disabled=%d\n",
+		smp_processor_id(), current->comm, task_pid_nr(current),
+		hard_irqs_disabled());
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
+	pr_info("BOOTDBG irq_pipeline_ret_from_exception_sync after_sync cpu=%u current=%s[%d] hard_irqs_disabled=%d\n",
+		smp_processor_id(), current->comm, task_pid_nr(current),
+		hard_irqs_disabled());
 }
 
 asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
@@ -181,6 +196,13 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 	bool stalled;
 	unsigned int cpu;
 
+	if (__this_cpu_read(urgent_ipi_sync_request))
+		pr_info("BOOTDBG irq_pipeline_call_on_irq_stack_tail_sync enter cpu=%u pending=%d smp_init=%d hard_irqs_disabled=%d inband_stall=%d current=%s[%d]\n",
+			smp_processor_id(), irq_pipeline_ipi_pending(),
+			irq_pipeline_smp_init_in_progress(),
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
+
 	if (!__this_cpu_read(urgent_ipi_sync_request))
 		return;
 
@@ -189,19 +211,30 @@ asmlinkage void irq_pipeline_call_on_irq_stack_tail_sync(void)
 
 	if (!irq_pipeline_smp_init_in_progress()) {
 		__this_cpu_write(urgent_ipi_sync_request, false);
+		pr_info("BOOTDBG irq_pipeline_call_on_irq_stack_tail_sync clear_no_smp cpu=%u current=%s[%d]\n",
+			smp_processor_id(), current->comm, task_pid_nr(current));
 		return;
 	}
 
 	cpu = smp_processor_id();
 	if (cpu != 0)
+		pr_info("BOOTDBG irq_pipeline_call_on_irq_stack_tail_sync skip_nonboot cpu=%u current=%s[%d]\n",
+			cpu, current->comm, task_pid_nr(current));
+	if (cpu != 0)
 		return;
 
 	__this_cpu_write(urgent_ipi_sync_request, false);
 	stalled = test_inband_stall();
+	pr_info("BOOTDBG irq_pipeline_call_on_irq_stack_tail_sync before_sync cpu=%u stalled=%d current=%s[%d] hard_irqs_disabled=%d\n",
+		cpu, stalled, current->comm, task_pid_nr(current),
+		hard_irqs_disabled());
 	switch_inband(this_inband_staged());
 	sync_current_irq_stage();
 	if (stalled)
 		stall_inband_nocheck();
+	pr_info("BOOTDBG irq_pipeline_call_on_irq_stack_tail_sync after_sync cpu=%u stalled=%d current=%s[%d] hard_irqs_disabled=%d\n",
+		cpu, stalled, current->comm, task_pid_nr(current),
+		hard_irqs_disabled());
 }
 
 static void sirq_noop(struct irq_data *data) { }
@@ -433,14 +466,23 @@ static void __inband_irq_enable(void)
 	if (unlikely(stage_irqs_pending(p) && !in_pipeline())) {
 #ifdef CONFIG_IRQ_PIPELINE
 		if (__this_cpu_read(urgent_ipi_sync_request)) {
+			pr_info("BOOTDBG __inband_irq_enable urgent_enter cpu=%u pending=%d smp_init=%d hard_irqs_disabled=%d current=%s[%d]\n",
+				cpu, irq_pipeline_ipi_pending(),
+				irq_pipeline_smp_init_in_progress(),
+				hard_irqs_disabled(), current->comm,
+				task_pid_nr(current));
 			if (!irq_pipeline_smp_init_in_progress()) {
 				__this_cpu_write(urgent_ipi_sync_request, false);
+				pr_info("BOOTDBG __inband_irq_enable urgent_clear_no_smp cpu=%u current=%s[%d]\n",
+					cpu, current->comm, task_pid_nr(current));
 				riscv_evl_trace("EVLDBG __inband_irq_enable urgent_skip_after_smp\n");
 				hard_local_irq_restore(flags);
 				preempt_check_resched();
 				return;
 			}
 			if (cpu != 0) {
+				pr_info("BOOTDBG __inband_irq_enable urgent_skip_nonboot cpu=%u current=%s[%d]\n",
+					cpu, current->comm, task_pid_nr(current));
 				if (trace_ipi_sync_count < 16) {
 					trace_ipi_sync_count++;
 					riscv_evl_trace_ulong("EVLDBG __inband_irq_enable urgent_skip_cpu=",
@@ -456,7 +498,13 @@ static void __inband_irq_enable(void)
 				riscv_evl_trace_ulong("EVLDBG __inband_irq_enable urgent_cpu=",
 						      cpu);
 			}
+			pr_info("BOOTDBG __inband_irq_enable urgent_before_sync cpu=%u current=%s[%d] hard_irqs_disabled=%d\n",
+				cpu, current->comm, task_pid_nr(current),
+				hard_irqs_disabled());
 			sync_current_irq_stage();
+			pr_info("BOOTDBG __inband_irq_enable urgent_after_sync cpu=%u current=%s[%d] hard_irqs_disabled=%d\n",
+				cpu, current->comm, task_pid_nr(current),
+				hard_irqs_disabled());
 			hard_local_irq_restore(flags);
 			preempt_check_resched();
 			return;

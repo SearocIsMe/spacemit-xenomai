@@ -123,8 +123,8 @@ static bool bootdbg_sched_target(struct rq *rq, struct task_struct *p)
 {
 	struct task_struct *k = READ_ONCE(kthreadd_task);
 
-	return rq && p && is_idle_task(p) && cpu_of(rq) == 0 &&
-	       k && task_cpu(k) == cpu_of(rq) && READ_ONCE(k->on_rq);
+	return rq && p && is_idle_task(p) &&
+	       k && READ_ONCE(k->on_rq);
 }
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
