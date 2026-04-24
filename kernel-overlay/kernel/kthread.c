@@ -37,6 +37,12 @@ static DEFINE_SPINLOCK(kthread_create_lock);
 static LIST_HEAD(kthread_create_list);
 struct task_struct *kthreadd_task;
 
+struct kthread_bootdbg_timer {
+	struct timer_list timer;
+	struct task_struct *task;
+	const char *name;
+};
+
 struct kthread_create_info
 {
 	/* Information passed to kthread() from kthreadd. */
@@ -56,6 +62,71 @@ static bool kthread_bootdbg_target(const struct kthread_create_info *create)
 {
 	return create && create->full_name &&
 	       strstr(create->full_name, "spm8821");
+}
+
+static void kthread_bootdbg_process_timeout(struct timer_list *t)
+{
+	struct kthread_bootdbg_timer *timeout;
+
+	timeout = from_timer(timeout, t, timer);
+	pr_info("BOOTDBG kthread_wait timer_fire name=%s task=%s[%d] state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+		timeout->name, timeout->task->comm, task_pid_nr(timeout->task),
+		(long)READ_ONCE(timeout->task->__state), irqs_disabled(),
+		hard_irqs_disabled());
+	wake_up_process(timeout->task);
+}
+
+static long kthread_bootdbg_schedule_timeout(long timeout, const char *name)
+{
+	struct kthread_bootdbg_timer timer;
+	unsigned long expire;
+
+	pr_info("BOOTDBG kthread_wait sched_timeout_enter name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+		name, timeout, (long)READ_ONCE(current->__state),
+		irqs_disabled(), hard_irqs_disabled());
+
+	switch (timeout) {
+	case MAX_SCHEDULE_TIMEOUT:
+		pr_info("BOOTDBG kthread_wait before_schedule_call name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+			name, timeout, (long)READ_ONCE(current->__state),
+			irqs_disabled(), hard_irqs_disabled());
+		schedule();
+		pr_info("BOOTDBG kthread_wait after_schedule_call name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+			name, timeout, (long)READ_ONCE(current->__state),
+			irqs_disabled(), hard_irqs_disabled());
+		return MAX_SCHEDULE_TIMEOUT;
+	default:
+		if (timeout < 0) {
+			pr_info("BOOTDBG kthread_wait bad_timeout name=%s timeout=%ld\n",
+				name, timeout);
+			__set_current_state(TASK_RUNNING);
+			return 0;
+		}
+	}
+
+	expire = timeout + jiffies;
+	timer.task = current;
+	timer.name = name;
+	timer_setup_on_stack(&timer.timer, kthread_bootdbg_process_timeout, 0);
+	pr_info("BOOTDBG kthread_wait before_mod_timer name=%s timeout=%ld expire=%lu jiffies=%lu state=%ld\n",
+		name, timeout, expire, jiffies, (long)READ_ONCE(current->__state));
+	mod_timer(&timer.timer, expire);
+	pr_info("BOOTDBG kthread_wait after_mod_timer name=%s timeout=%ld expire=%lu jiffies=%lu state=%ld\n",
+		name, timeout, expire, jiffies, (long)READ_ONCE(current->__state));
+	pr_info("BOOTDBG kthread_wait before_schedule_call name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+		name, timeout, (long)READ_ONCE(current->__state),
+		irqs_disabled(), hard_irqs_disabled());
+	schedule();
+	pr_info("BOOTDBG kthread_wait after_schedule_call name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
+		name, timeout, (long)READ_ONCE(current->__state),
+		irqs_disabled(), hard_irqs_disabled());
+	del_timer_sync(&timer.timer);
+	pr_info("BOOTDBG kthread_wait after_del_timer name=%s timeout=%ld jiffies=%lu state=%ld\n",
+		name, timeout, jiffies, (long)READ_ONCE(current->__state));
+	destroy_timer_on_stack(&timer.timer);
+
+	timeout = expire - jiffies;
+	return timeout < 0 ? 0 : timeout;
 }
 
 static int kthread_bootdbg_wait_for_completion_killable(struct completion *x,
@@ -89,7 +160,7 @@ static int kthread_bootdbg_wait_for_completion_killable(struct completion *x,
 				name, x, READ_ONCE(x->done),
 				(long)READ_ONCE(current->__state), timeout,
 				irqs_disabled(), hard_irqs_disabled());
-			timeout = schedule_timeout(timeout);
+			timeout = kthread_bootdbg_schedule_timeout(timeout, name);
 			pr_info("BOOTDBG kthread_wait after_schedule name=%s x=%p done=%u current_state=%ld timeout=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
 				name, x, READ_ONCE(x->done),
 				(long)READ_ONCE(current->__state), timeout,
