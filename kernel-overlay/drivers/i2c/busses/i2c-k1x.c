@@ -58,8 +58,15 @@ spacemit_i2c_write_reg(struct spacemit_i2c_dev *spacemit_i2c, int reg, u32 val)
 
 static void spacemit_i2c_enable(struct spacemit_i2c_dev *spacemit_i2c)
 {
-	spacemit_i2c_write_reg(spacemit_i2c, REG_CR,
-	spacemit_i2c_read_reg(spacemit_i2c, REG_CR) | CR_IUE);
+	u32 cr_before = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
+	u32 cr_after = cr_before | CR_IUE;
+
+	if (spacemit_i2c->adapt.nr == 8)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_enable adap=%d cr_before=0x%x cr_after=0x%x\n",
+			 spacemit_i2c->adapt.nr, cr_before, cr_after);
+
+	spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_after);
 }
 
 static void spacemit_i2c_disable(struct spacemit_i2c_dev *spacemit_i2c)
@@ -224,12 +231,19 @@ static void spacemit_i2c_unit_init(struct spacemit_i2c_dev *spacemit_i2c)
 	/* disable int to use pio xfer mode*/
 	if (unlikely(spacemit_i2c->xfer_mode == SPACEMIT_I2C_MODE_PIO))
 		cr_val &= ~(CR_ALDIE | CR_BEIE | CR_MSDIE | CR_DTEIE);
+
+	if (spacemit_i2c->adapt.nr == 8)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_unit_init adap=%d mode=%d cr_val=0x%x\n",
+			 spacemit_i2c->adapt.nr, spacemit_i2c->xfer_mode, cr_val);
+
 	spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_val);
 }
 
 static void spacemit_i2c_trigger_byte_xfer(struct spacemit_i2c_dev *spacemit_i2c)
 {
-	u32 cr_val = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
+	u32 cr_before = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
+	u32 cr_val = cr_before;
 
 	/* send start pulse */
 	cr_val &= ~CR_STOP;
@@ -237,6 +251,13 @@ static void spacemit_i2c_trigger_byte_xfer(struct spacemit_i2c_dev *spacemit_i2c
 		cr_val |= CR_START | CR_TB;
 	else
 		cr_val |= CR_START | CR_TB | CR_DTEIE;
+
+	if (spacemit_i2c->adapt.nr == 8)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_trigger_byte_xfer adap=%d phase=%d msg_idx=%d cr_before=0x%x cr_after=0x%x\n",
+			 spacemit_i2c->adapt.nr, spacemit_i2c->phase,
+			 spacemit_i2c->msg_idx, cr_before, cr_val);
+
 	spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_val);
 }
 
@@ -300,6 +321,12 @@ static void spacemit_i2c_byte_xfer_send_slave_addr(struct spacemit_i2c_dev *spac
 
 	/* write slave address to DBR for interrupt mode */
 	spacemit_i2c_write_reg(spacemit_i2c, REG_DBR, spacemit_i2c->slave_addr_rw);
+
+	if (spacemit_i2c->adapt.nr == 8)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_send_slave_addr adap=%d slave_addr_rw=0x%x msg_idx=%d is_rx=%d\n",
+			 spacemit_i2c->adapt.nr, spacemit_i2c->slave_addr_rw,
+			 spacemit_i2c->msg_idx, spacemit_i2c->is_rx);
 
 	spacemit_i2c_trigger_byte_xfer(spacemit_i2c);
 }
