@@ -87,6 +87,8 @@ static long kthread_bootdbg_schedule_timeout(long timeout, const char *name)
 
 	switch (timeout) {
 	case MAX_SCHEDULE_TIMEOUT:
+		pr_info("BOOTDBG kthread_wait schedule_fn addr=%ps name=%s current=%s[%d]\n",
+			schedule, name, current->comm, task_pid_nr(current));
 		pr_info("BOOTDBG kthread_wait before_schedule_call name=%s timeout=%ld state=%ld irqs_disabled=%d hard_irqs_disabled=%d\n",
 			name, timeout, (long)READ_ONCE(current->__state),
 			irqs_disabled(), hard_irqs_disabled());

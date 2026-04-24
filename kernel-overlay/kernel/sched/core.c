@@ -121,10 +121,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_update_nr_running_tp);
 
 static bool bootdbg_sched_target(struct rq *rq, struct task_struct *p)
 {
-	struct task_struct *k = READ_ONCE(kthreadd_task);
-
-	return rq && p && is_idle_task(p) &&
-	       k && READ_ONCE(k->on_rq);
+	return rq && p && is_idle_task(p);
 }
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
@@ -6949,7 +6946,7 @@ asmlinkage __visible void __sched schedule(void)
 
 	rq = cpu_rq(raw_smp_processor_id());
 	k = READ_ONCE(kthreadd_task);
-	if (bootdbg_sched_target(rq, tsk))
+	if (bootdbg_sched_target(rq, tsk) || task_pid_nr(tsk) == 0)
 		pr_info("BOOTDBG schedule enter current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
 			tsk->comm, task_pid_nr(tsk), cpu_of(rq),
 			(long)READ_ONCE(tsk->__state), need_resched(),
@@ -6964,7 +6961,7 @@ asmlinkage __visible void __sched schedule(void)
 			return;
 		rq = cpu_rq(raw_smp_processor_id());
 		k = READ_ONCE(kthreadd_task);
-		if (bootdbg_sched_target(rq, tsk))
+		if (bootdbg_sched_target(rq, tsk) || task_pid_nr(tsk) == 0)
 			pr_info("BOOTDBG schedule after___schedule current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
 				tsk->comm, task_pid_nr(tsk), cpu_of(rq),
 				(long)READ_ONCE(tsk->__state), need_resched(),
