@@ -28,6 +28,7 @@
 #include <linux/reboot.h>
 #include <linux/of_device.h>
 #include <linux/rpmsg.h>
+#include <linux/irq.h>
 
 #include "i2c-k1x.h"
 
@@ -54,6 +55,58 @@ static inline void
 spacemit_i2c_write_reg(struct spacemit_i2c_dev *spacemit_i2c, int reg, u32 val)
 {
 	writel(val, spacemit_i2c->mapbase + reg);
+}
+
+static void bootdbg_spacemit_i2c_dump_irqchip_state(struct spacemit_i2c_dev *spacemit_i2c,
+						    const char *tag)
+{
+	bool pending = false, active = false, masked = false;
+	int ret_pending, ret_active, ret_masked;
+
+	if (!spacemit_i2c || spacemit_i2c->adapt.nr != 8)
+		return;
+
+	ret_pending = irq_get_irqchip_state(spacemit_i2c->irq, IRQCHIP_STATE_PENDING,
+					 &pending);
+	ret_active = irq_get_irqchip_state(spacemit_i2c->irq, IRQCHIP_STATE_ACTIVE,
+					&active);
+	ret_masked = irq_get_irqchip_state(spacemit_i2c->irq, IRQCHIP_STATE_MASKED,
+					&masked);
+
+	dev_info(spacemit_i2c->dev,
+		 "BOOTDBG spacemit_i2c_irqchip_state tag=%s irq=%d pending=%d active=%d masked=%d ret_pending=%d ret_active=%d ret_masked=%d\n",
+		 tag, spacemit_i2c->irq, pending, active, masked,
+		 ret_pending, ret_active, ret_masked);
+}
+
+static void bootdbg_spacemit_i2c_poll_status_after_trigger(struct spacemit_i2c_dev *spacemit_i2c)
+{
+	int i;
+
+	if (!spacemit_i2c || spacemit_i2c->adapt.nr != 8 ||
+	    spacemit_i2c->xfer_mode != SPACEMIT_I2C_MODE_INTERRUPT)
+		return;
+
+	for (i = 0; i < 100; i++) {
+		u32 sr = spacemit_i2c_read_reg(spacemit_i2c, REG_SR);
+
+		if (sr) {
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_post_trigger_sr adap=%d iter=%d sr=0x%x cr=0x%x phase=%d msg_idx=%d\n",
+				 spacemit_i2c->adapt.nr, i, sr,
+				 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+				 spacemit_i2c->phase, spacemit_i2c->msg_idx);
+			return;
+		}
+
+		udelay(10);
+	}
+
+	dev_info(spacemit_i2c->dev,
+		 "BOOTDBG spacemit_i2c_post_trigger_no_status adap=%d sr=0x%x cr=0x%x phase=%d msg_idx=%d waited_us=%d\n",
+		 spacemit_i2c->adapt.nr, spacemit_i2c_read_reg(spacemit_i2c, REG_SR),
+		 spacemit_i2c_read_reg(spacemit_i2c, REG_CR),
+		 spacemit_i2c->phase, spacemit_i2c->msg_idx, 1000);
 }
 
 static void spacemit_i2c_enable(struct spacemit_i2c_dev *spacemit_i2c)
@@ -1467,6 +1520,7 @@ xfer_retry:
 			 adapt->nr, spacemit_i2c->xfer_mode, ret, spacemit_i2c->num,
 			 spacemit_i2c->phase, spacemit_i2c->i2c_status,
 			 spacemit_i2c->i2c_err);
+	bootdbg_spacemit_i2c_poll_status_after_trigger(spacemit_i2c);
 
 	if (unlikely(ret < 0)) {
 		dev_dbg(spacemit_i2c->dev, "i2c transfer error\n");
@@ -1483,6 +1537,7 @@ xfer_retry:
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
 				 adapt->nr, spacemit_i2c->timeout);
+		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
 							spacemit_i2c->timeout);
 		if (bootdbg_target)
@@ -1490,6 +1545,7 @@ xfer_retry:
 				 "BOOTDBG spacemit_i2c_xfer after_wait_complete adap=%d time_left=%lu status=0x%x err=0x%x num=%d\n",
 				 adapt->nr, time_left, spacemit_i2c->i2c_status,
 				 spacemit_i2c->i2c_err, spacemit_i2c->num);
+		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "after_wait");
 		if (unlikely(time_left == 0)) {
 			if (bootdbg_target)
 				dev_info(spacemit_i2c->dev,
@@ -1500,6 +1556,7 @@ xfer_retry:
 					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
 					 spacemit_i2c->phase, spacemit_i2c->rx_cnt,
 					 spacemit_i2c->tx_cnt, spacemit_i2c->i2c_err);
+			bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "timeout");
 			dev_alert(spacemit_i2c->dev, "msg completion timeout\n");
 			spacemit_i2c_bus_reset(spacemit_i2c);
 			spacemit_i2c_reset(spacemit_i2c);
