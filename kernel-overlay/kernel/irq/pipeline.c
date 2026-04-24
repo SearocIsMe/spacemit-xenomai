@@ -1035,6 +1035,13 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 	__set_bit(irq, p->log.map->flat);
 	__set_bit(l1b, p->log.map->index_1);
 	__set_bit(l0b, &p->log.index_0);
+
+	if (stage == &inband_stage && irq == 20) {
+		pr_info("BOOTDBG irq_post_stage inband irq=%u cpu=%u pending=%d next_irq=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			irq, smp_processor_id(), stage_irqs_pending(p),
+			peek_next_irq(p), hard_irqs_disabled(),
+			test_inband_stall(), current->comm, task_pid_nr(current));
+	}
 }
 EXPORT_SYMBOL_GPL(irq_post_stage);
 
@@ -1785,6 +1792,12 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		}
 
 		if (ipi_pending) {
+			if (next_inband_irq == 20) {
+				pr_info("BOOTDBG handle_irq_pipelined_finish ipi_short_circuit next_inband_irq=%d smp_init=%d deferred_sync=%d current=%s[%d]\n",
+					next_inband_irq, irq_pipeline_smp_init_in_progress(),
+					irq_pipeline_deferred_sync_pending(),
+					current->comm, task_pid_nr(current));
+			}
 			if (!irq_pipeline_smp_init_in_progress()) {
 				if (!irq_pipeline_deferred_sync_pending())
 					irq_pipeline_request_deferred_sync();
@@ -1797,12 +1810,23 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		if (system_state == SYSTEM_SCHEDULING &&
 		    stage_irqs_pending(inbd) &&
 		    !ipi_pending) {
+			if (next_inband_irq == 20) {
+				pr_info("BOOTDBG handle_irq_pipelined_finish scheduling_short_circuit next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
+					next_inband_irq,
+					irq_pipeline_deferred_sync_pending(),
+					current->comm, task_pid_nr(current));
+			}
 			if (!irq_pipeline_deferred_sync_pending())
 				irq_pipeline_request_deferred_sync();
 			goto out;
 		}
 	}
 #endif
+	if (next_inband_irq == 20) {
+		pr_info("BOOTDBG handle_irq_pipelined_finish calling_synchronize next_inband_irq=%d running_inband=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+			next_inband_irq, running_inband(), oob_pending,
+			hard_irqs_disabled(), current->comm, task_pid_nr(current));
+	}
 	synchronize_pipeline_on_irq();
 
 	if (stage_irqs_pending(this_inband_staged()) &&
