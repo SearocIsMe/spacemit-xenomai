@@ -49,6 +49,7 @@ static const struct of_device_id r_spacemit_i2c_dt_match[];
 
 static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid);
 extern void bootdbg_plic_dump_external_irq_state(unsigned int virq, const char *tag);
+extern void bootdbg_plic_force_unmask_external_irq(unsigned int virq, const char *tag);
 
 static inline u32 spacemit_i2c_read_reg(struct spacemit_i2c_dev *spacemit_i2c, int reg)
 {
@@ -1638,6 +1639,8 @@ xfer_retry:
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
+		bootdbg_plic_force_unmask_external_irq(spacemit_i2c->irq,
+						       "i2c_before_wait_force_unmask");
 		bootdbg_spacemit_i2c_manual_irq_kick(spacemit_i2c, "before_wait");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
 							spacemit_i2c->timeout);

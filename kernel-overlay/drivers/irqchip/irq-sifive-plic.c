@@ -104,6 +104,7 @@ static bool plic_cpuhp_setup_done __ro_after_init;
 static DEFINE_PER_CPU(struct plic_handler, plic_handlers);
 
 static int plic_irq_set_type(struct irq_data *d, unsigned int type);
+static void plic_irq_unmask(struct irq_data *d);
 static void bootdbg_plic_dump_irq_state(struct irq_data *d, const char *tag);
 
 static bool bootdbg_plic_trace_this_irq(struct irq_data *d)
@@ -127,6 +128,28 @@ void bootdbg_plic_dump_external_irq_state(unsigned int virq, const char *tag)
 	}
 
 	data = irq_desc_get_irq_data(desc);
+	bootdbg_plic_dump_irq_state(data, tag);
+}
+
+void bootdbg_plic_force_unmask_external_irq(unsigned int virq, const char *tag)
+{
+	struct irq_desc *desc;
+	struct irq_data *data;
+
+	desc = irq_to_desc(virq);
+	if (!desc) {
+		pr_info("BOOTDBG plic_force_unmask tag=%s virq=%u desc=NULL\n",
+			tag, virq);
+		return;
+	}
+
+	data = irq_desc_get_irq_data(desc);
+	if (!bootdbg_plic_trace_this_irq(data))
+		return;
+
+	pr_info("BOOTDBG plic_force_unmask tag=%s virq=%u hwirq=%lu\n",
+		tag, data->irq, data->hwirq);
+	plic_irq_unmask(data);
 	bootdbg_plic_dump_irq_state(data, tag);
 }
 
