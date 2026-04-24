@@ -1643,8 +1643,6 @@ xfer_retry:
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
-		bootdbg_plic_force_unmask_external_irq(spacemit_i2c->irq,
-						       "i2c_before_wait_force_unmask");
 		time_left = wait_for_completion_timeout(&spacemit_i2c->complete,
 							natural_wait);
 		if (bootdbg_target)

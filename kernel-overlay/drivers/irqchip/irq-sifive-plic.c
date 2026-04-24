@@ -8,6 +8,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/irq.h>
+#include <linux/irqdesc.h>
 #include <linux/irqchip.h>
 #include <linux/irqchip/chained_irq.h>
 #include <linux/irqdomain.h>
@@ -519,11 +520,20 @@ static void plic_handle_irq(struct irq_desc *desc)
 	chained_irq_enter(chip, desc);
 
 	while ((hwirq = readl(claim))) {
+		unsigned int virq = irq_find_mapping(handler->priv->irqdomain,
+						     hwirq);
+		struct irq_desc *virq_desc = virq ? irq_to_desc(virq) : NULL;
+		int err;
+
 		if (hwirq == 19 || hwirq == 20)
-			pr_info("BOOTDBG plic_handle_irq cpu=%d hwirq=%lu claim=%px\n",
-				smp_processor_id(), hwirq, claim);
-		int err = generic_handle_domain_irq(handler->priv->irqdomain,
-						    hwirq);
+			pr_info("BOOTDBG plic_handle_irq cpu=%d hwirq=%lu virq=%u claim=%px desc=%px action=%px handle=%ps\n",
+				smp_processor_id(), hwirq, virq, claim, virq_desc,
+				virq_desc ? virq_desc->action : NULL,
+				virq_desc ? virq_desc->handle_irq : NULL);
+		err = generic_handle_domain_irq(handler->priv->irqdomain, hwirq);
+		if ((hwirq == 19 || hwirq == 20) && err)
+			pr_info("BOOTDBG plic_handle_irq dispatch_err cpu=%d hwirq=%lu virq=%u err=%d\n",
+				smp_processor_id(), hwirq, virq, err);
 		if (unlikely(err))
 			pr_warn_ratelimited("can't find mapping for hwirq %lu\n",
 					hwirq);
