@@ -905,6 +905,7 @@ void start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
+	pr_info("BOOTDBG IMAGE_SIG=20260425-1644 commit=ee05933 note=boot_time_short_circuit_bypass\n");
 	early_security_init();
 	setup_arch(&command_line);
 	setup_boot_config();
