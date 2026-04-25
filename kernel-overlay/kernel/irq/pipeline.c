@@ -362,6 +362,8 @@ void synchronize_pipeline(void) /* hardirqs off */
 	static unsigned int trace_sync_pipeline_count;
 	static unsigned int trace_sync_pipeline_branch_count;
 #endif
+	int next_inband_irq = stage_irqs_pending(this_inband_staged()) ?
+		peek_next_irq(this_inband_staged()) : -1;
 
 	if (unlikely(!oob_stage_present())) {
 		top = &inband_stage;
@@ -382,6 +384,16 @@ void synchronize_pipeline(void) /* hardirqs off */
 	}
 #endif
 
+	if (next_inband_irq == 13 || next_inband_irq == 20) {
+		pr_info("BOOTDBG synchronize_pipeline enter top=%s current_stage=%s stalled=%d inband_pending=%d next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+			top == &inband_stage ? "inband" : "oob",
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			stalled, stage_irqs_pending(this_inband_staged()), next_inband_irq,
+			stage_irqs_pending(this_oob_staged()), hard_irqs_disabled(),
+			current->comm, task_pid_nr(current));
+	}
+
 	if (current_irq_stage != top)
 	{
 #ifdef CONFIG_IRQ_PIPELINE
@@ -390,7 +402,26 @@ void synchronize_pipeline(void) /* hardirqs off */
 			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_irq_stage\n");
 		}
 #endif
+		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			pr_info("BOOTDBG synchronize_pipeline before_sync_irq_stage top=%s next_inband_irq=%d current_stage=%s hard_irqs_disabled=%d current=%s[%d]\n",
+				top == &inband_stage ? "inband" : "oob",
+				next_inband_irq,
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				hard_irqs_disabled(), current->comm, task_pid_nr(current));
+		}
 		sync_irq_stage(top);
+		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			pr_info("BOOTDBG synchronize_pipeline after_sync_irq_stage top=%s next_inband_irq=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+				top == &inband_stage ? "inband" : "oob",
+				stage_irqs_pending(this_inband_staged()) ?
+				peek_next_irq(this_inband_staged()) : -1,
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				stage_irqs_pending(this_inband_staged()),
+				stage_irqs_pending(this_oob_staged()),
+				hard_irqs_disabled(), current->comm, task_pid_nr(current));
+		}
 	}
 	else if (!stalled) {
 #ifdef CONFIG_IRQ_PIPELINE
@@ -399,7 +430,24 @@ void synchronize_pipeline(void) /* hardirqs off */
 			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_current\n");
 		}
 #endif
+		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			pr_info("BOOTDBG synchronize_pipeline before_sync_current next_inband_irq=%d current_stage=%s hard_irqs_disabled=%d current=%s[%d]\n",
+				next_inband_irq,
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				hard_irqs_disabled(), current->comm, task_pid_nr(current));
+		}
 		sync_current_irq_stage();
+		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			pr_info("BOOTDBG synchronize_pipeline after_sync_current next_inband_irq=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+				stage_irqs_pending(this_inband_staged()) ?
+				peek_next_irq(this_inband_staged()) : -1,
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				stage_irqs_pending(this_inband_staged()),
+				stage_irqs_pending(this_oob_staged()),
+				hard_irqs_disabled(), current->comm, task_pid_nr(current));
+		}
 	}
 #ifdef CONFIG_IRQ_PIPELINE
 	else if (trace_sync_pipeline_branch_count < 32) {
