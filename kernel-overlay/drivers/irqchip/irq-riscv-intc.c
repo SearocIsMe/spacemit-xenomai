@@ -31,7 +31,9 @@ int riscv_intc_dispatch_irq(unsigned long cause)
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_dispatch_sw_count;
 	static unsigned int trace_dispatch_ipi_range_count;
+	static unsigned int trace_dispatch_path_count;
 	unsigned int virq;
+	int ret;
 #endif
 
 #ifdef CONFIG_IRQ_PIPELINE
@@ -47,8 +49,28 @@ int riscv_intc_dispatch_irq(unsigned long cause)
 		riscv_evl_trace_ulong("EVLDBG riscv_intc_dispatch_irq virq=", virq);
 		riscv_evl_trace_ulong("EVLDBG riscv_intc_dispatch_irq hwirq=", cause);
 	}
+
+	if ((cause == IRQ_S_SOFT || cause == IRQ_S_TIMER) &&
+	    trace_dispatch_path_count < 128) {
+		trace_dispatch_path_count++;
+		pr_info("BOOTDBG riscv_intc_dispatch_irq before_generic cause=%lu virq=%u intc_domain=%px hard_irqs_disabled=%d\n",
+			cause, virq, intc_domain, hard_irqs_disabled());
+	}
 #endif
+
+#ifdef CONFIG_IRQ_PIPELINE
+	ret = generic_handle_domain_irq(intc_domain, cause);
+
+	if ((cause == IRQ_S_SOFT || cause == IRQ_S_TIMER) &&
+	    trace_dispatch_path_count <= 128) {
+		pr_info("BOOTDBG riscv_intc_dispatch_irq after_generic cause=%lu virq=%u ret=%d intc_domain=%px hard_irqs_disabled=%d\n",
+			cause, virq, ret, intc_domain, hard_irqs_disabled());
+	}
+
+	return ret;
+#else
 	return generic_handle_domain_irq(intc_domain, cause);
+#endif
 }
 
 static asmlinkage void riscv_intc_irq(struct pt_regs *regs)
