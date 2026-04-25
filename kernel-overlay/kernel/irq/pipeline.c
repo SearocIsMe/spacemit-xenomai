@@ -2148,6 +2148,16 @@ respin:
 			if (system_state == SYSTEM_SCHEDULING &&
 			    desc->action &&
 			    (desc->action->flags & __IRQF_TIMER)) {
+				int next_irq = peek_next_irq(p);
+
+				if (next_irq == 20) {
+					pr_info("BOOTDBG sync_current_irq_stage bypass_timer_sched_break irq=%d next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+						irq, next_irq,
+						stage_irqs_pending(this_inband_staged()),
+						hard_irqs_disabled(), test_inband_stall(),
+						current->comm, task_pid_nr(current));
+					goto skip_timer_sched_break;
+				}
 				if (trace_sync_timer_break_count < 24) {
 					trace_sync_timer_break_count++;
 					riscv_evl_trace("EVLDBG sync_current_irq_stage break_after_timer\n");
@@ -2156,6 +2166,7 @@ respin:
 				}
 				break;
 			}
+skip_timer_sched_break:
 			if (irq_pipeline_ttwu_window_active() &&
 			    desc->action &&
 			    (desc->action->flags & __IRQF_TIMER)) {
