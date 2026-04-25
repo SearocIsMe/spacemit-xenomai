@@ -1552,10 +1552,38 @@ struct irq_stage_data *switch_stage_on_irq(void)
 {
 	struct irq_stage_data *prevd = current_irq_staged, *nextd;
 
+	if (stage_irqs_pending(this_inband_staged())) {
+		int next_irq = peek_next_irq(this_inband_staged());
+
+		if (next_irq == 20) {
+			pr_info("BOOTDBG switch_stage_on_irq enter prev_stage=%s current_stage=%s next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d\n",
+				prevd == this_inband_staged() ? "inband" :
+				(prevd == this_oob_staged() ? "oob" : "other"),
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				next_irq, stage_irqs_pending(this_oob_staged()),
+				hard_irqs_disabled());
+		}
+	}
+
 	if (oob_stage_present()) {
 		nextd = this_oob_staged();
 		if (prevd != nextd)
 			switch_oob(nextd);
+	}
+
+	if (stage_irqs_pending(this_inband_staged())) {
+		int next_irq = peek_next_irq(this_inband_staged());
+
+		if (next_irq == 20) {
+			pr_info("BOOTDBG switch_stage_on_irq exit prev_stage=%s current_stage=%s next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d\n",
+				prevd == this_inband_staged() ? "inband" :
+				(prevd == this_oob_staged() ? "oob" : "other"),
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				next_irq, stage_irqs_pending(this_oob_staged()),
+				hard_irqs_disabled());
+		}
 	}
 
 	return prevd;
@@ -1859,9 +1887,28 @@ int handle_irq_pipelined(struct pt_regs *regs)
 	struct irq_stage_data *prevd;
 	struct pt_regs *old_regs;
 
+	if (stage_irqs_pending(this_inband_staged()) &&
+	    peek_next_irq(this_inband_staged()) == 20) {
+		pr_info("BOOTDBG handle_irq_pipelined enter next_inband_irq=%d current_stage=%s oob_pending=%d hard_irqs_disabled=%d regs=%px\n",
+			peek_next_irq(this_inband_staged()),
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			stage_irqs_pending(this_oob_staged()),
+			hard_irqs_disabled(), regs);
+	}
+
 	prevd = handle_irq_pipelined_prepare(regs);
 	old_regs = set_irq_regs(regs);
 	arch_handle_irq_pipelined(regs);
+	if (stage_irqs_pending(this_inband_staged()) &&
+	    peek_next_irq(this_inband_staged()) == 20) {
+		pr_info("BOOTDBG handle_irq_pipelined after_arch next_inband_irq=%d current_stage=%s oob_pending=%d hard_irqs_disabled=%d regs=%px\n",
+			peek_next_irq(this_inband_staged()),
+			current_irq_staged == this_inband_staged() ? "inband" :
+			(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+			stage_irqs_pending(this_oob_staged()),
+			hard_irqs_disabled(), regs);
+	}
 	set_irq_regs(old_regs);
 	return handle_irq_pipelined_finish(prevd, regs);
 }

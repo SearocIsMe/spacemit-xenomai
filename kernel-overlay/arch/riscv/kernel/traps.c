@@ -464,6 +464,14 @@ static void noinstr handle_riscv_irq(struct pt_regs *regs)
 	 * internally and delivers pending in-band IRQs on exit.
 	 */
 	if (irqs_pipelined()) {
+		if (stage_irqs_pending(this_inband_staged())) {
+			pr_info("BOOTDBG handle_riscv_irq pipeline_branch inband_pending=%d oob_pending=%d current_stage=%s hard_irqs_disabled=%d regs=%px\n",
+				stage_irqs_pending(this_inband_staged()),
+				stage_irqs_pending(this_oob_staged()),
+				current_irq_staged == this_inband_staged() ? "inband" :
+				(current_irq_staged == this_oob_staged() ? "oob" : "other"),
+				hard_irqs_disabled(), regs);
+		}
 		handle_irq_pipelined(regs);
 		return;
 	}
