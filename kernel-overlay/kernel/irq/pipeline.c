@@ -1049,6 +1049,7 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 {
 	unsigned long l0m, l1m, l2m;
 	int l0b, l1b, l2b, irq;
+	int next_before = -1, next_after = -1;
 #ifdef CONFIG_IRQ_PIPELINE
 	static unsigned int trace_ipi_pull_count_l3;
 #endif
@@ -1056,6 +1057,8 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 	l0m = p->log.index_0;
 	if (unlikely(l0m == 0))
 		return -1;
+
+	next_before = peek_next_irq(p);
 
 	l0b = __ffs(l0m);
 	l1m = p->log.map->index_1[l0b];
@@ -1077,6 +1080,17 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 		__clear_bit(l1b, p->log.map->index_1);
 		if (p->log.map->index_1[l0b] == 0)
 			__clear_bit(l0b, &p->log.index_0);
+	}
+
+	next_after = peek_next_irq(p);
+
+	if (p->stage == &inband_stage && (irq == 13 || irq == 20 ||
+					  next_before == 13 || next_before == 20 ||
+					  next_after == 13 || next_after == 20)) {
+		pr_info("BOOTDBG pull_next_irq stage=inband pulled=%d next_before=%d next_after=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+			irq, next_before, next_after, stage_irqs_pending(p),
+			hard_irqs_disabled(), test_inband_stall(),
+			current->comm, task_pid_nr(current));
 	}
 
 	return irq;
@@ -2032,7 +2046,7 @@ respin:
 		barrier();
 
 		desc = irq_to_desc(irq);
-		if (stage == &inband_stage && irq == 20) {
+		if (stage == &inband_stage && (irq == 13 || irq == 20)) {
 			pr_info("BOOTDBG sync_current_irq_stage about_to_dispatch irq=%d desc=%px istate=0x%lx deferred_sync=%d pending=%d hard_irqs_disabled=%d stalled=%d current=%s[%d]\n",
 				irq, desc, desc ? (unsigned long)desc->istate : 0,
 				irq_pipeline_deferred_sync_pending(),
@@ -2040,7 +2054,7 @@ respin:
 				hard_irqs_disabled(), test_inband_stall(),
 				current->comm, task_pid_nr(current));
 		}
-		if (stage == &inband_stage && irq == 20) {
+		if (stage == &inband_stage && (irq == 13 || irq == 20)) {
 			pr_info("BOOTDBG sync_current_irq_stage pulled irq=%d stage=inband desc=%px istate=0x%lx pending=%d stalled=%d hard_irqs_disabled=%d\n",
 				irq, desc, desc ? (unsigned long)desc->istate : 0,
 				stage_irqs_pending(this_inband_staged()),
@@ -2065,15 +2079,25 @@ respin:
 #endif
 
 		if (stage == &inband_stage) {
-			if (irq == 20) {
-				pr_info("BOOTDBG sync_current_irq_stage before_do_inband irq=%d desc=%px istate=0x%lx pending=%d hard_irqs_disabled=%d\n",
+			if (irq == 13 || irq == 20) {
+				pr_info("BOOTDBG sync_current_irq_stage before_do_inband irq=%d desc=%px istate=0x%lx pending=%d hard_irqs_disabled=%d action=%px handler=%ps flags=0x%x\n",
 					irq, desc, desc ? (unsigned long)desc->istate : 0,
 					stage_irqs_pending(this_inband_staged()),
-					hard_irqs_disabled());
+					hard_irqs_disabled(),
+					desc ? desc->action : NULL,
+					(desc && desc->action) ? desc->action->handler : NULL,
+					(desc && desc->action) ? desc->action->flags : 0);
 			}
 			hard_local_irq_enable();
 			do_inband_irq(desc);
 			hard_local_irq_disable();
+			if (irq == 13 || irq == 20) {
+				pr_info("BOOTDBG sync_current_irq_stage after_do_inband irq=%d pending=%d next_irq=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+					irq, stage_irqs_pending(this_inband_staged()),
+					peek_next_irq(this_inband_staged()),
+					hard_irqs_disabled(), test_inband_stall(),
+					current->comm, task_pid_nr(current));
+			}
 #ifdef CONFIG_IRQ_PIPELINE
 			/*
 			 * Validation hack: avoid letting a single bootstrap
