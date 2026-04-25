@@ -1823,8 +1823,17 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	}
 	{
 		struct irq_stage_data *inbd = this_inband_staged();
+		struct irq_desc *next_desc = NULL;
+		bool next_is_timer = false;
 		bool ipi_pending = false;
 		int i;
+
+		if (next_inband_irq >= 0) {
+			next_desc = irq_to_desc(next_inband_irq);
+			next_is_timer = next_desc &&
+				next_desc->action &&
+				(next_desc->action->flags & __IRQF_TIMER);
+		}
 
 		for (i = 3; i <= 8; i++) {
 			if (test_bit(i, inbd->log.map->flat)) {
@@ -1851,7 +1860,8 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 
 		if (system_state == SYSTEM_SCHEDULING &&
 		    stage_irqs_pending(inbd) &&
-		    !ipi_pending) {
+		    !ipi_pending &&
+		    next_is_timer) {
 			if (next_inband_irq == 20) {
 				pr_info("BOOTDBG handle_irq_pipelined_finish scheduling_short_circuit next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
 					next_inband_irq,
@@ -1861,6 +1871,15 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 			if (!irq_pipeline_deferred_sync_pending())
 				irq_pipeline_request_deferred_sync();
 			goto out;
+		}
+		if (system_state == SYSTEM_SCHEDULING &&
+		    stage_irqs_pending(inbd) &&
+		    !ipi_pending &&
+		    next_inband_irq == 20) {
+			pr_info("BOOTDBG handle_irq_pipelined_finish bypass_scheduling_short_circuit next_inband_irq=%d next_is_timer=%d deferred_sync=%d current=%s[%d]\n",
+				next_inband_irq, next_is_timer,
+				irq_pipeline_deferred_sync_pending(),
+				current->comm, task_pid_nr(current));
 		}
 	}
 #endif
