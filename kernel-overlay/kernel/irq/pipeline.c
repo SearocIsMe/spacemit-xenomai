@@ -414,7 +414,7 @@ void irq_pipeline_request_deferred_sync(void)
 	struct irq_stage_data *p = this_inband_staged();
 	int next_irq = peek_next_irq(p);
 
-	if (next_irq == 20) {
+	if (next_irq == 13 || next_irq == 20) {
 		pr_info("BOOTDBG irq_pipeline_request_deferred_sync next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			next_irq, stage_irqs_pending(p),
 			hard_irqs_disabled(), test_inband_stall(),
@@ -440,7 +440,7 @@ bool irq_pipeline_take_deferred_sync(void)
 	if (pending)
 		__this_cpu_write(deferred_sync_request, false);
 
-	if (pending && next_irq == 20) {
+	if (pending && (next_irq == 13 || next_irq == 20)) {
 		pr_info("BOOTDBG irq_pipeline_take_deferred_sync next_irq=%d pending=%d inband_pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			next_irq, pending, stage_irqs_pending(p),
 			hard_irqs_disabled(), test_inband_stall(),

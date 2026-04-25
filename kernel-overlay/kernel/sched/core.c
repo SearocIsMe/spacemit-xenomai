@@ -5369,9 +5369,6 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	__releases(rq->lock)
 {
-#ifdef CONFIG_IRQ_PIPELINE
-	bool ipi_pending = false;
-#endif
 	/*
 	 * New tasks start with FORK_PREEMPT_COUNT, see there and
 	 * finish_task_switch() for details.
@@ -5398,11 +5395,13 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 	hard_cond_local_irq_enable();
 #endif
 #ifdef CONFIG_IRQ_PIPELINE
-	if (system_state == SYSTEM_SCHEDULING) {
-		if (irq_pipeline_take_deferred_sync()) {
-			ipi_pending = irq_pipeline_ipi_pending();
-			sync_current_irq_stage();
-		}
+	if (irq_pipeline_take_deferred_sync()) {
+		pr_info("BOOTDBG schedule_tail consume_deferred_sync system_state=%u ipi_pending=%d inband_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+			system_state, irq_pipeline_ipi_pending(),
+			stage_irqs_pending(this_inband_staged()),
+			hard_irqs_disabled(), current->comm,
+			task_pid_nr(current));
+		sync_current_irq_stage();
 	}
 #endif
 
