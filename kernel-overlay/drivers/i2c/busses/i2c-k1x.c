@@ -30,6 +30,7 @@
 #include <linux/rpmsg.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
+#include <linux/irq_pipeline.h>
 
 #include "i2c-k1x.h"
 
@@ -1769,8 +1770,11 @@ xfer_retry:
 
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
-				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu\n",
-				 adapt->nr, (unsigned long)spacemit_i2c->timeout);
+				 "BOOTDBG spacemit_i2c_xfer before_wait_complete adap=%d timeout=%lu irqs_disabled=%d in_atomic=%d preempt_count=%x running_inband=%d inband_pending=%d current=%s[%d]\n",
+				 adapt->nr, (unsigned long)spacemit_i2c->timeout,
+				 irqs_disabled(), in_atomic(), preempt_count(),
+				 running_inband(), inband_irq_pending(),
+				 current->comm, task_pid_nr(current));
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "before_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "before_wait");
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_before_wait");
@@ -1778,10 +1782,13 @@ xfer_retry:
 							natural_wait);
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
-				 "BOOTDBG spacemit_i2c_xfer natural_irq_wait adap=%d wait=%lu time_left=%lu done=%d status=0x%x err=0x%x\n",
+				 "BOOTDBG spacemit_i2c_xfer natural_irq_wait adap=%d wait=%lu time_left=%lu done=%d status=0x%x err=0x%x irqs_disabled=%d in_atomic=%d preempt_count=%x running_inband=%d inband_pending=%d current=%s[%d]\n",
 				 adapt->nr, natural_wait, time_left,
 				 completion_done(&spacemit_i2c->complete),
-				 spacemit_i2c->i2c_status, spacemit_i2c->i2c_err);
+				 spacemit_i2c->i2c_status, spacemit_i2c->i2c_err,
+				 irqs_disabled(), in_atomic(), preempt_count(),
+				 running_inband(), inband_irq_pending(),
+				 current->comm, task_pid_nr(current));
 		if (!time_left) {
 			if (fallback_timeout > natural_wait)
 				fallback_timeout -= natural_wait;
@@ -1798,9 +1805,12 @@ xfer_retry:
 		}
 		if (bootdbg_target)
 			dev_info(spacemit_i2c->dev,
-				 "BOOTDBG spacemit_i2c_xfer after_wait_complete adap=%d time_left=%lu status=0x%x err=0x%x num=%d\n",
+				 "BOOTDBG spacemit_i2c_xfer after_wait_complete adap=%d time_left=%lu status=0x%x err=0x%x num=%d irqs_disabled=%d in_atomic=%d preempt_count=%x running_inband=%d inband_pending=%d current=%s[%d]\n",
 				 adapt->nr, time_left, spacemit_i2c->i2c_status,
-				 spacemit_i2c->i2c_err, spacemit_i2c->num);
+				 spacemit_i2c->i2c_err, spacemit_i2c->num,
+				 irqs_disabled(), in_atomic(), preempt_count(),
+				 running_inband(), inband_irq_pending(),
+				 current->comm, task_pid_nr(current));
 		bootdbg_spacemit_i2c_dump_irq_desc(spacemit_i2c, "after_wait");
 		bootdbg_spacemit_i2c_dump_irqchip_state(spacemit_i2c, "after_wait");
 		bootdbg_plic_dump_external_irq_state(spacemit_i2c->irq, "i2c_after_wait");
