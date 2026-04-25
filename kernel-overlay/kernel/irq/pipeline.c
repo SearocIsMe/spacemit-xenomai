@@ -2120,8 +2120,26 @@ respin:
 			if (irq_pipeline_ttwu_window_active() &&
 			    desc->action &&
 			    (desc->action->flags & __IRQF_TIMER)) {
-				riscv_evl_trace("EVLDBG sync_current_irq_stage skip_timer_ttwu_window\n");
-				break;
+				int next_irq = peek_next_irq(p);
+
+				/*
+				 * Do not let a replayed timer tick block a
+				 * real deferred device interrupt already
+				 * queued behind it, otherwise the pipeline
+				 * may livelock on the timer and never reach
+				 * the device completion path.
+				 */
+				if (next_irq < 0 || next_irq == irq) {
+					riscv_evl_trace("EVLDBG sync_current_irq_stage skip_timer_ttwu_window\n");
+					break;
+				}
+				if (next_irq == 20) {
+					pr_info("BOOTDBG sync_current_irq_stage continue_after_timer_ttwu irq=%d next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
+						irq, next_irq,
+						stage_irqs_pending(this_inband_staged()),
+						hard_irqs_disabled(), test_inband_stall(),
+						current->comm, task_pid_nr(current));
+				}
 			}
 #endif
 		} else {
