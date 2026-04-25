@@ -495,14 +495,28 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 	int ret = 0;
 	u8  msglen = 0;
 	u32 cr_val = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
+	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
 
 	cr_val &= ~(CR_TB | CR_ACKNAK | CR_STOP | CR_START);
 	spacemit_i2c->phase = SPACEMIT_I2C_XFER_BODY;
 
 	if (spacemit_i2c->i2c_status & SR_IRF) { /* i2c receive full */
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_body branch=irf status=0x%x msg_idx=%d rx_cnt=%zu tx_cnt=%zu len=%d is_rx=%d phase=%d\n",
+				 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+				 spacemit_i2c->rx_cnt, spacemit_i2c->tx_cnt,
+				 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+				 spacemit_i2c->is_rx, spacemit_i2c->phase);
 		/* if current is transmit mode, ignore this signal */
-		if (!spacemit_i2c->is_rx)
+		if (!spacemit_i2c->is_rx) {
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body ignore_irf_not_rx status=0x%x msg_idx=%d phase=%d\n",
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->phase);
 			return 0;
+		}
 
 		/*
 		 * if the message length is received from slave device,
@@ -536,8 +550,17 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 			}
 		}
 		/* if transfer completes, ISR will handle it */
-		if (spacemit_i2c->i2c_status & (SR_MSD | SR_ACKNAK))
+		if (spacemit_i2c->i2c_status & (SR_MSD | SR_ACKNAK)) {
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body irf_wait_for_complete status=0x%x msg_idx=%d rx_cnt=%zu len=%d msd=%d acknak=%d\n",
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->rx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+					 !!(spacemit_i2c->i2c_status & SR_MSD),
+					 !!(spacemit_i2c->i2c_status & SR_ACKNAK));
 			return 0;
+		}
 
 		/* trigger next byte receive */
 		if (spacemit_i2c->rx_cnt < spacemit_i2c->cur_msg->len) {
@@ -547,7 +570,20 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 
 			cr_val |= CR_ALDIE | CR_TB;
 			spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_val);
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body irf_trigger_next_rx status=0x%x cr=0x%x msg_idx=%d rx_cnt=%zu len=%d last_byte=%d\n",
+					 spacemit_i2c->i2c_status, cr_val,
+					 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+					 spacemit_i2c_is_last_byte_to_receive(spacemit_i2c));
 		} else if (spacemit_i2c->msg_idx < spacemit_i2c->num - 1) {
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body irf_next_msg status=0x%x msg_idx=%d num=%d rx_cnt=%zu len=%d\n",
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->num, spacemit_i2c->rx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1);
 			ret = spacemit_i2c_byte_xfer_next_msg(spacemit_i2c);
 		} else {
 			/*
@@ -555,16 +591,45 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 			 * transfer is already done, the master stop interrupt
 			 * should be generated to complete this transaction.
 			*/
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body irf_wait_stop status=0x%x msg_idx=%d rx_cnt=%zu len=%d phase=%d\n",
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->rx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+					 spacemit_i2c->phase);
 		}
 	} else if (spacemit_i2c->i2c_status & SR_ITE) { /* i2c transmit empty */
+		if (bootdbg_target)
+			dev_info(spacemit_i2c->dev,
+				 "BOOTDBG spacemit_i2c_body branch=ite status=0x%x msg_idx=%d rx_cnt=%zu tx_cnt=%zu len=%d is_rx=%d phase=%d msd=%d rwm=%d\n",
+				 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+				 spacemit_i2c->rx_cnt, spacemit_i2c->tx_cnt,
+				 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+				 spacemit_i2c->is_rx, spacemit_i2c->phase,
+				 !!(spacemit_i2c->i2c_status & SR_MSD),
+				 !!(spacemit_i2c->i2c_status & SR_RWM));
 		/* MSD comes with ITE */
-		if (spacemit_i2c->i2c_status & SR_MSD)
+		if (spacemit_i2c->i2c_status & SR_MSD) {
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body ite_wait_for_complete status=0x%x msg_idx=%d tx_cnt=%zu len=%d\n",
+					 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+					 spacemit_i2c->tx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1);
 			return ret;
+		}
 
 		if (spacemit_i2c->i2c_status & SR_RWM) { /* receive mode */
 			/* if current is transmit mode, ignore this signal */
-			if (!spacemit_i2c->is_rx)
+			if (!spacemit_i2c->is_rx) {
+				if (bootdbg_target)
+					dev_info(spacemit_i2c->dev,
+						 "BOOTDBG spacemit_i2c_body ignore_rwm_not_rx status=0x%x msg_idx=%d phase=%d\n",
+						 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+						 spacemit_i2c->phase);
 				return 0;
+			}
 
 			if (spacemit_i2c_is_last_byte_to_receive(spacemit_i2c))
 				cr_val |= CR_STOP | CR_ACKNAK;
@@ -579,10 +644,23 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 			 */
 			cr_val &= ~CR_DTEIE;
 			spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_val);
+			if (bootdbg_target)
+				dev_info(spacemit_i2c->dev,
+					 "BOOTDBG spacemit_i2c_body ite_trigger_rx status=0x%x cr=0x%x msg_idx=%d rx_cnt=%zu len=%d last_byte=%d\n",
+					 spacemit_i2c->i2c_status, cr_val,
+					 spacemit_i2c->msg_idx, spacemit_i2c->rx_cnt,
+					 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+					 spacemit_i2c_is_last_byte_to_receive(spacemit_i2c));
 		} else { /* transmit mode */
 			/* if current is receive mode, ignore this signal */
-			if (spacemit_i2c->is_rx)
+			if (spacemit_i2c->is_rx) {
+				if (bootdbg_target)
+					dev_info(spacemit_i2c->dev,
+						 "BOOTDBG spacemit_i2c_body ignore_ite_rx_mode status=0x%x msg_idx=%d phase=%d\n",
+						 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+						 spacemit_i2c->phase);
 				return 0;
+			}
 
 			if (spacemit_i2c->tx_cnt < spacemit_i2c->cur_msg->len) {
 				spacemit_i2c_write_reg(spacemit_i2c, REG_DBR,
@@ -595,7 +673,20 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 
 				cr_val |= CR_ALDIE | CR_TB;
 				spacemit_i2c_write_reg(spacemit_i2c, REG_CR, cr_val);
+				if (bootdbg_target)
+					dev_info(spacemit_i2c->dev,
+						 "BOOTDBG spacemit_i2c_body ite_trigger_next_tx status=0x%x cr=0x%x msg_idx=%d tx_cnt=%zu len=%d last_byte=%d\n",
+						 spacemit_i2c->i2c_status, cr_val,
+						 spacemit_i2c->msg_idx, spacemit_i2c->tx_cnt,
+						 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+						 spacemit_i2c_is_last_byte_to_send(spacemit_i2c));
 			} else if (spacemit_i2c->msg_idx < spacemit_i2c->num - 1) {
+				if (bootdbg_target)
+					dev_info(spacemit_i2c->dev,
+						 "BOOTDBG spacemit_i2c_body ite_next_msg status=0x%x msg_idx=%d num=%d tx_cnt=%zu len=%d\n",
+						 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+						 spacemit_i2c->num, spacemit_i2c->tx_cnt,
+						 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1);
 				ret = spacemit_i2c_byte_xfer_next_msg(spacemit_i2c);
 			} else {
 				/*
@@ -604,8 +695,21 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 				 * stop interrupt should be generated to
 				 * complete this transaction.
 				*/
+				if (bootdbg_target)
+					dev_info(spacemit_i2c->dev,
+						 "BOOTDBG spacemit_i2c_body ite_wait_stop status=0x%x msg_idx=%d tx_cnt=%zu len=%d phase=%d\n",
+						 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+						 spacemit_i2c->tx_cnt,
+						 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+						 spacemit_i2c->phase);
 			}
 		}
+	} else if (bootdbg_target) {
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_body branch=unknown status=0x%x msg_idx=%d rx_cnt=%zu tx_cnt=%zu phase=%d\n",
+			 spacemit_i2c->i2c_status, spacemit_i2c->msg_idx,
+			 spacemit_i2c->rx_cnt, spacemit_i2c->tx_cnt,
+			 spacemit_i2c->phase);
 	}
 
 	return ret;
@@ -613,8 +717,18 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 
 static int spacemit_i2c_byte_xfer_next_msg(struct spacemit_i2c_dev *spacemit_i2c)
 {
+	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
+
 	if (spacemit_i2c->msg_idx == spacemit_i2c->num - 1)
 		return 0;
+
+	if (bootdbg_target)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_next_msg before msg_idx=%d num=%d cur_len=%d cur_is_rx=%d rx_cnt=%zu tx_cnt=%zu phase=%d\n",
+			 spacemit_i2c->msg_idx, spacemit_i2c->num,
+			 spacemit_i2c->cur_msg ? spacemit_i2c->cur_msg->len : -1,
+			 spacemit_i2c->is_rx, spacemit_i2c->rx_cnt,
+			 spacemit_i2c->tx_cnt, spacemit_i2c->phase);
 
 	spacemit_i2c->msg_idx++;
 	spacemit_i2c->cur_msg = spacemit_i2c->msgs + spacemit_i2c->msg_idx;
@@ -627,6 +741,12 @@ static int spacemit_i2c_byte_xfer_next_msg(struct spacemit_i2c_dev *spacemit_i2c
 	spacemit_i2c->phase = SPACEMIT_I2C_XFER_IDLE;
 
 	spacemit_i2c_mark_rw_flag(spacemit_i2c);
+
+	if (bootdbg_target)
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_next_msg after msg_idx=%d len=%d is_rx=%d phase=%d\n",
+			 spacemit_i2c->msg_idx, spacemit_i2c->cur_msg->len,
+			 spacemit_i2c->is_rx, spacemit_i2c->phase);
 
 	return spacemit_i2c_byte_xfer(spacemit_i2c);
 }
@@ -1233,6 +1353,12 @@ err_out:
 			dev_info(spacemit_i2c->dev,
 				 "BOOTDBG spacemit_i2c_irq after_complete irq=%d status=0x%x ret=%d err=0x%x\n",
 				 irq, status, ret, spacemit_i2c->i2c_err);
+	} else if (bootdbg_target) {
+		dev_info(spacemit_i2c->dev,
+			 "BOOTDBG spacemit_i2c_irq no_complete irq=%d status=0x%x ret=%d err=0x%x phase=%d msg_idx=%d rx_cnt=%zu tx_cnt=%zu\n",
+			 irq, status, ret, spacemit_i2c->i2c_err,
+			 spacemit_i2c->phase, spacemit_i2c->msg_idx,
+			 spacemit_i2c->rx_cnt, spacemit_i2c->tx_cnt);
 	}
 
 	return IRQ_HANDLED;
