@@ -1863,6 +1863,13 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		    stage_irqs_pending(inbd) &&
 		    !ipi_pending &&
 		    next_is_timer) {
+			if (irq_cause == 9) {
+				pr_info("BOOTDBG handle_irq_pipelined_finish bypass_timer_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
+					irq_cause, next_inband_irq,
+					irq_pipeline_deferred_sync_pending(),
+					current->comm, task_pid_nr(current));
+				goto no_sched_short_circuit;
+			}
 			if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
 				pr_info("BOOTDBG handle_irq_pipelined_finish scheduling_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
 					irq_cause, next_inband_irq,
@@ -1882,6 +1889,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				irq_pipeline_deferred_sync_pending(),
 				current->comm, task_pid_nr(current));
 		}
+no_sched_short_circuit:
 	}
 #endif
 	if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
