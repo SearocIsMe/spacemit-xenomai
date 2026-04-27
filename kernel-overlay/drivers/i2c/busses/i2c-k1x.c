@@ -218,7 +218,7 @@ static void spacemit_i2c_enable(struct spacemit_i2c_dev *spacemit_i2c)
 	u32 cr_before = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
 	u32 cr_after = cr_before | CR_IUE;
 
-	if (spacemit_i2c->adapt.nr == 8)
+	if (false && spacemit_i2c->adapt.nr == 8)
 		dev_info(spacemit_i2c->dev,
 			 "BOOTDBG spacemit_i2c_enable adap=%d cr_before=0x%x cr_after=0x%x\n",
 			 spacemit_i2c->adapt.nr, cr_before, cr_after);
@@ -389,7 +389,7 @@ static void spacemit_i2c_unit_init(struct spacemit_i2c_dev *spacemit_i2c)
 	if (unlikely(spacemit_i2c->xfer_mode == SPACEMIT_I2C_MODE_PIO))
 		cr_val &= ~(CR_ALDIE | CR_BEIE | CR_MSDIE | CR_DTEIE);
 
-	if (spacemit_i2c->adapt.nr == 8)
+	if (false && spacemit_i2c->adapt.nr == 8)
 		dev_info(spacemit_i2c->dev,
 			 "BOOTDBG spacemit_i2c_unit_init adap=%d mode=%d cr_val=0x%x\n",
 			 spacemit_i2c->adapt.nr, spacemit_i2c->xfer_mode, cr_val);
@@ -409,7 +409,7 @@ static void spacemit_i2c_trigger_byte_xfer(struct spacemit_i2c_dev *spacemit_i2c
 	else
 		cr_val |= CR_START | CR_TB | CR_DTEIE;
 
-	if (spacemit_i2c->adapt.nr == 8)
+	if (false && spacemit_i2c->adapt.nr == 8)
 		dev_info(spacemit_i2c->dev,
 			 "BOOTDBG spacemit_i2c_trigger_byte_xfer adap=%d phase=%d msg_idx=%d cr_before=0x%x cr_after=0x%x\n",
 			 spacemit_i2c->adapt.nr, spacemit_i2c->phase,
@@ -479,7 +479,7 @@ static void spacemit_i2c_byte_xfer_send_slave_addr(struct spacemit_i2c_dev *spac
 	/* write slave address to DBR for interrupt mode */
 	spacemit_i2c_write_reg(spacemit_i2c, REG_DBR, spacemit_i2c->slave_addr_rw);
 
-	if (spacemit_i2c->adapt.nr == 8)
+	if (false && spacemit_i2c->adapt.nr == 8)
 		dev_info(spacemit_i2c->dev,
 			 "BOOTDBG spacemit_i2c_send_slave_addr adap=%d slave_addr_rw=0x%x msg_idx=%d is_rx=%d\n",
 			 spacemit_i2c->adapt.nr, spacemit_i2c->slave_addr_rw,
@@ -496,7 +496,7 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 	int ret = 0;
 	u8  msglen = 0;
 	u32 cr_val = spacemit_i2c_read_reg(spacemit_i2c, REG_CR);
-	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
+	bool bootdbg_target = false && spacemit_i2c && spacemit_i2c->adapt.nr == 8;
 
 	cr_val &= ~(CR_TB | CR_ACKNAK | CR_STOP | CR_START);
 	spacemit_i2c->phase = SPACEMIT_I2C_XFER_BODY;
@@ -718,7 +718,7 @@ static int spacemit_i2c_byte_xfer_body(struct spacemit_i2c_dev *spacemit_i2c)
 
 static int spacemit_i2c_byte_xfer_next_msg(struct spacemit_i2c_dev *spacemit_i2c)
 {
-	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
+	bool bootdbg_target = false && spacemit_i2c && spacemit_i2c->adapt.nr == 8;
 
 	if (spacemit_i2c->msg_idx == spacemit_i2c->num - 1)
 		return 0;
@@ -1275,7 +1275,7 @@ static irqreturn_t spacemit_i2c_int_handler(int irq, void *devid)
 	struct spacemit_i2c_dev *spacemit_i2c = devid;
 	u32 status, ctrl;
 	int ret = 0;
-	bool bootdbg_target = spacemit_i2c && spacemit_i2c->adapt.nr == 8;
+	bool bootdbg_target = false && spacemit_i2c && spacemit_i2c->adapt.nr == 8;
 
 	/* record i2c status */
 	status = spacemit_i2c_read_reg(spacemit_i2c, REG_SR);
@@ -1583,14 +1583,23 @@ spacemit_i2c_notifier_reboot_call(struct notifier_block *nb, unsigned long actio
 static bool spacemit_i2c_bootdbg_target(struct spacemit_i2c_dev *spacemit_i2c,
 					struct i2c_msg msgs[], int num)
 {
-	return spacemit_i2c->adapt.nr == 8 && num > 0 && msgs[0].addr == 0x41;
+	return false && spacemit_i2c && msgs && spacemit_i2c->adapt.nr == 8 &&
+	       num > 0 && msgs[0].addr == 0x41;
+}
+
+static bool spacemit_i2c_boot_pmic_target(struct spacemit_i2c_dev *spacemit_i2c,
+					  struct i2c_msg msgs[], int num)
+{
+	return spacemit_i2c && msgs && spacemit_i2c->adapt.nr == 8 &&
+	       num > 0 && msgs[0].addr == 0x41 &&
+	       system_state < SYSTEM_RUNNING;
 }
 
 static bool spacemit_i2c_force_pio_debug(struct spacemit_i2c_dev *spacemit_i2c,
 					 struct i2c_msg msgs[], int num)
 {
-	return spacemit_i2c_bootdbg_target(spacemit_i2c, msgs, num) &&
-	       hard_irqs_disabled();
+	return spacemit_i2c_boot_pmic_target(spacemit_i2c, msgs, num) &&
+	       (hard_irqs_disabled() || system_state == SYSTEM_SCHEDULING);
 }
 
 static int spacemit_i2c_notifier_poweroff_call(struct sys_off_data *data)
@@ -1614,6 +1623,12 @@ spacemit_i2c_xfer(struct i2c_adapter *adapt, struct i2c_msg msgs[], int num)
 	bool clk_directly = false;
 	bool bootdbg_target = spacemit_i2c_bootdbg_target(spacemit_i2c, msgs, num);
 	bool force_pio_debug = spacemit_i2c_force_pio_debug(spacemit_i2c, msgs, num);
+
+	if (force_pio_debug)
+		dev_notice_once(spacemit_i2c->dev,
+				"BOOTDBG spacemit_i2c_xfer early_pmic_force_pio adap=%d addr0=0x%02x system_state=%d hard_irqs_disabled=%d\n",
+				adapt->nr, msgs[0].addr, system_state,
+				hard_irqs_disabled());
 
 	if (bootdbg_target)
 		dev_info(spacemit_i2c->dev,

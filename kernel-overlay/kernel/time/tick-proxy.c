@@ -211,6 +211,9 @@ int tick_setup_proxy(struct clock_proxy_device *dev)
 	struct clock_event_device *proxy_dev, *real_dev;
 
 	real_dev = raw_cpu_ptr(&tick_cpu_device)->evtdev;
+	pr_info("BOOTDBG tick_setup_proxy cpu=%u real=%s features=0x%x irq=%d system_state=%d\n",
+		smp_processor_id(), real_dev->name, real_dev->features,
+		real_dev->irq, system_state);
 	if ((real_dev->features &
 			(CLOCK_EVT_FEAT_PIPELINE|CLOCK_EVT_FEAT_ONESHOT))
 		!= (CLOCK_EVT_FEAT_PIPELINE|CLOCK_EVT_FEAT_ONESHOT)) {
@@ -304,12 +307,19 @@ static void register_proxy_device(void *arg) /* irqs_disabled() */
 	struct proxy_install_arg *req = arg;
 	int ret;
 
+	pr_info("BOOTDBG register_proxy_device enter cpu=%u system_state=%d hard_irqs_disabled=%d\n",
+		smp_processor_id(), system_state, hard_irqs_disabled());
 	dev->__setup_handler = req->setup_proxy;
 	ret = clockevents_register_proxy(dev);
 	if (ret) {
+		pr_info("BOOTDBG register_proxy_device fail cpu=%u ret=%d\n",
+			smp_processor_id(), ret);
 		if (!req->result)
 			req->result = ret;
 	} else {
+		pr_info("BOOTDBG register_proxy_device ok cpu=%u real=%s proxy=%s\n",
+			smp_processor_id(), dev->real_device->name,
+			dev->proxy_device.name);
 		dev->real_device->event_handler = proxy_event_handler;
 	}
 }
@@ -392,17 +402,24 @@ int tick_install_proxy(void (*setup_proxy)(struct clock_proxy_device *dev),
 	 */
 	arg.setup_proxy = setup_proxy;
 	arg.result = 0;
+	pr_info("BOOTDBG tick_install_proxy before_register cpumask=%*pbl system_state=%d\n",
+		cpumask_pr_args(cpumask), system_state);
 	on_each_cpu_mask(cpumask, register_proxy_device, &arg, true);
 	if (arg.result) {
+		pr_info("BOOTDBG tick_install_proxy register_failed result=%d\n",
+			arg.result);
 		tick_uninstall_proxy(cpumask);
 		return arg.result;
 	}
+	pr_info("BOOTDBG tick_install_proxy after_register before_stop_machine cpumask=%*pbl system_state=%d\n",
+		cpumask_pr_args(cpumask), system_state);
 
 	/*
 	 * Start ticking from the out-of-band interrupt stage upon
 	 * receipt of out-of-band timer events.
 	 */
 	stop_machine(enable_oob_timer, NULL, cpumask);
+	pr_info("BOOTDBG tick_install_proxy after_stop_machine\n");
 out:
 	mutex_unlock(&proxy_mutex);
 

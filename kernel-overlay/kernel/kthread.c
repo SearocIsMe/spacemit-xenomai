@@ -61,7 +61,10 @@ struct kthread_create_info
 static bool kthread_bootdbg_target(const struct kthread_create_info *create)
 {
 	return create && create->full_name &&
-	       strstr(create->full_name, "spm8821");
+	       (strstr(create->full_name, "spm8821") ||
+		strstr(create->full_name, "irq/30") ||
+		strstr(create->full_name, "mmc0") ||
+		strstr(create->full_name, "sdhci"));
 }
 
 static void kthread_bootdbg_process_timeout(struct timer_list *t)

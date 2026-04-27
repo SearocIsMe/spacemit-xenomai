@@ -113,7 +113,7 @@ static bool bootdbg_plic_trace_this_irq(struct irq_data *d)
 	if (!d)
 		return false;
 
-	return d->irq == 20 || d->hwirq == 19 || d->hwirq == 20;
+	return false && (d->irq == 20 || d->hwirq == 19 || d->hwirq == 20);
 }
 
 void bootdbg_plic_dump_external_irq_state(unsigned int virq, const char *tag)

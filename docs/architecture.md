@@ -15,7 +15,7 @@ Hardware Interrupt
        │
        ▼
 ┌──────────────────────────────────────────────────────────┐
-│              Dovetail Interrupt Pipeline                  │
+│              Dovetail Interrupt Pipeline                 │
 │                                                          │
 │  ┌─────────────────────┐    ┌──────────────────────────┐ │
 │  │  Stage 0: OOB       │    │  Stage 1: In-band        │ │
@@ -26,7 +26,7 @@ Hardware Interrupt
 │  │  • Never masked by  │    │  • Can be masked by      │ │
 │  │    Linux            │    │    local_irq_disable()   │ │
 │  └─────────┬───────────┘    └──────────┬───────────────┘ │
-│            │  stall/unstall            │                  │
+│            │  stall/unstall            │                 │
 │            └──────────────────────────┘                  │
 └──────────────────────────────────────────────────────────┘
 ```

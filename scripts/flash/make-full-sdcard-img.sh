@@ -564,7 +564,7 @@ else
       ok "kernel_addr_r already set in raw env"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug keep_bootcon clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if grep -q '^commonargs=' "${ENV_TXT}"; then
       sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_TXT}"
       ok "Replaced commonargs in raw env with a minimal initcall-debug builder"
@@ -648,7 +648,7 @@ else
     # Longer "setenv bootargs ..." lines proved fragile on Jupiter and triggered
     # U-Boot's "setenv" usage path during mmc_boot. For initcall triage we only
     # need a minimal set of debug args to survive into the final bootargs.
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug keep_bootcon clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
       sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
       ok "Replaced commonargs with a minimal initcall-debug bootargs builder"

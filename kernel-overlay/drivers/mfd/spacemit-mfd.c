@@ -2,6 +2,7 @@
 
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/mfd/core.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
@@ -232,16 +233,23 @@ static int spacemit_pmic_probe(struct i2c_client *client)
 				__func__, __LINE__);
 	} else {
 		if (pmic->regmap_irq_chip) {
-			pr_info("BOOTDBG spacemit_pmic_probe before_add_irq_chip dev=%s irq=%d\n",
-				dev_name(&client->dev), client->irq);
-			ret = regmap_add_irq_chip(pmic->regmap, client->irq, IRQF_ONESHOT, -1,
-				pmic->regmap_irq_chip, &pmic->irq_data);
-			if (ret) {
-				pr_err("failed to add irqchip %d\n", ret);
-				return ret;
+			if (!strcmp(match_data->name, "spm8821") &&
+			    system_state < SYSTEM_RUNNING) {
+				pr_info("BOOTDBG spacemit_pmic_probe skip_add_irq_chip dev=%s irq=%d system_state=%d\n",
+					dev_name(&client->dev), client->irq,
+					system_state);
+			} else {
+				pr_info("BOOTDBG spacemit_pmic_probe before_add_irq_chip dev=%s irq=%d\n",
+					dev_name(&client->dev), client->irq);
+				ret = regmap_add_irq_chip(pmic->regmap, client->irq, IRQF_ONESHOT, -1,
+					pmic->regmap_irq_chip, &pmic->irq_data);
+				if (ret) {
+					pr_err("failed to add irqchip %d\n", ret);
+					return ret;
+				}
+				pr_info("BOOTDBG spacemit_pmic_probe after_add_irq_chip dev=%s irq_data=%p\n",
+					dev_name(&client->dev), pmic->irq_data);
 			}
-			pr_info("BOOTDBG spacemit_pmic_probe after_add_irq_chip dev=%s irq_data=%p\n",
-				dev_name(&client->dev), pmic->irq_data);
 		}
 
 		dev_pm_set_wake_irq(&client->dev, client->irq);

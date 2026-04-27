@@ -1710,6 +1710,7 @@ static void __queue_work(int cpu, struct workqueue_struct *wq,
 	unsigned int work_flags;
 	unsigned int req_cpu = cpu;
 	bool pm_debug = false;
+	bool pm_trace = false;
 
 	/*
 	 * While a work item is PENDING && off queue, a task trying to
@@ -1721,9 +1722,10 @@ static void __queue_work(int cpu, struct workqueue_struct *wq,
 
 	if (wq && wq->name && !strcmp(wq->name, "pm")) {
 		pm_debug = true;
-		pr_info("BOOTDBG __queue_work enter wq=%s req_cpu=%u work=%px current=%s[%d] irqs_disabled=%d in_atomic=%d\n",
-			wq->name, req_cpu, work, current->comm, current->pid,
-			irqs_disabled(), in_atomic());
+		if (pm_trace)
+			pr_info("BOOTDBG __queue_work enter wq=%s req_cpu=%u work=%px current=%s[%d] irqs_disabled=%d in_atomic=%d\n",
+				wq->name, req_cpu, work, current->comm, current->pid,
+				irqs_disabled(), in_atomic());
 	}
 
 
@@ -1745,14 +1747,14 @@ retry:
 			cpu = raw_smp_processor_id();
 	}
 
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG __queue_work after_cpu_select wq=%s req_cpu=%u cpu=%d raw_smp=%d flags=0x%x\n",
 			wq->name, req_cpu, cpu, raw_smp_processor_id(), wq->flags);
 
 	pwq = rcu_dereference(*per_cpu_ptr(wq->cpu_pwq, cpu));
 	pool = pwq->pool;
 
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG __queue_work after_pwq_lookup wq=%s cpu=%d pwq=%px pool=%px pool_id=%d nr_active=%d max_active=%d refcnt=%d\n",
 			wq->name, cpu, pwq, pool, pool ? pool->id : -1,
 			pwq ? pwq->nr_active : -1, pwq ? pwq->max_active : -1,
@@ -1764,17 +1766,17 @@ retry:
 	 * pool to guarantee non-reentrancy.
 	 */
 	last_pool = get_work_pool(work);
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG __queue_work after_get_work_pool wq=%s work=%px last_pool=%px\n",
 			wq->name, work, last_pool);
 	if (last_pool && last_pool != pool) {
 		struct worker *worker;
 
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work before_lock_last_pool wq=%s last_pool=%px last_pool_id=%d\n",
 				wq->name, last_pool, last_pool->id);
 		raw_spin_lock(&last_pool->lock);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work after_lock_last_pool wq=%s last_pool=%px last_pool_id=%d\n",
 				wq->name, last_pool, last_pool->id);
 
@@ -1787,20 +1789,20 @@ retry:
 		} else {
 			/* meh... not running there, queue here */
 			raw_spin_unlock(&last_pool->lock);
-			if (pm_debug)
+			if (pm_trace)
 				pr_info("BOOTDBG __queue_work before_lock_pool_from_last wq=%s pool=%px pool_id=%d\n",
 					wq->name, pool, pool->id);
 			raw_spin_lock(&pool->lock);
-			if (pm_debug)
+			if (pm_trace)
 				pr_info("BOOTDBG __queue_work after_lock_pool_from_last wq=%s pool=%px pool_id=%d\n",
 					wq->name, pool, pool->id);
 		}
 	} else {
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work before_lock_pool wq=%s pool=%px pool_id=%d\n",
 				wq->name, pool, pool->id);
 		raw_spin_lock(&pool->lock);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work after_lock_pool wq=%s pool=%px pool_id=%d\n",
 				wq->name, pool, pool->id);
 	}
@@ -1825,7 +1827,7 @@ retry:
 
 	/* pwq determined, queue */
 	trace_workqueue_queue_work(req_cpu, pwq, work);
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG __queue_work before_insert wq=%s pool_id=%d nr_active=%d max_active=%d worklist_empty=%d\n",
 			wq->name, pool->id, pwq->nr_active, pwq->max_active,
 			list_empty(&pool->worklist));
@@ -1843,24 +1845,24 @@ retry:
 		trace_workqueue_activate_work(work);
 		pwq->nr_active++;
 		insert_work(pwq, work, &pool->worklist, work_flags);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work after_insert_active wq=%s pool_id=%d nr_active=%d work_flags=0x%x\n",
 				wq->name, pool->id, pwq->nr_active, work_flags);
 		kick_pool(pool);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work after_kick_pool wq=%s pool_id=%d\n",
 				wq->name, pool->id);
 	} else {
 		work_flags |= WORK_STRUCT_INACTIVE;
 		insert_work(pwq, work, &pwq->inactive_works, work_flags);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG __queue_work after_insert_inactive wq=%s pool_id=%d nr_active=%d work_flags=0x%x\n",
 				wq->name, pool->id, pwq->nr_active, work_flags);
 	}
 
 out:
 	raw_spin_unlock(&pool->lock);
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG __queue_work exit wq=%s pool_id=%d work=%px\n",
 			wq->name, pool->id, work);
 	rcu_read_unlock();
@@ -1886,36 +1888,38 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 	bool ret = false;
 	unsigned long flags, stage_flags;
 	bool pm_debug = false;
+	bool pm_trace = false;
 
 	if (wq && wq->name && !strcmp(wq->name, "pm")) {
 		pm_debug = true;
-		pr_info("BOOTDBG queue_work_on enter wq=%s cpu=%d work=%px current=%s[%d] irqs_disabled=%d in_atomic=%d\n",
-			wq->name, cpu, work, current->comm, current->pid,
-			irqs_disabled(), in_atomic());
+		if (pm_trace)
+			pr_info("BOOTDBG queue_work_on enter wq=%s cpu=%d work=%px current=%s[%d] irqs_disabled=%d in_atomic=%d\n",
+				wq->name, cpu, work, current->comm, current->pid,
+				irqs_disabled(), in_atomic());
 	}
 
 	stage_save_flags(stage_flags);
 	local_irq_save(flags);
 
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG queue_work_on after_local_irq_save wq=%s cpu=%d work=%px flags=%lx irqs_disabled=%d in_atomic=%d\n",
 			wq->name, cpu, work, flags, irqs_disabled(), in_atomic());
 
 	if (!test_and_set_bit(WORK_STRUCT_PENDING_BIT, work_data_bits(work))) {
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG queue_work_on before___queue_work wq=%s cpu=%d work=%px\n",
 				wq->name, cpu, work);
 		__queue_work(cpu, wq, work);
-		if (pm_debug)
+		if (pm_trace)
 			pr_info("BOOTDBG queue_work_on after___queue_work wq=%s cpu=%d work=%px\n",
 				wq->name, cpu, work);
 		ret = true;
-	} else if (pm_debug) {
+	} else if (pm_trace) {
 		pr_info("BOOTDBG queue_work_on already_pending wq=%s cpu=%d work=%px\n",
 			wq->name, cpu, work);
 	}
 
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG queue_work_on before_local_irq_restore wq=%s cpu=%d work=%px flags=%lx ret=%d irqs_disabled=%d hard_irqs_disabled=%d in_atomic=%d inband_pending=%d ipi_pending=%d smp_init_in_progress=%d\n",
 			wq->name, cpu, work, flags, ret, irqs_disabled(),
 			hard_irqs_disabled(), in_atomic(), inband_irq_pending(),
@@ -1926,42 +1930,48 @@ bool queue_work_on(int cpu, struct workqueue_struct *wq,
 		int stage_stalled;
 		unsigned long stage_hwflags;
 
-		pr_info("BOOTDBG queue_work_on bypass_local_irq_restore_non_ipi wq=%s cpu=%d work=%px ret=%d\n",
-			wq->name, cpu, work, ret);
-		pr_info("BOOTDBG queue_work_on unlock_stage_non_ipi wq=%s cpu=%d work=%px stage_flags=%lx stall=%d hard_irqs_disabled=%d\n",
-			wq->name, cpu, work, stage_flags, test_inband_stall(),
-			hard_irqs_disabled());
+		if (pm_trace) {
+			pr_info("BOOTDBG queue_work_on bypass_local_irq_restore_non_ipi wq=%s cpu=%d work=%px ret=%d\n",
+				wq->name, cpu, work, ret);
+			pr_info("BOOTDBG queue_work_on unlock_stage_non_ipi wq=%s cpu=%d work=%px stage_flags=%lx stall=%d hard_irqs_disabled=%d\n",
+				wq->name, cpu, work, stage_flags, test_inband_stall(),
+				hard_irqs_disabled());
+		}
 		hard_local_irq_disable();
 		irq_pipeline_request_deferred_sync();
 		stage_hwflags = irqs_split_flags(stage_flags, &stage_stalled);
-		pr_info("BOOTDBG queue_work_on split_stage_non_ipi wq=%s cpu=%d work=%px stage_hwflags=%lx stage_stalled=%d hard_irqs_disabled=%d\n",
-			wq->name, cpu, work, stage_hwflags, stage_stalled,
-			hard_irqs_disabled());
+		if (pm_trace)
+			pr_info("BOOTDBG queue_work_on split_stage_non_ipi wq=%s cpu=%d work=%px stage_hwflags=%lx stage_stalled=%d hard_irqs_disabled=%d\n",
+				wq->name, cpu, work, stage_hwflags, stage_stalled,
+				hard_irqs_disabled());
 		if (!stage_stalled) {
-			pr_info("BOOTDBG queue_work_on before_unstall_non_ipi wq=%s cpu=%d work=%px stall=%d hard_irqs_disabled=%d\n",
-				wq->name, cpu, work, test_inband_stall(),
-				hard_irqs_disabled());
+			if (pm_trace)
+				pr_info("BOOTDBG queue_work_on before_unstall_non_ipi wq=%s cpu=%d work=%px stall=%d hard_irqs_disabled=%d\n",
+					wq->name, cpu, work, test_inband_stall(),
+					hard_irqs_disabled());
 			unstall_inband_nocheck();
-			pr_info("BOOTDBG queue_work_on after_unstall_non_ipi wq=%s cpu=%d work=%px stall=%d hard_irqs_disabled=%d\n",
-				wq->name, cpu, work, test_inband_stall(),
-				hard_irqs_disabled());
+			if (pm_trace)
+				pr_info("BOOTDBG queue_work_on after_unstall_non_ipi wq=%s cpu=%d work=%px stall=%d hard_irqs_disabled=%d\n",
+					wq->name, cpu, work, test_inband_stall(),
+					hard_irqs_disabled());
 		}
-		if (!hard_irqs_disabled_flags(stage_hwflags)) {
+		if (pm_trace && !hard_irqs_disabled_flags(stage_hwflags)) {
 			pr_info("BOOTDBG queue_work_on skip_hard_enable_non_ipi wq=%s cpu=%d work=%px stall=%d hard_irqs_disabled=%d\n",
 				wq->name, cpu, work, test_inband_stall(),
 				hard_irqs_disabled());
 		}
-		pr_info("BOOTDBG queue_work_on after_manual_unlock_stage_non_ipi wq=%s cpu=%d work=%px irqs_disabled=%d hard_irqs_disabled=%d stall=%d deferred_sync=%d\n",
-			wq->name, cpu, work, irqs_disabled(),
-			hard_irqs_disabled(), test_inband_stall(),
-			irq_pipeline_deferred_sync_pending());
+		if (pm_trace)
+			pr_info("BOOTDBG queue_work_on after_manual_unlock_stage_non_ipi wq=%s cpu=%d work=%px irqs_disabled=%d hard_irqs_disabled=%d stall=%d deferred_sync=%d\n",
+				wq->name, cpu, work, irqs_disabled(),
+				hard_irqs_disabled(), test_inband_stall(),
+				irq_pipeline_deferred_sync_pending());
 		return ret;
 	}
 	local_irq_restore(flags);
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG queue_work_on after_local_irq_restore wq=%s cpu=%d work=%px ret=%d irqs_disabled=%d in_atomic=%d\n",
 			wq->name, cpu, work, ret, irqs_disabled(), in_atomic());
-	if (pm_debug)
+	if (pm_trace)
 		pr_info("BOOTDBG queue_work_on exit wq=%s cpu=%d work=%px ret=%d irqs_disabled=%d in_atomic=%d\n",
 			wq->name, cpu, work, ret, irqs_disabled(), in_atomic());
 	return ret;

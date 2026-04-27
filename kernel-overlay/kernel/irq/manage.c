@@ -27,9 +27,11 @@
 
 static bool irq_bootdbg_target(unsigned int irq, const char *name)
 {
-	return irq == 20 || irq == 21 ||
+	return irq == 20 || irq == 21 || irq == 30 ||
 	       (name && (!strcmp(name, "spm8821") ||
-			 !strcmp(name, "d401d800.i2c")));
+			 !strcmp(name, "d401d800.i2c") ||
+			 !strcmp(name, "mmc0") ||
+			 strstr(name, "sdhci")));
 }
 
 static void irq_bootdbg_dump_desc_state(struct irq_desc *desc, struct irqaction *action,
@@ -1379,9 +1381,27 @@ static void wake_up_and_wait_for_irq_thread_ready(struct irq_desc *desc,
 	if (!action || !action->thread)
 		return;
 
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread_ready before_wake irq=%u name=%s thread=%p comm=%s flags=0x%lx ready=%d hard_irqs_disabled=%d irqs_disabled=%d\n",
+			action->irq, action->name ? action->name : "<none>",
+			action->thread, action->thread->comm, action->thread_flags,
+			test_bit(IRQTF_READY, &action->thread_flags),
+			hard_irqs_disabled(), irqs_disabled());
 	wake_up_process(action->thread);
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread_ready after_wake irq=%u name=%s ready=%d thread_state=%ld on_rq=%d on_cpu=%d cpu=%d\n",
+			action->irq, action->name ? action->name : "<none>",
+			test_bit(IRQTF_READY, &action->thread_flags),
+			(long)READ_ONCE(action->thread->__state),
+			READ_ONCE(action->thread->on_rq),
+			READ_ONCE(action->thread->on_cpu),
+			task_cpu(action->thread));
 	wait_event(desc->wait_for_threads,
 		   test_bit(IRQTF_READY, &action->thread_flags));
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread_ready after_wait irq=%u name=%s ready=%d\n",
+			action->irq, action->name ? action->name : "<none>",
+			test_bit(IRQTF_READY, &action->thread_flags));
 }
 
 /*
@@ -1395,9 +1415,22 @@ static int irq_thread(void *data)
 	irqreturn_t (*handler_fn)(struct irq_desc *desc,
 			struct irqaction *action);
 
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread enter irq=%u name=%s current=%s[%d] desc=%p hard_irqs_disabled=%d irqs_disabled=%d\n",
+			action->irq, action->name ? action->name : "<none>",
+			current->comm, task_pid_nr(current), desc,
+			hard_irqs_disabled(), irqs_disabled());
 	irq_thread_set_ready(desc, action);
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread after_set_ready irq=%u name=%s flags=0x%lx\n",
+			action->irq, action->name ? action->name : "<none>",
+			action->thread_flags);
 
 	sched_set_fifo(current);
+	if (irq_bootdbg_target(action->irq, action->name))
+		pr_info("BOOTDBG irq_thread after_sched_set_fifo irq=%u name=%s policy=%d prio=%d\n",
+			action->irq, action->name ? action->name : "<none>",
+			current->policy, current->prio);
 
 	if (force_irqthreads() && test_bit(IRQTF_FORCED_THREAD,
 					   &action->thread_flags))
@@ -2316,6 +2349,11 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	if (irq == IRQ_NOTCONNECTED)
 		return -ENOTCONN;
 
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq precheck irq=%u name=%s flags=0x%lx handler=%p thread_fn=%p dev_id=%p hard_irqs_disabled=%d irqs_disabled=%d\n",
+			irq, devname ? devname : "<none>", irqflags, handler,
+			thread_fn, dev_id, hard_irqs_disabled(), irqs_disabled());
+
 	/*
 	 * Sanity-check: shared interrupts must pass in a real dev-ID,
 	 * otherwise we'll have trouble later trying to figure out
@@ -2339,6 +2377,14 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	if (!desc)
 		return -EINVAL;
 
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq after_desc irq=%u name=%s desc=%p can_request=%d per_cpu_devid=%d chip=%s hwirq=%lu\n",
+			irq, devname ? devname : "<none>", desc,
+			irq_settings_can_request(desc),
+			irq_settings_is_per_cpu_devid(desc),
+			irq_desc_get_chip(desc) ? irq_desc_get_chip(desc)->name : "NULL",
+			irq_desc_get_irq_data(desc)->hwirq);
+
 	if (!irq_settings_can_request(desc) ||
 	    WARN_ON(irq_settings_is_per_cpu_devid(desc)))
 		return -EINVAL;
@@ -2352,6 +2398,10 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
 	if (!action)
 		return -ENOMEM;
+
+	if (irq_bootdbg_target(irq, devname))
+		pr_info("BOOTDBG request_threaded_irq after_kzalloc irq=%u name=%s action=%p\n",
+			irq, devname ? devname : "<none>", action);
 
 	action->handler = handler;
 	action->thread_fn = thread_fn;

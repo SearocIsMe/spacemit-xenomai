@@ -384,7 +384,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 	}
 #endif
 
-	if (next_inband_irq == 13 || next_inband_irq == 20) {
+	if (false && (next_inband_irq == 13 || next_inband_irq == 20)) {
 		pr_info("BOOTDBG synchronize_pipeline enter top=%s current_stage=%s stalled=%d inband_pending=%d next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 			top == &inband_stage ? "inband" : "oob",
 			current_irq_staged == this_inband_staged() ? "inband" :
@@ -402,7 +402,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_irq_stage\n");
 		}
 #endif
-		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			if (false && (next_inband_irq == 13 || next_inband_irq == 20)) {
 			pr_info("BOOTDBG synchronize_pipeline before_sync_irq_stage top=%s next_inband_irq=%d current_stage=%s hard_irqs_disabled=%d current=%s[%d]\n",
 				top == &inband_stage ? "inband" : "oob",
 				next_inband_irq,
@@ -411,7 +411,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 				hard_irqs_disabled(), current->comm, task_pid_nr(current));
 		}
 		sync_irq_stage(top);
-		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			if (false && (next_inband_irq == 13 || next_inband_irq == 20)) {
 			pr_info("BOOTDBG synchronize_pipeline after_sync_irq_stage top=%s next_inband_irq=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 				top == &inband_stage ? "inband" : "oob",
 				stage_irqs_pending(this_inband_staged()) ?
@@ -430,7 +430,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 			riscv_evl_trace("EVLDBG synchronize_pipeline branch=sync_current\n");
 		}
 #endif
-		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			if (false && (next_inband_irq == 13 || next_inband_irq == 20)) {
 			pr_info("BOOTDBG synchronize_pipeline before_sync_current next_inband_irq=%d current_stage=%s hard_irqs_disabled=%d current=%s[%d]\n",
 				next_inband_irq,
 				current_irq_staged == this_inband_staged() ? "inband" :
@@ -438,7 +438,7 @@ void synchronize_pipeline(void) /* hardirqs off */
 				hard_irqs_disabled(), current->comm, task_pid_nr(current));
 		}
 		sync_current_irq_stage();
-		if (next_inband_irq == 13 || next_inband_irq == 20) {
+			if (false && (next_inband_irq == 13 || next_inband_irq == 20)) {
 			pr_info("BOOTDBG synchronize_pipeline after_sync_current next_inband_irq=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 				stage_irqs_pending(this_inband_staged()) ?
 				peek_next_irq(this_inband_staged()) : -1,
@@ -462,7 +462,7 @@ void irq_pipeline_request_deferred_sync(void)
 	struct irq_stage_data *p = this_inband_staged();
 	int next_irq = peek_next_irq(p);
 
-	if (next_irq == 13 || next_irq == 20) {
+	if (false && (next_irq == 13 || next_irq == 20)) {
 		pr_info("BOOTDBG irq_pipeline_request_deferred_sync next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			next_irq, stage_irqs_pending(p),
 			hard_irqs_disabled(), test_inband_stall(),
@@ -1084,7 +1084,7 @@ void irq_post_stage(struct irq_stage *stage, unsigned int irq)
 	__set_bit(l1b, p->log.map->index_1);
 	__set_bit(l0b, &p->log.index_0);
 
-	if (stage == &inband_stage && irq == 20) {
+	if (false && stage == &inband_stage && irq == 20) {
 		pr_info("BOOTDBG irq_post_stage inband irq=%u cpu=%u pending=%d next_irq=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			irq, smp_processor_id(), stage_irqs_pending(p),
 			peek_next_irq(p), hard_irqs_disabled(),
@@ -1132,7 +1132,7 @@ static inline int pull_next_irq(struct irq_stage_data *p)
 
 	next_after = peek_next_irq(p);
 
-	if (p->stage == &inband_stage && (irq == 13 || irq == 20 ||
+	if (false && p->stage == &inband_stage && (irq == 13 || irq == 20 ||
 					  next_before == 13 || next_before == 20 ||
 					  next_after == 13 || next_after == 20)) {
 		pr_info("BOOTDBG pull_next_irq stage=inband pulled=%d next_before=%d next_after=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
@@ -1453,7 +1453,7 @@ void do_inband_irq(struct irq_desc *desc)
 	static unsigned int trace_inband_irq_count;
 #endif
 
-	if (desc && (irq_desc_get_irq(desc) == 20 ||
+	if (false && desc && (irq_desc_get_irq(desc) == 20 ||
 		     desc->irq_data.hwirq == 19)) {
 		pr_info("BOOTDBG do_inband_irq enter irq=%u hwirq=%lu istate=0x%lx deferred=%d forwarded=%d pending=%d masked=%d disabled=%d inprogress=%d action=%px handler=%ps\n",
 			irq_desc_get_irq(desc), desc->irq_data.hwirq,
@@ -1518,7 +1518,7 @@ bool handle_oob_irq(struct irq_desc *desc)
 	 */
 	if (!oob_stage_present() || !irq_settings_is_oob(desc)) {
 		desc->istate |= IRQS_DEFERRED;
-		if (irq == 20 || desc->irq_data.hwirq == 19)
+		if (false && (irq == 20 || desc->irq_data.hwirq == 19))
 			pr_info("BOOTDBG handle_oob_irq defer irq=%u hwirq=%lu istate=0x%lx masked=%d disabled=%d inprogress=%d action=%px handler=%ps\n",
 				irq, desc->irq_data.hwirq,
 				(unsigned long)desc->istate,
@@ -1541,7 +1541,7 @@ bool handle_oob_irq(struct irq_desc *desc)
 		}
 #endif
 		irq_post_stage(&inband_stage, irq);
-		if (irq == 20 || desc->irq_data.hwirq == 19)
+		if (false && (irq == 20 || desc->irq_data.hwirq == 19))
 			pr_info("BOOTDBG handle_oob_irq posted_inband irq=%u hwirq=%lu istate=0x%lx masked=%d disabled=%d inprogress=%d\n",
 				irq, desc->irq_data.hwirq,
 				(unsigned long)desc->istate,
@@ -1617,7 +1617,7 @@ struct irq_stage_data *switch_stage_on_irq(void)
 	if (stage_irqs_pending(this_inband_staged())) {
 		int next_irq = peek_next_irq(this_inband_staged());
 
-		if (next_irq == 20) {
+		if (false && next_irq == 20) {
 			pr_info("BOOTDBG switch_stage_on_irq enter prev_stage=%s current_stage=%s next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d\n",
 				prevd == this_inband_staged() ? "inband" :
 				(prevd == this_oob_staged() ? "oob" : "other"),
@@ -1637,7 +1637,7 @@ struct irq_stage_data *switch_stage_on_irq(void)
 	if (stage_irqs_pending(this_inband_staged())) {
 		int next_irq = peek_next_irq(this_inband_staged());
 
-		if (next_irq == 20) {
+		if (false && next_irq == 20) {
 			pr_info("BOOTDBG switch_stage_on_irq exit prev_stage=%s current_stage=%s next_inband_irq=%d oob_pending=%d hard_irqs_disabled=%d\n",
 				prevd == this_inband_staged() ? "inband" :
 				(prevd == this_oob_staged() ? "oob" : "other"),
@@ -1668,7 +1668,7 @@ void restore_stage_on_irq(struct irq_stage_data *prevd)
 	 *    oob        inband    nop
 	 *    inband     inband    nop
 	 */
-	if (prevd->stage == &inband_stage &&
+	if (false && prevd->stage == &inband_stage &&
 	    curd == this_oob_staged() &&
 	    stage_irqs_pending(this_inband_staged()) &&
 	    peek_next_irq(this_inband_staged()) == 20) {
@@ -1681,7 +1681,7 @@ void restore_stage_on_irq(struct irq_stage_data *prevd)
 		current_irq_staged == this_oob_staged())
 		switch_inband(this_inband_staged());
 
-	if (stage_irqs_pending(this_inband_staged()) &&
+	if (false && stage_irqs_pending(this_inband_staged()) &&
 	    peek_next_irq(this_inband_staged()) == 20) {
 		pr_info("BOOTDBG restore_stage_on_irq after_switch current_stage=%s next_inband_irq=%d running_inband=%d hard_irqs_disabled=%d\n",
 			current_irq_staged == this_inband_staged() ? "inband" :
@@ -1840,7 +1840,7 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		next_inband_irq = peek_next_irq(this_inband_staged());
 	should_sync = running_inband() || oob_pending;
 
-	if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
+	if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
 		pr_info("BOOTDBG handle_irq_pipelined_finish before_sync cause=%lu next_inband_irq=%d running_inband=%d current_stage=%s should_sync=%d inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 			irq_cause, next_inband_irq, running_inband(),
 			current_irq_staged == this_inband_staged() ? "inband" :
@@ -1891,8 +1891,8 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 			}
 		}
 
-		if (ipi_pending) {
-			if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
+			if (ipi_pending) {
+				if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
 				pr_info("BOOTDBG handle_irq_pipelined_finish ipi_short_circuit cause=%lu next_inband_irq=%d smp_init=%d deferred_sync=%d current=%s[%d]\n",
 					irq_cause, next_inband_irq, irq_pipeline_smp_init_in_progress(),
 					irq_pipeline_deferred_sync_pending(),
@@ -1911,14 +1911,14 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		    stage_irqs_pending(inbd) &&
 		    !ipi_pending &&
 		    next_is_timer) {
-			if (irq_cause == 9) {
+				if (false && irq_cause == 9) {
 				pr_info("BOOTDBG handle_irq_pipelined_finish bypass_timer_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
 					irq_cause, next_inband_irq,
 					irq_pipeline_deferred_sync_pending(),
 					current->comm, task_pid_nr(current));
 				goto no_sched_short_circuit;
 			}
-			if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
+				if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
 				pr_info("BOOTDBG handle_irq_pipelined_finish scheduling_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
 					irq_cause, next_inband_irq,
 					irq_pipeline_deferred_sync_pending(),
@@ -1928,8 +1928,8 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 				irq_pipeline_request_deferred_sync();
 			goto out;
 		}
-		if (system_state == SYSTEM_SCHEDULING &&
-		    stage_irqs_pending(inbd) &&
+			if (false && system_state == SYSTEM_SCHEDULING &&
+			    stage_irqs_pending(inbd) &&
 		    !ipi_pending &&
 		    next_inband_irq == 20) {
 			pr_info("BOOTDBG handle_irq_pipelined_finish bypass_scheduling_short_circuit next_inband_irq=%d next_is_timer=%d deferred_sync=%d current=%s[%d]\n",
@@ -1940,17 +1940,17 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 no_sched_short_circuit:
 	}
 #endif
-	if (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20) {
+	if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
 		pr_info("BOOTDBG handle_irq_pipelined_finish calling_synchronize cause=%lu next_inband_irq=%d running_inband=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 			irq_cause, next_inband_irq, running_inband(), oob_pending,
 			hard_irqs_disabled(), current->comm, task_pid_nr(current));
 	}
 	synchronize_pipeline_on_irq();
 
-	if (irq_cause == 9 ||
+	if (false && (irq_cause == 9 ||
 	    (stage_irqs_pending(this_inband_staged()) &&
 	     (peek_next_irq(this_inband_staged()) == 13 ||
-	      peek_next_irq(this_inband_staged()) == 20))) {
+	      peek_next_irq(this_inband_staged()) == 20)))) {
 		pr_info("BOOTDBG handle_irq_pipelined_finish after_sync cause=%lu next_inband_irq=%d running_inband=%d current_stage=%s inband_pending=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
 			irq_cause,
 			stage_irqs_pending(this_inband_staged()) ?
@@ -1982,9 +1982,9 @@ int handle_irq_pipelined(struct pt_regs *regs)
 	struct pt_regs *old_regs;
 	unsigned long irq_cause = regs ? (regs->cause & ~CAUSE_IRQ_FLAG) : ~0UL;
 
-	if (irq_cause == 9 ||
+	if (false && (irq_cause == 9 ||
 	    (stage_irqs_pending(this_inband_staged()) &&
-	     peek_next_irq(this_inband_staged()) == 20)) {
+	     peek_next_irq(this_inband_staged()) == 20))) {
 		pr_info("BOOTDBG handle_irq_pipelined enter cause=%lu next_inband_irq=%d current_stage=%s oob_pending=%d hard_irqs_disabled=%d regs=%px current=%s[%d]\n",
 			irq_cause,
 			stage_irqs_pending(this_inband_staged()) ?
@@ -1998,9 +1998,9 @@ int handle_irq_pipelined(struct pt_regs *regs)
 	prevd = handle_irq_pipelined_prepare(regs);
 	old_regs = set_irq_regs(regs);
 	arch_handle_irq_pipelined(regs);
-	if (irq_cause == 9 ||
+	if (false && (irq_cause == 9 ||
 	    (stage_irqs_pending(this_inband_staged()) &&
-	     peek_next_irq(this_inband_staged()) == 20)) {
+	     peek_next_irq(this_inband_staged()) == 20))) {
 		pr_info("BOOTDBG handle_irq_pipelined after_arch cause=%lu next_inband_irq=%d current_stage=%s oob_pending=%d hard_irqs_disabled=%d regs=%px current=%s[%d]\n",
 			irq_cause,
 			stage_irqs_pending(this_inband_staged()) ?
@@ -2085,7 +2085,7 @@ void sync_current_irq_stage(void) /* hard irqs off */
 	check_hard_irqs_disabled();
 
 	p = current_irq_staged;
-	if (p->stage == &inband_stage) {
+	if (false && p->stage == &inband_stage) {
 		int next_irq = peek_next_irq(p);
 
 		if (next_irq == 20) {
@@ -2133,7 +2133,7 @@ respin:
 		barrier();
 
 		desc = irq_to_desc(irq);
-		if (stage == &inband_stage && (irq == 13 || irq == 20)) {
+			if (false && stage == &inband_stage && (irq == 13 || irq == 20)) {
 			pr_info("BOOTDBG sync_current_irq_stage about_to_dispatch irq=%d desc=%px istate=0x%lx deferred_sync=%d pending=%d hard_irqs_disabled=%d stalled=%d current=%s[%d]\n",
 				irq, desc, desc ? (unsigned long)desc->istate : 0,
 				irq_pipeline_deferred_sync_pending(),
@@ -2141,7 +2141,7 @@ respin:
 				hard_irqs_disabled(), test_inband_stall(),
 				current->comm, task_pid_nr(current));
 		}
-		if (stage == &inband_stage && (irq == 13 || irq == 20)) {
+			if (false && stage == &inband_stage && (irq == 13 || irq == 20)) {
 			pr_info("BOOTDBG sync_current_irq_stage pulled irq=%d stage=inband desc=%px istate=0x%lx pending=%d stalled=%d hard_irqs_disabled=%d\n",
 				irq, desc, desc ? (unsigned long)desc->istate : 0,
 				stage_irqs_pending(this_inband_staged()),
@@ -2166,7 +2166,7 @@ respin:
 #endif
 
 		if (stage == &inband_stage) {
-			if (irq == 13 || irq == 20) {
+				if (false && (irq == 13 || irq == 20)) {
 				pr_info("BOOTDBG sync_current_irq_stage before_do_inband irq=%d desc=%px istate=0x%lx pending=%d hard_irqs_disabled=%d action=%px handler=%ps flags=0x%x\n",
 					irq, desc, desc ? (unsigned long)desc->istate : 0,
 					stage_irqs_pending(this_inband_staged()),
@@ -2178,7 +2178,7 @@ respin:
 			hard_local_irq_enable();
 			do_inband_irq(desc);
 			hard_local_irq_disable();
-			if (irq == 13 || irq == 20) {
+				if (false && (irq == 13 || irq == 20)) {
 				pr_info("BOOTDBG sync_current_irq_stage after_do_inband irq=%d pending=%d next_irq=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 					irq, stage_irqs_pending(this_inband_staged()),
 					peek_next_irq(this_inband_staged()),
@@ -2198,7 +2198,7 @@ respin:
 			    (desc->action->flags & __IRQF_TIMER)) {
 				int next_irq = peek_next_irq(p);
 
-				if (next_irq == 20) {
+				if (false && next_irq == 20) {
 					pr_info("BOOTDBG sync_current_irq_stage bypass_timer_sched_break irq=%d next_irq=%d pending=%d hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 						irq, next_irq,
 						stage_irqs_pending(this_inband_staged()),

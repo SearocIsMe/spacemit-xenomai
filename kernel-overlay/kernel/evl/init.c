@@ -23,7 +23,7 @@
 static char *oobcpus_arg;
 module_param_named(oobcpus, oobcpus_arg, charp, 0444);
 
-static char init_state_arg[16] = "enabled";
+static char init_state_arg[16] = "stopped";
 module_param_string(state, init_state_arg, sizeof(init_state_arg), 0444);
 
 struct cpumask evl_oob_cpus;

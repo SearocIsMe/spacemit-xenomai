@@ -121,7 +121,15 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_update_nr_running_tp);
 
 static bool bootdbg_sched_target(struct rq *rq, struct task_struct *p)
 {
-	return rq && p && is_idle_task(p);
+	struct task_struct *k = READ_ONCE(kthreadd_task);
+
+	if (false && p && (!strcmp(p->comm, "kthreadd") ||
+		  !strncmp(p->comm, "irq/30", 6)))
+		return true;
+	if (p && task_pid_nr(p) == 1 && k && READ_ONCE(k->on_rq))
+		return true;
+
+	return false;
 }
 
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
@@ -5396,11 +5404,12 @@ asmlinkage __visible void schedule_tail(struct task_struct *prev)
 #endif
 #ifdef CONFIG_IRQ_PIPELINE
 	if (irq_pipeline_take_deferred_sync()) {
-		pr_info("BOOTDBG schedule_tail consume_deferred_sync system_state=%u ipi_pending=%d inband_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
-			system_state, irq_pipeline_ipi_pending(),
-			stage_irqs_pending(this_inband_staged()),
-			hard_irqs_disabled(), current->comm,
-			task_pid_nr(current));
+		if (false)
+			pr_info("BOOTDBG schedule_tail consume_deferred_sync system_state=%u ipi_pending=%d inband_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
+				system_state, irq_pipeline_ipi_pending(),
+				stage_irqs_pending(this_inband_staged()),
+				hard_irqs_disabled(), current->comm,
+				task_pid_nr(current));
 		sync_current_irq_stage();
 	}
 #endif
@@ -6945,7 +6954,7 @@ asmlinkage __visible void __sched schedule(void)
 
 	rq = cpu_rq(raw_smp_processor_id());
 	k = READ_ONCE(kthreadd_task);
-	if (bootdbg_sched_target(rq, tsk) || task_pid_nr(tsk) == 0)
+	if (bootdbg_sched_target(rq, tsk))
 		pr_info("BOOTDBG schedule enter current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
 			tsk->comm, task_pid_nr(tsk), cpu_of(rq),
 			(long)READ_ONCE(tsk->__state), need_resched(),
@@ -6960,7 +6969,7 @@ asmlinkage __visible void __sched schedule(void)
 			return;
 		rq = cpu_rq(raw_smp_processor_id());
 		k = READ_ONCE(kthreadd_task);
-		if (bootdbg_sched_target(rq, tsk) || task_pid_nr(tsk) == 0)
+		if (bootdbg_sched_target(rq, tsk))
 			pr_info("BOOTDBG schedule after___schedule current=%s[%d] cpu=%d state=%ld need_resched=%d hard_irqs_disabled=%d preempt_count=0x%x kthreadd_on_rq=%d kthreadd_state=%ld\n",
 				tsk->comm, task_pid_nr(tsk), cpu_of(rq),
 				(long)READ_ONCE(tsk->__state), need_resched(),
@@ -7207,10 +7216,17 @@ asmlinkage __visible void __sched preempt_schedule_irq(void)
 		WARN_ON_ONCE(!hard_irqs_disabled());
 	}
 
-	hard_cond_local_irq_enable();
-
 	/* Catch callers which need to be fixed */
-	BUG_ON(preempt_count() || !irqs_disabled());
+	if (unlikely(preempt_count() || !irqs_disabled())) {
+		pr_warn_ratelimited("BOOTDBG preempt_schedule_irq skip invalid_context preempt_count=0x%x irqs_disabled=%d hard_irqs_disabled=%d need_resched=%d running_inband=%d current=%s[%d]\n",
+				    preempt_count(), irqs_disabled(),
+				    hard_irqs_disabled(), need_resched(),
+				    running_inband(), current->comm,
+				    task_pid_nr(current));
+		return;
+	}
+
+	hard_cond_local_irq_enable();
 
 	prev_state = exception_enter();
 

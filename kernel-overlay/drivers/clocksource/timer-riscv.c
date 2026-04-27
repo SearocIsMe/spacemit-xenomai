@@ -115,11 +115,13 @@ static int riscv_set_state_oneshot(struct clock_event_device *ce)
 static unsigned int riscv_clock_event_irq;
 static DEFINE_PER_CPU(struct clock_event_device, riscv_clock_event) = {
 	.name			= "riscv_timer_clockevent",
-	.features               = CLOCK_EVT_FEAT_ONESHOT | CLOCK_EVT_FEAT_C3STOP,
+	.features               = CLOCK_EVT_FEAT_ONESHOT |
+				  CLOCK_EVT_FEAT_C3STOP |
+				  CLOCK_EVT_FEAT_PIPELINE,
 	.rating			= 100,
 	.set_next_event		= riscv_clock_next_event,
-        .set_state_shutdown     = riscv_set_state_shutdown,
-        .set_state_oneshot_stopped = riscv_set_state_shutdown,
+	        .set_state_shutdown     = riscv_set_state_shutdown,
+	        .set_state_oneshot_stopped = riscv_set_state_shutdown,
 	.set_state_oneshot = riscv_set_state_oneshot,
 };
 
@@ -159,6 +161,9 @@ static int riscv_timer_starting_cpu(unsigned int cpu)
 	ce->irq = riscv_clock_event_irq;
 	if (riscv_timer_cannot_wake_cpu)
 		ce->features |= CLOCK_EVT_FEAT_C3STOP;
+	pr_info("BOOTDBG riscv_timer_starting_cpu cpu=%u features=0x%x irq=%d pipeline=%d\n",
+		cpu, ce->features, ce->irq,
+		!!(ce->features & CLOCK_EVT_FEAT_PIPELINE));
 	clockevents_config_and_register(ce, riscv_timebase, 100, 0x7fffffff);
 
 	enable_percpu_irq(riscv_clock_event_irq,

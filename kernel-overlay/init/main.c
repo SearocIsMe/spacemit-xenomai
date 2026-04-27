@@ -56,6 +56,7 @@
 #include <linux/sched/isolation.h>
 #include <linux/interrupt.h>
 #include <linux/irq_pipeline.h>
+#include <linux/irqstage.h>
 #include <linux/taskstats_kern.h>
 #include <linux/delayacct.h>
 #include <linux/unistd.h>
@@ -905,7 +906,7 @@ void start_kernel(void)
 	boot_cpu_init();
 	page_address_init();
 	pr_notice("%s", linux_banner);
-	pr_info("BOOTDBG IMAGE_SIG=20260425-1644 commit=ee05933 note=boot_time_short_circuit_bypass\n");
+	pr_info("BOOTDBG IMAGE_SIG=20260427-155246 commit=01f4a6a note=boot_evl_stopped_pcie_jpu_keep_bootcon_drm_pvr_qspi_emac_cifs_usb3hub_ehci_mvx_ccic_cpp_isp_vi_sdhci_mmc_trace_irq30_kthread_skip_percpu_cpuhp_skip_mmc0_signal_voltage_skip_bcache_all_mmc_mdelay_skip_boot_cd_irq_skip_mmc2_detect_skip_rproc_skip_hdmi_skip_cfg80211_quiet_irq_pipeline_clear_init_stall_restore_i2c8_pmic_pio_skip_hwlat_skip_wlan_v2d_hardirq_on_before_init_exec_mmap_irq_fix_elf_map_irq_fix_vdso_irq_fix_syscall_irq_fix_genpd_keep_on\n");
 	early_security_init();
 	setup_arch(&command_line);
 	setup_boot_config();
@@ -1368,6 +1369,24 @@ static int run_init_process(const char *init_filename)
 
 	argv_init[0] = init_filename;
 	pr_info("Run %s as init process\n", init_filename);
+#ifdef CONFIG_IRQ_PIPELINE
+	pr_notice("BOOTDBG run_init_process before_exec init=%s stall=%d irqs_disabled=%d hard_irqs_disabled=%d current=%s[%d]\n",
+		  init_filename, test_inband_stall(), irqs_disabled(),
+		  hard_irqs_disabled(), current->comm, task_pid_nr(current));
+	if (test_inband_stall()) {
+		pr_notice("BOOTDBG run_init_process clear_inband_stall init=%s\n",
+			  init_filename);
+		unstall_inband_nocheck();
+	}
+	if (hard_irqs_disabled()) {
+		pr_notice("BOOTDBG run_init_process hard_irq_enable init=%s\n",
+			  init_filename);
+		hard_local_irq_enable();
+	}
+	pr_notice("BOOTDBG run_init_process after_irq_fix init=%s stall=%d irqs_disabled=%d hard_irqs_disabled=%d current=%s[%d]\n",
+		  init_filename, test_inband_stall(), irqs_disabled(),
+		  hard_irqs_disabled(), current->comm, task_pid_nr(current));
+#endif
 	pr_debug("  with arguments:\n");
 	for (p = argv_init; *p; p++)
 		pr_debug("    %s\n", *p);

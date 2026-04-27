@@ -18,10 +18,12 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/irq.h>
+#include <linux/irqflags.h>
 #include <linux/kexec.h>
 #include <linux/entry-common.h>
 #include <linux/dovetail.h>
 #include <linux/irq_pipeline.h>
+#include <linux/irqstage.h>
 
 #include <asm/asm-prototypes.h>
 #include <asm/bug.h>
@@ -48,6 +50,42 @@ static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
 
 	*done = true;
 	riscv_evl_trace(tag);
+}
+
+static __always_inline void riscv_syscall_irq_context_fix(struct pt_regs *regs,
+							  long syscall)
+{
+	static int log_budget = 32;
+	bool need_fix = test_inband_stall() || irqs_disabled() ||
+			hard_irqs_disabled();
+	bool do_log = need_fix && log_budget > 0;
+
+	if (!need_fix)
+		return;
+
+	if (do_log) {
+		log_budget--;
+		pr_notice("BOOTDBG syscall_irq_fix before nr=%ld epc=%lx stall=%d irqs_disabled=%d hard_irqs_disabled=%d current=%s[%d]\n",
+			  syscall, regs->epc, test_inband_stall(),
+			  irqs_disabled(), hard_irqs_disabled(),
+			  current->comm, task_pid_nr(current));
+	}
+
+	if (test_inband_stall())
+		unstall_inband_nocheck();
+	if (hard_irqs_disabled())
+		hard_local_irq_enable();
+
+	if (do_log)
+		pr_notice("BOOTDBG syscall_irq_fix after nr=%ld epc=%lx stall=%d irqs_disabled=%d hard_irqs_disabled=%d current=%s[%d]\n",
+			  syscall, regs->epc, test_inband_stall(),
+			  irqs_disabled(), hard_irqs_disabled(),
+			  current->comm, task_pid_nr(current));
+}
+#else
+static __always_inline void riscv_syscall_irq_context_fix(struct pt_regs *regs,
+							  long syscall)
+{
 }
 #endif
 
@@ -418,8 +456,10 @@ asmlinkage __visible __trap_section void do_trap_ecall_u(struct pt_regs *regs)
 
 		syscall = syscall_enter_from_user_mode(regs, syscall);
 
-		if (syscall >= 0 && syscall < NR_syscalls)
+		if (syscall >= 0 && syscall < NR_syscalls) {
+			riscv_syscall_irq_context_fix(regs, syscall);
 			syscall_handler(regs, syscall);
+		}
 
 		syscall_exit_to_user_mode(regs);
 	} else {
@@ -463,8 +503,8 @@ static void noinstr handle_riscv_irq(struct pt_regs *regs)
 	 * through handle_irq_pipelined() which handles set_irq_regs()
 	 * internally and delivers pending in-band IRQs on exit.
 	 */
-	if (irqs_pipelined()) {
-		if (stage_irqs_pending(this_inband_staged())) {
+		if (irqs_pipelined()) {
+			if (false && stage_irqs_pending(this_inband_staged())) {
 			pr_info("BOOTDBG handle_riscv_irq pipeline_branch inband_pending=%d oob_pending=%d current_stage=%s hard_irqs_disabled=%d regs=%px\n",
 				stage_irqs_pending(this_inband_staged()),
 				stage_irqs_pending(this_oob_staged()),
