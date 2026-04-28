@@ -1598,8 +1598,7 @@ static bool spacemit_i2c_boot_pmic_target(struct spacemit_i2c_dev *spacemit_i2c,
 static bool spacemit_i2c_force_pio_debug(struct spacemit_i2c_dev *spacemit_i2c,
 					 struct i2c_msg msgs[], int num)
 {
-	return spacemit_i2c_boot_pmic_target(spacemit_i2c, msgs, num) &&
-	       (hard_irqs_disabled() || system_state == SYSTEM_SCHEDULING);
+	return spacemit_i2c_boot_pmic_target(spacemit_i2c, msgs, num);
 }
 
 static int spacemit_i2c_notifier_poweroff_call(struct sys_off_data *data)

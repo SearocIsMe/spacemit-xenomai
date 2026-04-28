@@ -113,6 +113,44 @@ CONFIG_EVL_DEBUG_CORE=y
 # Raw socket support (needed for EtherCAT-style protocols)
 CONFIG_PACKET=y
 
+# The boot-debug image currently stalls in strp_dev_init() while creating the
+# kstrp workqueue under IRQ-pipeline debug. These advanced stream-parser users
+# are not needed for SD-card EVL bring-up.
+# CONFIG_BPF_STREAM_PARSER is not set
+# CONFIG_TLS is not set
+# CONFIG_AF_KCM is not set
+# CONFIG_INET_ESPINTCP is not set
+# CONFIG_INET6_ESPINTCP is not set
+
+# The EVL SD-card boot-debug profile does not need audio. The current built-in
+# SpacemiT ASoC path reaches spacemit_snd_sspa_pdev_probe during early userspace
+# and corrupts the next panic path, so keep sound out until the core boot path is
+# stable.
+# CONFIG_SOUND is not set
+# CONFIG_SND is not set
+# CONFIG_SND_SOC is not set
+# CONFIG_SND_SOC_SPACEMIT is not set
+# CONFIG_SPACEMIT_CARD is not set
+# CONFIG_SPACEMIT_PCM is not set
+# CONFIG_SPACEMIT_I2S is not set
+# CONFIG_SPACEMIT_HDMIAUDIO is not set
+# CONFIG_SPACEMIT_DUMMYCODEC is not set
+# CONFIG_TYPEC_HUSB239 is not set
+
+# NFS/SUNRPC is not needed for the SD-card EVL bring-up image. Keeping it
+# built-in starts rpcio workers during fs_initcall and currently stalls the
+# IRQ-pipeline debug boot before /init.
+# CONFIG_NFS_FS is not set
+# CONFIG_NFSD is not set
+# CONFIG_LOCKD is not set
+# CONFIG_NFS_ACL_SUPPORT is not set
+# CONFIG_NFS_COMMON is not set
+# CONFIG_NFS_V4_2_SSC_HELPER is not set
+# CONFIG_SUNRPC is not set
+# CONFIG_SUNRPC_GSS is not set
+# CONFIG_RPCSEC_GSS_KRB5 is not set
+# CONFIG_SUNRPC_DEBUG is not set
+
 # -----------------------------------------------------------------------------
 # Disable options that conflict with EVL
 # -----------------------------------------------------------------------------

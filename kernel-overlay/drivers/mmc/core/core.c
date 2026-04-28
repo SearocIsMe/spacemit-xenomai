@@ -1168,6 +1168,19 @@ int mmc_set_signal_voltage(struct mmc_host *host, int signal_voltage)
 	pr_notice("BOOTDBG mmc_set_signal_voltage %s enter signal_voltage=%d old=%d system_state=%d\n",
 		  mmc_hostname(host), signal_voltage, old_signal_voltage, system_state);
 
+	if (!strcmp(mmc_hostname(host), "mmc0")) {
+		if (signal_voltage == MMC_SIGNAL_VOLTAGE_330) {
+			host->ios.signal_voltage = MMC_SIGNAL_VOLTAGE_330;
+			pr_notice("BOOTDBG mmc_set_signal_voltage %s force_330_skip_host_switch\n",
+				  mmc_hostname(host));
+			return 0;
+		}
+
+		pr_notice("BOOTDBG mmc_set_signal_voltage %s reject_non_330_runtime signal_voltage=%d\n",
+			  mmc_hostname(host), signal_voltage);
+		return -EIO;
+	}
+
 	if (system_state < SYSTEM_RUNNING) {
 		if (signal_voltage == MMC_SIGNAL_VOLTAGE_330) {
 			host->ios.signal_voltage = signal_voltage;

@@ -560,6 +560,8 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 	unsigned long kpos = 0;
 	int ret;
 
+	exec_bootdbg_irq_context_fix("copy_strings_enter", NULL);
+
 	while (argc-- > 0) {
 		const char __user *str;
 		int len;
@@ -594,6 +596,7 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 				ret = -ERESTARTNOHAND;
 				goto out;
 			}
+			exec_bootdbg_irq_context_fix("copy_strings_before_cond_resched", NULL);
 			cond_resched();
 
 			offset = pos % PAGE_SIZE;
@@ -693,6 +696,7 @@ static int copy_strings_kernel(int argc, const char *const *argv,
 			return ret;
 		if (fatal_signal_pending(current))
 			return -ERESTARTNOHAND;
+		exec_bootdbg_irq_context_fix("copy_strings_kernel_before_cond_resched", NULL);
 		cond_resched();
 	}
 	return 0;

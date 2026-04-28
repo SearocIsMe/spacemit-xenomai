@@ -771,6 +771,21 @@ static int spacemit_sdhci_start_signal_voltage_switch(struct mmc_host *mmc,
 		return 0;
 	}
 
+	if (!strcmp(mmc_hostname(mmc), "mmc0")) {
+		ctrl = sdhci_readw(host, SDHCI_HOST_CONTROL2);
+		if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330) {
+			ctrl &= ~SDHCI_CTRL_VDD_180;
+			sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+			pr_notice("BOOTDBG spacemit_sdhci_start_signal_voltage_switch %s force_330_runtime ctrl2=0x%x\n",
+				  mmc_hostname(mmc), ctrl);
+			return 0;
+		}
+
+		pr_notice("BOOTDBG spacemit_sdhci_start_signal_voltage_switch %s reject_non_330_runtime signal_voltage=%u ctrl2=0x%x\n",
+			  mmc_hostname(mmc), ios->signal_voltage, ctrl);
+		return -EIO;
+	}
+
 	ctrl = sdhci_readw(host, SDHCI_HOST_CONTROL2);
 	pr_notice("BOOTDBG spacemit_sdhci_start_signal_voltage_switch %s ctrl2_before=0x%x\n",
 		  mmc_hostname(mmc), ctrl);

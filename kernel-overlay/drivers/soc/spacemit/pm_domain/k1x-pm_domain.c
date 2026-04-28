@@ -149,6 +149,11 @@ static int spacemit_pd_power_off(struct generic_pm_domain *domain)
 	struct per_device_qos *pos;
 	struct spacemit_pm_domain *spd = container_of(domain, struct spacemit_pm_domain, genpd);
 
+	pr_notice("BOOTDBG spacemit_pm_domain skip_power_off domain=%s id=%d status=%d device_count=%u\n",
+		  domain->name, spd->pm_index, domain->status,
+		  domain->device_count);
+	return -EBUSY;
+
 	if (spd->param.reg_pwr_ctrl == 0)
 		return 0;
 
@@ -706,15 +711,7 @@ static int spacemit_pm_add_one_domain(struct spacemit_pmu *pmu, struct device_no
 
 	pd->genpd.dev_ops.stop = spacemit_genpd_stop;
 	pd->genpd.dev_ops.start = spacemit_genpd_start;
-
-	/*
-	 * EVL bring-up: late async genpd power-off can run while the in-band
-	 * stage is still being stabilized, and the Jupiter logs show it jumping
-	 * through a bad callback address just after /init starts. Keep domains
-	 * powered during boot so we can validate userspace first.
-	 */
-	pd->genpd.flags |= GENPD_FLAG_ALWAYS_ON | GENPD_FLAG_RPM_ALWAYS_ON;
-	pr_notice("BOOTDBG spacemit_pm_domain keep_on domain=%s id=%d flags=0x%x\n",
+	pr_notice("BOOTDBG spacemit_pm_domain register domain=%s id=%d flags=0x%x\n",
 		  pd->genpd.name, id, pd->genpd.flags);
 
 	/* audio power-domain is power-on by default */

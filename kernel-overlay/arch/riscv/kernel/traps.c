@@ -55,7 +55,7 @@ static __always_inline void riscv_evl_trace_once(bool *done, const char *tag)
 static __always_inline void riscv_syscall_irq_context_fix(struct pt_regs *regs,
 							  long syscall)
 {
-	static int log_budget = 32;
+	static int log_budget = 128;
 	bool need_fix = test_inband_stall() || irqs_disabled() ||
 			hard_irqs_disabled();
 	bool do_log = need_fix && log_budget > 0;
@@ -73,6 +73,10 @@ static __always_inline void riscv_syscall_irq_context_fix(struct pt_regs *regs,
 
 	if (test_inband_stall())
 		unstall_inband_nocheck();
+	if (hard_irqs_disabled())
+		hard_local_irq_enable();
+	if (irqs_disabled())
+		local_irq_enable();
 	if (hard_irqs_disabled())
 		hard_local_irq_enable();
 
