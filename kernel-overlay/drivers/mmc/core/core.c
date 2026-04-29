@@ -2397,8 +2397,18 @@ void mmc_rescan(struct work_struct *work)
 	mmc_release_host(host);
 
  out:
-	if (host->caps & MMC_CAP_NEEDS_POLL)
+	if ((host->caps & MMC_CAP_NEEDS_POLL) &&
+	    host->bus_ops && !strcmp(mmc_hostname(host), "mmc0")) {
+		static bool mmc0_poll_skip_logged;
+
+		if (!mmc0_poll_skip_logged) {
+			pr_notice("BOOTDBG mmc_rescan %s skip_poll_after_attach bus_ops=%p\n",
+				  mmc_hostname(host), host->bus_ops);
+			mmc0_poll_skip_logged = true;
+		}
+	} else if (host->caps & MMC_CAP_NEEDS_POLL) {
 		mmc_schedule_delayed_work(&host->detect, HZ);
+	}
 	pr_notice("BOOTDBG mmc_rescan %s exit bus_ops=%p\n",
 		  mmc_hostname(host), host->bus_ops);
 }

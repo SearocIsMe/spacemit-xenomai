@@ -32,6 +32,12 @@
 #                  boot-debug-modules
 #                  full-evl
 #   IMAGE_TAG      Optional extra suffix in output filename.
+#   BOOTARGS_PROFILE
+#                  Boot argument verbosity:
+#                    debug       keep existing high-noise boot triage logging
+#                    quiet-login keep serial login readable after first success
+#   ROOTFS_SERIAL_SHELL
+#                  If 1, spawn /bin/sh directly on ttyS0 instead of getty.
 #
 # Arguments:
 #   base_image   Full SpacemiT buildroot SD card image to use as the base.
@@ -97,6 +103,10 @@ PATCH_EXTLINUX="${PATCH_EXTLINUX:-0}"
 PATCH_ENV="${PATCH_ENV:-0}"
 PATCH_INITRD="${PATCH_INITRD:-0}"
 IMAGE_TAG="${IMAGE_TAG:-}"
+BOOTARGS_PROFILE="${BOOTARGS_PROFILE:-debug}"
+ROOTFS_SERIAL_SHELL="${ROOTFS_SERIAL_SHELL:-0}"
+SERIAL_SHELL_PATH="/bin/evl-serial-shell"
+SERIAL_SHELL_INITTAB="ttyS0::respawn:${SERIAL_SHELL_PATH}"
 
 case "${TEST_PROFILE}" in
   kernel-only)
@@ -180,6 +190,20 @@ MODULES_DIR="${BUILD_DIR}/modules_install"
 mkdir -p "${OUTPUT_DIR}"
 [[ -d "${OUTPUT_DIR}" ]]    || die "Output directory not found: ${OUTPUT_DIR}"
 
+case "${BOOTARGS_PROFILE}" in
+  debug)
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug keep_bootcon clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_LOGLEVEL=8
+    ;;
+  quiet-login)
+    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk loglevel=4 clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
+    CLEAN_LOGLEVEL=4
+    ;;
+  *)
+    die "Unknown BOOTARGS_PROFILE='${BOOTARGS_PROFILE}'. Use: debug, quiet-login"
+    ;;
+esac
+
 # ---------------------------------------------------------------------------
 # Verify the kernel version string has no trailing '+' before we start
 # ---------------------------------------------------------------------------
@@ -230,8 +254,10 @@ info "Kernel     : ${KERNEL_IMAGE} ($(du -sh "${KERNEL_IMAGE}" | cut -f1))"
 info "Modules    : ${MODULES_DIR}/lib/modules/${EVL_MOD_VER}"
 info "Output     : ${IMG}"
 info "Profile    : ${TEST_PROFILE}"
+info "Bootargs   : ${BOOTARGS_PROFILE}"
 info "Bootflow   : $([[ "${PRESERVE_BOOTFLOW}" == "1" ]] && echo 'preserve base image boot config' || echo 'rewrite boot config')"
 info "Rootfs mods : $([[ "${PATCH_ROOTFS}" == "1" ]] && echo 'enabled' || echo 'disabled')"
+info "Serial sh  : $([[ "${ROOTFS_SERIAL_SHELL}" == "1" ]] && echo 'ttyS0 direct shell' || echo 'ttyS0 getty/login')"
 info "Modules    : $([[ "${INJECT_MODULES}" == "1" ]] && echo 'inject into rootfs' || echo 'preserve base rootfs modules')"
 info "Boot files : extlinux=$([[ "${PATCH_EXTLINUX}" == "1" ]] && echo on || echo off) env=$([[ "${PATCH_ENV}" == "1" ]] && echo on || echo off) initrd=$([[ "${PATCH_INITRD}" == "1" ]] && echo on || echo off)"
 echo ""
@@ -460,6 +486,16 @@ else
     TMP_EXTLINUX=$(mktemp /tmp/extlinux-XXXXXX.conf)
     cp "${EXTLINUX_TMPL}" "${TMP_EXTLINUX}"
     sed -i "s|ROOT_PLACEHOLDER|${EFFECTIVE_ROOT}|g" "${TMP_EXTLINUX}"
+    if [[ "${BOOTARGS_PROFILE}" == "quiet-login" ]]; then
+      sed -i \
+        -e 's/\bignore_loglevel\b//g' \
+        -e 's/\binitcall_debug\b//g' \
+        -e 's/\bkeep_bootcon\b//g' \
+        -e "s/\bloglevel=[0-9]\+/loglevel=${CLEAN_LOGLEVEL}/g" \
+        -e 's/  */ /g' \
+        "${TMP_EXTLINUX}"
+      ok "Reduced extlinux console verbosity for quiet-login"
+    fi
 
     if [[ -n "${ORIG_INITRD}" ]]; then
       if grep -qE '^\s*#\s*initrd' "${TMP_EXTLINUX}"; then
@@ -564,13 +600,12 @@ else
       ok "kernel_addr_r already set in raw env"
     fi
 
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug keep_bootcon clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if grep -q '^commonargs=' "${ENV_TXT}"; then
       sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_TXT}"
-      ok "Replaced commonargs in raw env with a minimal initcall-debug builder"
+      ok "Replaced commonargs in raw env for ${BOOTARGS_PROFILE}"
     else
       printf '%s\n' "${CLEAN_COMMONARGS}" >> "${ENV_TXT}"
-      ok "Added minimal commonargs to raw env"
+      ok "Added commonargs to raw env for ${BOOTARGS_PROFILE}"
     fi
 
     if grep -q '^console=' "${ENV_TXT}"; then
@@ -582,11 +617,11 @@ else
     fi
 
     if grep -q '^loglevel=' "${ENV_TXT}"; then
-      sed -i 's|^loglevel=.*|loglevel=8|' "${ENV_TXT}"
-      ok "Updated loglevel=8 in raw env"
+      sed -i "s|^loglevel=.*|loglevel=${CLEAN_LOGLEVEL}|" "${ENV_TXT}"
+      ok "Updated loglevel=${CLEAN_LOGLEVEL} in raw env"
     else
-      printf '%s\n' 'loglevel=8' >> "${ENV_TXT}"
-      ok "Added loglevel=8 to raw env"
+      printf '%s\n' "loglevel=${CLEAN_LOGLEVEL}" >> "${ENV_TXT}"
+      ok "Added loglevel=${CLEAN_LOGLEVEL} to raw env"
     fi
 
     for stream_var in stdout stderr; do
@@ -648,13 +683,12 @@ else
     # Longer "setenv bootargs ..." lines proved fragile on Jupiter and triggered
     # U-Boot's "setenv" usage path during mmc_boot. For initcall triage we only
     # need a minimal set of debug args to survive into the final bootargs.
-    CLEAN_COMMONARGS='commonargs=setenv bootargs earlyprintk ignore_loglevel initcall_debug keep_bootcon clk_ignore_unused swiotlb=65536 workqueue.default_affinity_scope=${workqueue.default_affinity_scope}'
     if sudo grep -q '^commonargs=' "${ENV_FILE}" 2>/dev/null; then
       sudo sed -i "s|^commonargs=.*|${CLEAN_COMMONARGS}|" "${ENV_FILE}"
-      ok "Replaced commonargs with a minimal initcall-debug bootargs builder"
+      ok "Replaced commonargs for ${BOOTARGS_PROFILE}"
     else
       printf '%s\n' "${CLEAN_COMMONARGS}" | sudo tee -a "${ENV_FILE}" > /dev/null
-      ok "Added minimal commonargs to env_k1-x.txt"
+      ok "Added commonargs to env_k1-x.txt for ${BOOTARGS_PROFILE}"
     fi
 
     for key_pattern in 'bootargs=' 'extraargs=' 'othbootargs='; do
@@ -682,11 +716,11 @@ else
     fi
 
     if sudo grep -q '^loglevel=' "${ENV_FILE}" 2>/dev/null; then
-      sudo sed -i 's|^loglevel=.*|loglevel=8|' "${ENV_FILE}"
-      ok "Updated loglevel=8 in env_k1-x.txt"
+      sudo sed -i "s|^loglevel=.*|loglevel=${CLEAN_LOGLEVEL}|" "${ENV_FILE}"
+      ok "Updated loglevel=${CLEAN_LOGLEVEL} in env_k1-x.txt"
     else
-      printf '%s\n' 'loglevel=8' | sudo tee -a "${ENV_FILE}" > /dev/null
-      ok "Added loglevel=8 to env_k1-x.txt"
+      printf '%s\n' "loglevel=${CLEAN_LOGLEVEL}" | sudo tee -a "${ENV_FILE}" > /dev/null
+      ok "Added loglevel=${CLEAN_LOGLEVEL} to env_k1-x.txt"
     fi
 
     for stream_var in stdout stderr; do
@@ -723,7 +757,7 @@ else
     info "Preserving base image initramfs-generic.img"
   elif [[ -f "${INITRD_IMG}" ]]; then
     INITRD_SIZE=$(du -sh "${INITRD_IMG}" | cut -f1)
-    info "Patching initramfs-generic.img (${INITRD_SIZE}) to disable Plymouth ..."
+    info "Patching initramfs-generic.img (${INITRD_SIZE}) ..."
 
     INITRD_WORK=$(mktemp -d /tmp/evl-initrd-XXXXXX)
     INITRD_PATCHED=$(mktemp /tmp/evl-initrd-patched-XXXXXX.img)
@@ -778,6 +812,26 @@ else
         warn "  No Plymouth hooks/binaries found inside initramfs."
       fi
 
+      INITRD_INITTAB="${INITRD_WORK}/etc/inittab"
+      if [[ "${ROOTFS_SERIAL_SHELL}" == "1" ]]; then
+        if [[ -f "${INITRD_INITTAB}" ]]; then
+          sudo bash -c "cat > '${INITRD_WORK}${SERIAL_SHELL_PATH}'" <<'EOF'
+#!/bin/sh
+echo EVL_TTYS0_SHELL_READY
+exec /bin/sh -i
+EOF
+          sudo chmod +x "${INITRD_WORK}${SERIAL_SHELL_PATH}"
+          sudo sed -i '/getty/d' "${INITRD_INITTAB}"
+          sudo sed -i '/^console::respawn:/d' "${INITRD_INITTAB}"
+          sudo sed -i '/^ttyS0::respawn:/d' "${INITRD_INITTAB}"
+          sudo sed -i '/^tty1::respawn:/d' "${INITRD_INITTAB}"
+          printf '%s\n' "${SERIAL_SHELL_INITTAB}" | sudo tee -a "${INITRD_INITTAB}" > /dev/null
+          ok "  Removed initramfs getty entries and added marked interactive shell on ttyS0."
+        else
+          warn "  initramfs /etc/inittab not found — cannot replace serial getty."
+        fi
+      fi
+
       info "  Repacking initramfs (gzip+cpio) ..."
       (
         cd "${INITRD_WORK}"
@@ -788,7 +842,7 @@ else
 
     if [[ "${INITRD_PATCH_OK}" -eq 1 && -s "${INITRD_PATCHED}" ]]; then
       sudo cp "${INITRD_PATCHED}" "${INITRD_IMG}"
-      ok "initramfs-generic.img replaced with Plymouth-disabled version ($(du -sh "${INITRD_IMG}" | cut -f1))."
+      ok "initramfs-generic.img replaced with patched version ($(du -sh "${INITRD_IMG}" | cut -f1))."
     else
       ok "initramfs-generic.img kept from base image (${INITRD_SIZE}) — Plymouth patch skipped."
     fi
@@ -969,7 +1023,20 @@ elif [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
 
     INITTAB="${ROOTFS_MOUNT}/etc/inittab"
     if [[ -f "${INITTAB}" ]]; then
-      if ! sudo grep -q 'ttyS0' "${INITTAB}" 2>/dev/null; then
+      if [[ "${ROOTFS_SERIAL_SHELL}" == "1" ]]; then
+        sudo bash -c "cat > '${ROOTFS_MOUNT}${SERIAL_SHELL_PATH}'" <<'EOF'
+#!/bin/sh
+echo EVL_TTYS0_SHELL_READY
+exec /bin/sh -i
+EOF
+        sudo chmod +x "${ROOTFS_MOUNT}${SERIAL_SHELL_PATH}"
+        sudo sed -i '/getty/d' "${INITTAB}"
+        sudo sed -i '/^console::respawn:/d' "${INITTAB}"
+        sudo sed -i '/^ttyS0::respawn:/d' "${INITTAB}"
+        sudo sed -i '/^tty1::respawn:/d' "${INITTAB}"
+        echo "${SERIAL_SHELL_INITTAB}" | sudo tee -a "${INITTAB}" > /dev/null
+        ok "Removed all getty entries and added marked interactive shell on ttyS0."
+      elif ! sudo grep -q 'ttyS0' "${INITTAB}" 2>/dev/null; then
         echo "ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100" | \
           sudo tee -a "${INITTAB}" > /dev/null
         ok "Added ttyS0 getty to /etc/inittab (serial console at 115200 baud)."
@@ -977,11 +1044,11 @@ elif [[ -n "${ROOTFS_PART}" && -b "${ROOTFS_PART}" ]]; then
         ok "ttyS0 getty already present in /etc/inittab."
       fi
 
-      if ! sudo grep -q 'tty1' "${INITTAB}" 2>/dev/null; then
+      if [[ "${ROOTFS_SERIAL_SHELL}" != "1" ]] && ! sudo grep -q 'tty1' "${INITTAB}" 2>/dev/null; then
         echo "tty1::respawn:/sbin/getty 38400 tty1" | \
           sudo tee -a "${INITTAB}" > /dev/null
         ok "Added tty1 getty to /etc/inittab (HDMI login prompt)."
-      else
+      elif [[ "${ROOTFS_SERIAL_SHELL}" != "1" ]]; then
         ok "tty1 getty already present in /etc/inittab."
       fi
     else
@@ -1056,6 +1123,15 @@ echo ""
 echo "  What to expect on first boot:"
 echo "    - HDMI screen shows kernel boot log (not Bianbu splash)"
 echo "    - Module loading progress visible on screen"
-echo "    - Login prompt appears on both HDMI (tty1) and serial (ttyS0)"
-echo "    - Login: root / root  (change password after first login)"
+if [[ "${PATCH_ROOTFS}" == "1" ]]; then
+  if [[ "${ROOTFS_SERIAL_SHELL}" == "1" ]]; then
+    echo "    - Serial console starts a direct /bin/sh; press Enter for a shell prompt"
+    echo "    - All getty/login prompts are removed for this triage image"
+  else
+    echo "    - Login prompt appears on both HDMI (tty1) and serial (ttyS0)"
+    echo "    - Login: root / root  (change password after first login)"
+  fi
+else
+  echo "    - Rootfs userspace is preserved; login credentials are unchanged from the base image"
+fi
 sep

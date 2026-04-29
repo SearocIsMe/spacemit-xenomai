@@ -29,7 +29,6 @@
 #include <linux/kthread.h>
 #include <linux/init_syscalls.h>
 #include <uapi/linux/mount.h>
-#include <asm/evl_debug.h>
 #include "base.h"
 
 #ifdef CONFIG_DEVTMPFS_SAFE
@@ -105,11 +104,6 @@ static int devtmpfs_submit_req(struct req *req, const char *tmp)
 	req->tmp = tmp;
 	req->async = false;
 
-	pr_info("BOOTDBG devtmpfs_submit_req enter name=%s mode=%o dev=%s current=%s[%d]\n",
-		req->name ? req->name : "(null)", req->mode,
-		req->dev ? dev_name(req->dev) : "(null)",
-		current->comm, task_pid_nr(current));
-
 	if (system_state < SYSTEM_RUNNING) {
 		areq = kmemdup(req, sizeof(*req), GFP_KERNEL);
 		if (!areq) {
@@ -119,9 +113,6 @@ static int devtmpfs_submit_req(struct req *req, const char *tmp)
 		init_completion(&areq->done);
 		areq->tmp = tmp;
 		areq->async = true;
-		pr_info("BOOTDBG devtmpfs_submit_req boot_async name=%s system_state=%d current=%s[%d]\n",
-			areq->name ? areq->name : "(null)", system_state,
-			current->comm, task_pid_nr(current));
 		spin_lock(&req_lock);
 		areq->next = requests;
 		requests = areq;
@@ -136,13 +127,7 @@ static int devtmpfs_submit_req(struct req *req, const char *tmp)
 	spin_unlock(&req_lock);
 
 	wake_up_process(thread);
-	pr_info("BOOTDBG devtmpfs_submit_req before_wait name=%s thread=%px current=%s[%d]\n",
-		req->name ? req->name : "(null)", thread,
-		current->comm, task_pid_nr(current));
 	wait_for_completion(&req->done);
-	pr_info("BOOTDBG devtmpfs_submit_req after_wait name=%s err=%d current=%s[%d]\n",
-		req->name ? req->name : "(null)", req->err,
-		current->comm, task_pid_nr(current));
 
 	kfree(tmp);
 
@@ -427,36 +412,23 @@ static int handle(const char *name, umode_t mode, kuid_t uid, kgid_t gid,
 static void __noreturn devtmpfs_work_loop(void)
 {
 	while (1) {
-		pr_info("BOOTDBG devtmpfs_work_loop poll current=%s[%d] requests=%px\n",
-			current->comm, task_pid_nr(current), requests);
 		spin_lock(&req_lock);
 		while (requests) {
 			struct req *req = requests;
 			requests = NULL;
-			spin_unlock(&req_lock);
-			while (req) {
-				struct req *next = req->next;
-				pr_info("BOOTDBG devtmpfs_work_loop handle_begin name=%s mode=%o dev=%s current=%s[%d]\n",
-					req->name ? req->name : "(null)", req->mode,
-					req->dev ? dev_name(req->dev) : "(null)",
-					current->comm, task_pid_nr(current));
-				req->err = handle(req->name, req->mode,
-						  req->uid, req->gid, req->dev);
-				pr_info("BOOTDBG devtmpfs_work_loop handle_end name=%s err=%d current=%s[%d]\n",
-					req->name ? req->name : "(null)", req->err,
-					current->comm, task_pid_nr(current));
-				if (req->async) {
-					pr_info("BOOTDBG devtmpfs_work_loop async_free name=%s err=%d\n",
-						req->name ? req->name : "(null)", req->err);
-					kfree(req->tmp);
-					kfree(req);
-				} else {
-					complete(&req->done);
-					pr_info("BOOTDBG devtmpfs_work_loop after_complete name=%s err=%d\n",
-						req->name ? req->name : "(null)", req->err);
+				spin_unlock(&req_lock);
+				while (req) {
+					struct req *next = req->next;
+					req->err = handle(req->name, req->mode,
+							  req->uid, req->gid, req->dev);
+					if (req->async) {
+						kfree(req->tmp);
+						kfree(req);
+					} else {
+						complete(&req->done);
+					}
+					req = next;
 				}
-				req = next;
-			}
 			spin_lock(&req_lock);
 		}
 		__set_current_state(TASK_INTERRUPTIBLE);
@@ -491,8 +463,6 @@ static int __ref devtmpfsd(void *p)
 {
 	int err = devtmpfs_setup(p);
 
-	pr_info("BOOTDBG devtmpfsd after_setup err=%d current=%s[%d]\n",
-		err, current->comm, task_pid_nr(current));
 	complete(&setup_done);
 	if (err)
 		return err;
@@ -509,8 +479,6 @@ int __init devtmpfs_init(void)
 	char opts[] = "mode=0755";
 	int err;
 
-	pr_info("BOOTDBG devtmpfs_init enter current=%s[%d]\n",
-		current->comm, task_pid_nr(current));
 	mnt = vfs_kern_mount(&internal_fs_type, 0, "devtmpfs", opts);
 	if (IS_ERR(mnt)) {
 		pr_err("unable to create devtmpfs %ld\n", PTR_ERR(mnt));
@@ -524,11 +492,7 @@ int __init devtmpfs_init(void)
 
 	thread = kthread_run(devtmpfsd, &err, "kdevtmpfs");
 	if (!IS_ERR(thread)) {
-		pr_info("BOOTDBG devtmpfs_init before_setup_wait thread=%px current=%s[%d]\n",
-			thread, current->comm, task_pid_nr(current));
 		wait_for_completion(&setup_done);
-		pr_info("BOOTDBG devtmpfs_init after_setup_wait err=%d thread=%px current=%s[%d]\n",
-			err, thread, current->comm, task_pid_nr(current));
 	} else {
 		err = PTR_ERR(thread);
 		thread = NULL;

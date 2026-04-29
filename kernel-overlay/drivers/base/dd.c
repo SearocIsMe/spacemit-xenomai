@@ -83,6 +83,9 @@ static void deferred_probe_work_func(struct work_struct *work)
 {
 	struct device *dev;
 	struct device_private *private;
+
+	pr_notice("BOOTDBG deferred_probe_work enter current=%s[%d]\n",
+		  current->comm, task_pid_nr(current));
 	/*
 	 * This block processes every device in the deferred 'active' list.
 	 * Each device is removed from the active list and passed to
@@ -121,12 +124,18 @@ static void deferred_probe_work_func(struct work_struct *work)
 		device_pm_move_to_tail(dev);
 
 		dev_dbg(dev, "Retrying from deferred list\n");
+		dev_notice(dev, "BOOTDBG deferred_probe_work before_bus_probe current=%s[%d]\n",
+			   current->comm, task_pid_nr(current));
 		bus_probe_device(dev);
+		dev_notice(dev, "BOOTDBG deferred_probe_work after_bus_probe current=%s[%d]\n",
+			   current->comm, task_pid_nr(current));
 		mutex_lock(&deferred_probe_mutex);
 
 		put_device(dev);
 	}
 	mutex_unlock(&deferred_probe_mutex);
+	pr_notice("BOOTDBG deferred_probe_work exit current=%s[%d]\n",
+		  current->comm, task_pid_nr(current));
 }
 static DECLARE_WORK(deferred_probe_work, deferred_probe_work_func);
 
@@ -349,8 +358,8 @@ static int deferred_probe_initcall(void)
 
 	driver_deferred_probe_enable = true;
 	driver_deferred_probe_trigger();
-	/* Sort as many dependencies as possible before exiting initcalls */
-	flush_work(&deferred_probe_work);
+	pr_notice("BOOTDBG deferred_probe_initcall after_first_trigger skip_flush current=%s[%d]\n",
+		  current->comm, task_pid_nr(current));
 	initcalls_done = true;
 
 	if (!IS_ENABLED(CONFIG_MODULES))
@@ -361,7 +370,8 @@ static int deferred_probe_initcall(void)
 	 * that is optional
 	 */
 	driver_deferred_probe_trigger();
-	flush_work(&deferred_probe_work);
+	pr_notice("BOOTDBG deferred_probe_initcall after_second_trigger skip_flush current=%s[%d]\n",
+		  current->comm, task_pid_nr(current));
 
 	if (driver_deferred_probe_timeout > 0) {
 		schedule_delayed_work(&deferred_probe_timeout_work,

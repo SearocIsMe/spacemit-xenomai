@@ -1591,8 +1591,7 @@ static bool spacemit_i2c_boot_pmic_target(struct spacemit_i2c_dev *spacemit_i2c,
 					  struct i2c_msg msgs[], int num)
 {
 	return spacemit_i2c && msgs && spacemit_i2c->adapt.nr == 8 &&
-	       num > 0 && msgs[0].addr == 0x41 &&
-	       system_state < SYSTEM_RUNNING;
+	       num > 0 && msgs[0].addr == 0x41;
 }
 
 static bool spacemit_i2c_force_pio_debug(struct spacemit_i2c_dev *spacemit_i2c,

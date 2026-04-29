@@ -20,5 +20,5 @@ if [[ $# -lt 1 || $# -gt 3 ]]; then
 fi
 
 TEST_PROFILE=boot-debug-modules \
-IMAGE_TAG=boot-debug-modules \
+IMAGE_TAG="${IMAGE_TAG:-boot-debug-modules}" \
   bash "${SCRIPT_DIR}/make-full-sdcard-img.sh" "$@"
