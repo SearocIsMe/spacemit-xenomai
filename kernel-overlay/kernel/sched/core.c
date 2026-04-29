@@ -4231,7 +4231,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 	if (wake_kthreadd)
 		pr_info("BOOTDBG try_to_wake_up enter comm=%s pid=%d state=%u pstate=%ld on_rq=%d on_cpu=%d cpu=%d wake_flags=0x%x offstage=%d current=%s[%d]\n",
 			p->comm, task_pid_nr(p), state, READ_ONCE(p->__state),
-			READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu), task_cpu(p),
+			READ_ONCE(p->on_rq), task_on_cpu_raw(p), task_cpu(p),
 			wake_flags, task_is_off_stage(p), current->comm,
 			task_pid_nr(current));
 
@@ -4273,7 +4273,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 				pr_info("BOOTDBG try_to_wake_up blocked comm=%s pid=%d success=%d pstate=%ld on_rq=%d on_cpu=%d offstage=%d\n",
 					p->comm, task_pid_nr(p), success,
 					READ_ONCE(p->__state), READ_ONCE(p->on_rq),
-					READ_ONCE(p->on_cpu), task_is_off_stage(p));
+					task_on_cpu_raw(p), task_is_off_stage(p));
 			break;
 		}
 
@@ -4304,10 +4304,10 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		smp_rmb();
 		if (READ_ONCE(p->on_rq) && ttwu_runnable(p, wake_flags)) {
 			if (wake_kthreadd)
-				pr_info("BOOTDBG try_to_wake_up runnable comm=%s pid=%d success=%d on_rq=%d on_cpu=%d cpu=%d\n",
-					p->comm, task_pid_nr(p), success,
-					READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu),
-					task_cpu(p));
+					pr_info("BOOTDBG try_to_wake_up runnable comm=%s pid=%d success=%d on_rq=%d on_cpu=%d cpu=%d\n",
+						p->comm, task_pid_nr(p), success,
+						READ_ONCE(p->on_rq), task_on_cpu_raw(p),
+						task_cpu(p));
 			break;
 		}
 
@@ -4369,7 +4369,7 @@ int try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 			if (wake_kthreadd)
 				pr_info("BOOTDBG try_to_wake_up queued_wakelist comm=%s pid=%d cpu=%d on_cpu=%d\n",
 					p->comm, task_pid_nr(p), task_cpu(p),
-					READ_ONCE(p->on_cpu));
+					task_on_cpu_raw(p));
 			break;
 		}
 
@@ -4408,7 +4408,7 @@ out:
 	if (wake_kthreadd)
 		pr_info("BOOTDBG try_to_wake_up out comm=%s pid=%d success=%d pstate=%ld on_rq=%d on_cpu=%d cpu=%d\n",
 			p->comm, task_pid_nr(p), success, READ_ONCE(p->__state),
-			READ_ONCE(p->on_rq), READ_ONCE(p->on_cpu), task_cpu(p));
+			READ_ONCE(p->on_rq), task_on_cpu_raw(p), task_cpu(p));
 	if (success)
 		ttwu_stat(p, task_cpu(p), wake_flags);
 
@@ -6858,11 +6858,11 @@ static int __sched notrace __schedule(unsigned int sched_mode)
 			riscv_evl_trace_sched_switch(cpu_of(rq),
 						     prev, prev->pid,
 						     task_cpu(prev),
-						     READ_ONCE(prev->on_cpu),
+						     task_on_cpu_raw(prev),
 						     prev->comm,
 						     next, next->pid,
 						     task_cpu(next),
-						     READ_ONCE(next->on_cpu),
+						     task_on_cpu_raw(next),
 						     next->comm);
 		}
 #endif

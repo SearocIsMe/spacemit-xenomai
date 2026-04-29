@@ -616,7 +616,7 @@ struct task_struct *__kthread_create_on_node(int (*threadfn)(void *data),
 			wake_ret,
 			kthreadd_task ? READ_ONCE(kthreadd_task->__state) : -1L,
 			kthreadd_task ? READ_ONCE(kthreadd_task->on_rq) : -1,
-			kthreadd_task ? READ_ONCE(kthreadd_task->on_cpu) : -1,
+			kthreadd_task ? task_on_cpu_raw(kthreadd_task) : -1,
 			kthreadd_task ? task_cpu(kthreadd_task) : -1);
 	}
 	/*

@@ -41,7 +41,7 @@ void arch_do_IRQ_pipelined(struct irq_desc *desc)
 	unsigned long flags;
 	unsigned int irq = irq_desc_get_irq(desc);
 
-	if (false && irq == 20) {
+	if (irq == 20) {
 		pr_info("BOOTDBG arch_do_IRQ_pipelined enter irq=%u desc=%px hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			irq, desc,
 			hard_irqs_disabled(), test_inband_stall(),
@@ -59,7 +59,7 @@ void arch_do_IRQ_pipelined(struct irq_desc *desc)
 	irq_exit_rcu();
 	hard_local_irq_restore(flags);
 
-	if (false && irq == 20) {
+	if (irq == 20) {
 		pr_info("BOOTDBG arch_do_IRQ_pipelined exit irq=%u desc=%px hard_irqs_disabled=%d stall=%d current=%s[%d]\n",
 			irq, desc,
 			hard_irqs_disabled(), test_inband_stall(),
@@ -71,7 +71,8 @@ void arch_do_IRQ_pipelined(struct irq_desc *desc)
 
 void __init arch_irq_pipeline_init(void)
 {
-	/* no per-arch init needed for RISC-V */
+	pr_info("IRQ pipeline: arch_irq_pipeline_init() called on CPU%d\n",
+		smp_processor_id());
 }
 
 #if defined(CONFIG_IRQ_PIPELINE) && !defined(CONFIG_EVL)

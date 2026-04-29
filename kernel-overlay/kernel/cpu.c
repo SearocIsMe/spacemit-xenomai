@@ -843,7 +843,7 @@ static void __cpuhp_kick_ap(int cpu, struct cpuhp_cpu_state *st)
 			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap task_state=",
 					      READ_ONCE(st->thread->__state));
 			riscv_evl_trace_ulong("EVLDBG __cpuhp_kick_ap task_on_cpu=",
-					      READ_ONCE(st->thread->on_cpu));
+					      task_on_cpu_raw(st->thread));
 		}
 	}
 #endif

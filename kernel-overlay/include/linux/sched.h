@@ -1565,6 +1565,25 @@ struct task_struct {
 	 */
 };
 
+/*
+ * Safe accessor for on_cpu that compiles regardless of CONFIG_SMP.
+ * When SMP is disabled, on_cpu doesn't exist in task_struct; return 0
+ * (the only task that matters is current, and it's always "on_cpu").
+ * Used by BOOTDBG diagnostic prints that must compile for both SMP
+ * and !SMP configurations.
+ */
+#ifdef CONFIG_SMP
+static inline int task_on_cpu_raw(const struct task_struct *p)
+{
+	return READ_ONCE(p->on_cpu);
+}
+#else
+static inline int task_on_cpu_raw(const struct task_struct *p)
+{
+	return 0;
+}
+#endif
+
 static inline struct pid *task_pid(struct task_struct *task)
 {
 	return task->thread_pid;

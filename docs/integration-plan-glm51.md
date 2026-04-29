@@ -479,12 +479,111 @@ The most likely Jupiter-specific blockers are:
 
 ---
 
-## 10. Concrete Action Items for This Session
+## 10. Code Changes Applied (2026-04-29 Session)
 
-1. **Build `irq-pipeline-minimal` for Jupiter** and create a `kernel-only` SD image
-2. **Flash and boot on Jupiter** with UART capture
-3. **Share the UART log** so I can analyze the failure point
-4. **If minimal hangs**, enable `BOOTDBG` prints in `irq_pipeline.c` and `irq_pipeline.h` and rebuild
-5. **If minimal boots**, promote to `irq-pipeline-nosmp`, then `irq-pipeline-only`
+### 10.1 Critical Fix: PLIC `IRQCHIP_PIPELINE_SAFE` missing
 
-I am ready to analyze UART logs and iterate on the kernel overlay code based on real hardware feedback.
+**File:** `kernel-overlay/drivers/irqchip/irq-sifive-plic.c`
+
+Both `plic_edge_chip` and `plic_chip` were missing `IRQCHIP_PIPELINE_SAFE` in their `.flags` field. Without this flag, `irq_set_chip()` fires a WARN for every PLIC IRQ, and the pipeline may not properly route external interrupts. Since the PLIC handles ALL external interrupts on K1 (MMC, UART, display, etc.), this is very likely the primary cause of the Jupiter boot hang.
+
+**Change:** Added `IRQCHIP_PIPELINE_SAFE` to both structures in both `CONFIG_SOC_SPACEMIT` and non-SpacemiT code paths.
+
+### 10.2 Fix: PCIe MSI `IRQCHIP_PIPELINE_SAFE` missing
+
+**File:** `kernel-overlay/drivers/pci/controller/dwc/pcie-k1x.c`
+
+Both `k1x_msi_irq_chip` and `k1x_pcie_msi_bottom_irq_chip` were missing `IRQCHIP_PIPELINE_SAFE`.
+
+**Change:** Added `IRQCHIP_PIPELINE_SAFE` to both structures.
+
+### 10.3 Diagnostic: BOOTDBG prints enabled
+
+**File:** `kernel-overlay/arch/riscv/kernel/irq_pipeline.c`
+
+- Changed `if (false && irq == 20)` → `if (irq == 20)` for timer IRQ tracing in `arch_do_IRQ_pipelined()`
+- Added `pr_info("IRQ pipeline: arch_irq_pipeline_init() called on CPU%d\n", ...)` to the previously empty `arch_irq_pipeline_init()`
+
+**File:** `kernel-overlay/arch/riscv/include/asm/irq_pipeline.h`
+
+- Changed all `if (false)` BOOTDBG prints in `arch_handle_irq_pipelined()` to rate-limited prints (first 20 IRQs only)
+- This shows the cause, dispatch result, and `handle_arch_irq` flow for early IRQs
+
+### 10.4 Fix: `evl_debug` early param now enables runtime trace
+
+**File:** `kernel-overlay/arch/riscv/kernel/evl_debug.c`
+
+The `evl_debug` kernel parameter was setting `riscv_evl_early_debug_enabled = true` but leaving `riscv_evl_runtime_trace_enabled = false`, which meant all `EVLDBG` traces (SBI-based early UART output) were dead.
+
+**Change:** Now sets both flags to `true`, and prints a confirmation message.
+
+### 10.5 Config: `evl_debug` added to kernel command line
+
+**File:** `configs/extlinux.conf`
+
+Added `evl_debug` to the `append` line so SBI-based early debug traces are active from boot. This is critical because `riscv_evl_early_puts()` uses SBI ecall to write directly to UART — it works even before the kernel console subsystem initializes.
+
+### 10.6 Already correct (verified, no change needed)
+
+- `irq-riscv-intc.c`: both `riscv_intc_chip` and `andes_intc_chip` already have `IRQCHIP_PIPELINE_SAFE`
+- `regmap-irq.c`: already adds `IRQCHIP_PIPELINE_SAFE` at runtime (line 741)
+- `kernel/irq/pipeline.c`: `sirq_chip` is the pipeline's own virtual controller, doesn't need the flag
+
+---
+
+## 11. Build and Test Instructions
+
+### Step 1: Re-deploy overlay and build irq-pipeline-minimal
+
+```bash
+# From the repo root
+bash scripts/build/00b-deploy-overlay.sh
+
+# Configure with the minimal IRQ pipeline defconfig
+CONFIG_FRAGMENT=configs/k1_irq_pipeline_minimal_defconfig \
+  bash scripts/build/02-configure.sh
+
+# Build the kernel
+bash scripts/build/03-build-kernel.sh
+```
+
+### Step 2: Create kernel-only SD image
+
+```bash
+# Replace with your actual Bianbu base image path
+bash scripts/flash/make-baseline-sdcard-img.sh /path/to/bianbu-base-image.img
+```
+
+### Step 3: Flash and boot on Jupiter
+
+```bash
+# Flash to SD card (replace /dev/sdX with your device)
+sudo dd if=output/baseline-sdcard.img of=/dev/sdX bs=4M status=progress
+sudo eject /dev/sdX
+```
+
+### Step 4: Capture UART log
+
+Connect UART debug cable (115200 8N1) and capture the full boot output. Key markers to look for:
+
+1. `IRQ pipeline: arch_irq_pipeline_init() called on CPU0` — confirms pipeline init ran
+2. `EVLDBG arch_handle_irq_pipelined entry` — first IRQ through the pipeline
+3. `BOOTDBG arch_handle_irq_pipelined before_dispatch cause=...` — IRQ cause numbers
+4. `BOOTDBG arch_do_IRQ_pipelined enter irq=20` — timer IRQ replay working
+5. `riscv-timer: BOOTDBG riscv_timer_starting_cpu` — timer brought up
+6. Any WARN/panic/oops — copy the full stack trace
+
+### Step 5: Share the UART log
+
+Paste the full UART output so I can analyze the failure point and determine the next fix.
+
+---
+
+## 12. Expected Outcomes
+
+| Scenario | Meaning | Next Step |
+|----------|---------|-----------|
+| Boot reaches login prompt | `IRQCHIP_PIPELINE_SAFE` fix was sufficient | Promote to `irq-pipeline-nosmp`, then `irq-pipeline-only` |
+| Boot hangs but UART shows IRQ flow | Pipeline is working but something else blocks | Analyze the last IRQ/initcall before hang |
+| Boot hangs with no UART output after OpenSBI | Pipeline breaks before console init | Need SBI-level early debug or GDB |
+| Kernel panic with stack trace | Specific driver/hook crashes | Fix the identified code path |

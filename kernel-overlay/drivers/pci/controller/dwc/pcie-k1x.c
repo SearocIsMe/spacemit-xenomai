@@ -722,6 +722,7 @@ static struct irq_chip k1x_msi_irq_chip = {
 	.irq_disable = k1x_pci_msi_mask_irq,
 	.irq_mask = k1x_pci_msi_mask_irq,
 	.irq_unmask = k1x_pci_msi_unmask_irq,
+	.flags = IRQCHIP_PIPELINE_SAFE,
 };
 
 static struct msi_domain_info k1x_pcie_msi_domain_info = {
@@ -785,6 +786,7 @@ static struct irq_chip k1x_pcie_msi_bottom_irq_chip = {
 	.name = "K1X-PCI-MSI",
 	.irq_compose_msi_msg = k1x_pcie_setup_msi_msg,
 	.irq_set_affinity = k1x_pcie_msi_set_affinity,
+	.flags = IRQCHIP_PIPELINE_SAFE,
 };
 
 static int k1x_pcie_irq_domain_alloc(struct irq_domain *domain,

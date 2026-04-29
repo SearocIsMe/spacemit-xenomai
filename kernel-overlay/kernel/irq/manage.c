@@ -1394,7 +1394,7 @@ static void wake_up_and_wait_for_irq_thread_ready(struct irq_desc *desc,
 			test_bit(IRQTF_READY, &action->thread_flags),
 			(long)READ_ONCE(action->thread->__state),
 			READ_ONCE(action->thread->on_rq),
-			READ_ONCE(action->thread->on_cpu),
+			task_on_cpu_raw(action->thread),
 			task_cpu(action->thread));
 	wait_event(desc->wait_for_threads,
 		   test_bit(IRQTF_READY, &action->thread_flags));

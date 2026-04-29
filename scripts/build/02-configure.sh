@@ -81,6 +81,8 @@ EOF
 }
 
 CONFIG_FRAGMENT="${CONFIG_FRAGMENT:-${REPO_ROOT}/configs/k1_evl_defconfig}"
+# Resolve to absolute path so merge_config.sh can find it after cd
+CONFIG_FRAGMENT="$(cd "$(dirname "${CONFIG_FRAGMENT}")" && pwd)/$(basename "${CONFIG_FRAGMENT}")"
 OPEN_MENUCONFIG="${OPEN_MENUCONFIG:-0}"   # set to 1 to open menuconfig
 BUILD_DIR="${BUILD_DIR_OVERRIDE:-${BUILD_DIR}}"
 
