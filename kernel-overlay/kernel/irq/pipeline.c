@@ -77,6 +77,12 @@ struct irq_event_map {
 	unsigned long flat[IRQ_FLAT_MAPSZ];
 };
 
+static DEFINE_PER_CPU(bool, deferred_sync_request);
+static DEFINE_PER_CPU(bool, ttwu_window_active);
+static DEFINE_PER_CPU(bool, urgent_ipi_sync_request);
+
+static inline int peek_next_irq(struct irq_stage_data *p);
+
 #ifdef CONFIG_SMP
 
 static struct irq_event_map bootup_irq_map __initdata;
@@ -96,11 +102,6 @@ DEFINE_PER_CPU(struct irq_pipeline_data, irq_pipeline) = {
 
 struct pipeline_percpu_data { };
 static DEFINE_PER_CPU(struct pipeline_percpu_data, pipeline_percpu_data);
-static DEFINE_PER_CPU(bool, deferred_sync_request);
-static DEFINE_PER_CPU(bool, ttwu_window_active);
-static DEFINE_PER_CPU(bool, urgent_ipi_sync_request);
-
-static inline int peek_next_irq(struct irq_stage_data *p);
 
 static irqreturn_t smp_call_function_ipi_handler(int irq, void *dev_id)
 {
@@ -1872,17 +1873,8 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 	}
 	{
 		struct irq_stage_data *inbd = this_inband_staged();
-		struct irq_desc *next_desc = NULL;
-		bool next_is_timer = false;
 		bool ipi_pending = false;
 		int i;
-
-		if (next_inband_irq >= 0) {
-			next_desc = irq_to_desc(next_inband_irq);
-			next_is_timer = next_desc &&
-				next_desc->action &&
-				(next_desc->action->flags & __IRQF_TIMER);
-		}
 
 		for (i = 3; i <= 8; i++) {
 			if (test_bit(i, inbd->log.map->flat)) {
@@ -1907,37 +1899,6 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 			goto out;
 		}
 
-		if (system_state == SYSTEM_SCHEDULING &&
-		    stage_irqs_pending(inbd) &&
-		    !ipi_pending &&
-		    next_is_timer) {
-				if (false && irq_cause == 9) {
-				pr_info("BOOTDBG handle_irq_pipelined_finish bypass_timer_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
-					irq_cause, next_inband_irq,
-					irq_pipeline_deferred_sync_pending(),
-					current->comm, task_pid_nr(current));
-				goto no_sched_short_circuit;
-			}
-				if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
-				pr_info("BOOTDBG handle_irq_pipelined_finish scheduling_short_circuit cause=%lu next_inband_irq=%d deferred_sync=%d current=%s[%d]\n",
-					irq_cause, next_inband_irq,
-					irq_pipeline_deferred_sync_pending(),
-					current->comm, task_pid_nr(current));
-			}
-			if (!irq_pipeline_deferred_sync_pending())
-				irq_pipeline_request_deferred_sync();
-			goto out;
-		}
-			if (false && system_state == SYSTEM_SCHEDULING &&
-			    stage_irqs_pending(inbd) &&
-		    !ipi_pending &&
-		    next_inband_irq == 20) {
-			pr_info("BOOTDBG handle_irq_pipelined_finish bypass_scheduling_short_circuit next_inband_irq=%d next_is_timer=%d deferred_sync=%d current=%s[%d]\n",
-				next_inband_irq, next_is_timer,
-				irq_pipeline_deferred_sync_pending(),
-				current->comm, task_pid_nr(current));
-		}
-no_sched_short_circuit:
 	}
 #endif
 	if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {

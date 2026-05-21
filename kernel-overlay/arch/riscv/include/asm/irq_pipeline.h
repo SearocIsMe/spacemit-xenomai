@@ -153,15 +153,12 @@ static inline int arch_enable_oob_stage(void)
 }
 
 extern void (*handle_arch_irq)(struct pt_regs *);
-extern int riscv_intc_dispatch_irq(unsigned long cause);
 
 static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 {
 	unsigned long cause = regs->cause & ~CAUSE_IRQ_FLAG;
 	static bool trace_arch_irq_seen;
-	static bool trace_arch_irq_returned;
 	static int bootdbg_count;
-	int dispatched;
 
 	if (!trace_arch_irq_seen) {
 		trace_arch_irq_seen = true;
@@ -170,41 +167,27 @@ static inline void arch_handle_irq_pipelined(struct pt_regs *regs)
 				      (unsigned long)handle_arch_irq);
 	}
 
-	/*
-	 * Keep the pipelined path on top of the generic IRQ domain flow for
-	 * RISC-V local interrupts instead of bouncing through the low-level
-	 * arch hook directly. This matches the Dovetail direction of avoiding
-	 * direct irqchip hook invocation from pipelined entry code.
-	 */
 	if (bootdbg_count < 20)
-		pr_info("BOOTDBG arch_handle_irq_pipelined before_dispatch cause=%lu handle_arch_irq=%ps hard_irqs_disabled=%d regs=%px\n",
+		pr_info("BOOTDBG arch_handle_irq_pipelined cause=%lu handle_arch_irq=%ps hard_irqs_disabled=%d regs=%px\n",
 			cause, handle_arch_irq, hard_irqs_disabled(), regs);
 
-	dispatched = riscv_intc_dispatch_irq(cause);
-
-	if (bootdbg_count < 20)
-		pr_info("BOOTDBG arch_handle_irq_pipelined after_dispatch cause=%lu dispatched=%d hard_irqs_disabled=%d regs=%px\n",
-			cause, dispatched, hard_irqs_disabled(), regs);
-
-	if (dispatched) {
-		if (bootdbg_count < 20)
-			pr_info("BOOTDBG arch_handle_irq_pipelined before_handle_arch cause=%lu hard_irqs_disabled=%d regs=%px\n",
-				cause, hard_irqs_disabled(), regs);
-		handle_arch_irq(regs);
-		if (bootdbg_count < 20)
-			pr_info("BOOTDBG arch_handle_irq_pipelined after_handle_arch cause=%lu hard_irqs_disabled=%d regs=%px\n",
-				cause, hard_irqs_disabled(), regs);
-	}
+	/*
+	 * Delegate to the arch IRQ handler (riscv_intc_irq) which routes
+	 * through the generic IRQ domain flow.  When CONFIG_IRQ_PIPELINE is
+	 * enabled, the flow handler checks should_feed_pipeline() and calls
+	 * handle_oob_irq() to defer the IRQ to the inband stage log.
+	 * handle_irq_pipelined_finish() then synchronizes the log via
+	 * synchronize_pipeline_on_irq(), replaying the deferred inband IRQs.
+	 *
+	 * This matches the ARM64 reference implementation pattern where
+	 * arch_handle_irq_pipelined() simply calls handle_arch_irq().
+	 */
+	handle_arch_irq(regs);
 
 	if (bootdbg_count < 20)
 		bootdbg_count++;
 	else if (bootdbg_count == 20)
 		pr_info("BOOTDBG arch_handle_irq_pipelined rate-limit reached, suppressing further prints\n");
-
-	if (!trace_arch_irq_returned) {
-		trace_arch_irq_returned = true;
-		riscv_evl_trace("EVLDBG arch_handle_irq_pipelined return\n");
-	}
 }
 
 /*
