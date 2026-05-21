@@ -56,8 +56,31 @@ static __always_inline void synchronize_pipeline_on_irq(void)
 	 * pending interrupt for it.
 	 */
 	if (running_inband() ||
-	    stage_irqs_pending(this_oob_staged()))
+	    stage_irqs_pending(this_oob_staged())) {
+		/*
+		 * BUG4 FIX: Force-unstall inband before synchronizing.
+		 *
+		 * init_task_stall_bits() sets INBAND_STALL_BIT for all
+		 * new tasks, but synchronize_pipeline() skips IRQ replay
+		 * when inband is stalled. This creates a chicken-and-egg
+		 * deadlock: sync_current_irq_stage() is the only function
+		 * that clears the stall bit (via unstall_inband_nocheck()
+		 * at exit), but it can never be reached because the stall
+		 * check blocks it.
+		 *
+		 * Force-unstalling here breaks the deadlock.
+		 * sync_current_irq_stage() will re-stall at entry and
+		 * clear at exit, so the stall bit state is properly
+		 * managed regardless of which path synchronize_pipeline()
+		 * takes internally.
+		 *
+		 * This follows the same pattern as irq_pipeline_can_idle()
+		 * in kernel/irq/pipeline.c.
+		 */
+		unstall_inband_nocheck();
 		synchronize_pipeline();
+		stall_inband_nocheck();
+	}
 }
 
 bool handle_oob_irq(struct irq_desc *desc);

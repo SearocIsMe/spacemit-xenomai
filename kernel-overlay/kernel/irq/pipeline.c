@@ -1871,35 +1871,18 @@ int handle_irq_pipelined_finish(struct irq_stage_data *prevd,
 		riscv_evl_trace_ulong("EVLDBG handle_irq_pipelined_finish before sync oob_pending=",
 				      stage_irqs_pending(this_oob_staged()));
 	}
-	{
-		struct irq_stage_data *inbd = this_inband_staged();
-		bool ipi_pending = false;
-		int i;
-
-		for (i = 3; i <= 8; i++) {
-			if (test_bit(i, inbd->log.map->flat)) {
-				ipi_pending = true;
-				break;
-			}
-		}
-
-			if (ipi_pending) {
-				if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
-				pr_info("BOOTDBG handle_irq_pipelined_finish ipi_short_circuit cause=%lu next_inband_irq=%d smp_init=%d deferred_sync=%d current=%s[%d]\n",
-					irq_cause, next_inband_irq, irq_pipeline_smp_init_in_progress(),
-					irq_pipeline_deferred_sync_pending(),
-					current->comm, task_pid_nr(current));
-			}
-			if (!irq_pipeline_smp_init_in_progress()) {
-				if (!irq_pipeline_deferred_sync_pending())
-					irq_pipeline_request_deferred_sync();
-				goto out;
-			}
-			irq_pipeline_request_urgent_ipi_sync();
-			goto out;
-		}
-
-	}
+	/*
+	 * BUG3 FIX: The IPI short-circuit that was here (checking bits
+	 * 3-8 in the inband log) has been REMOVED. On RISC-V, the timer
+	 * IRQ is virq 5 which falls in that hardcoded ARM64-specific
+	 * range. When the timer IRQ was deferred and posted to the
+	 * inband log, bit 5 triggered the short-circuit, causing
+	 * goto out which SKIPPED synchronize_pipeline_on_irq().
+	 * This prevented ALL deferred IRQs from being replayed through
+	 * the normal path, causing the timer interrupt infinite loop.
+	 * The IPI optimization can be re-added later with the correct
+	 * RISC-V IPI virq range if needed.
+	 */
 #endif
 	if (false && (irq_cause == 9 || next_inband_irq == 13 || next_inband_irq == 20)) {
 		pr_info("BOOTDBG handle_irq_pipelined_finish calling_synchronize cause=%lu next_inband_irq=%d running_inband=%d oob_pending=%d hard_irqs_disabled=%d current=%s[%d]\n",
